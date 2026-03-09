@@ -22,6 +22,7 @@ function Debug.dumpSummary()
     end)
 
     local encounters = LWN.PopulationStore.root().encounters or {}
+    local lastFailure = LWN.ActorFactory and LWN.ActorFactory.getLastFailure and LWN.ActorFactory.getLastFailure() or nil
     print(string.format(
         "[LWN] total=%d embodied=%d eligible=%d currentEligible=%s firstEncounter=%s lastEncounterHour=%.2f nextNpcCooldown=%.2f",
         total,
@@ -32,4 +33,12 @@ function Debug.dumpSummary()
         tonumber(encounters.lastEncounterHour or -9999) or -9999,
         tonumber(soonestCooldown or -1) or -1
     ))
+
+    if lastFailure then
+        print(string.format(
+            "[LWN] lastActorFailure npc=%s reason=%s",
+            tostring(lastFailure.npcId),
+            tostring(lastFailure.reason)
+        ))
+    end
 end

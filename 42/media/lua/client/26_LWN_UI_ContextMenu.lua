@@ -10,6 +10,14 @@ local function getPlayerByNum(playerNum)
     return getPlayer and getPlayer() or nil
 end
 
+local function isManagedActor(obj)
+    if not obj then return false end
+    if LWN.ActorFactory and LWN.ActorFactory.isManagedActor then
+        return LWN.ActorFactory.isManagedActor(obj)
+    end
+    return false
+end
+
 function UIContext.findNpcActorInWorldObjects(worldObjects)
     if not worldObjects or #worldObjects == 0 then return nil end
     local square = worldObjects[1] and worldObjects[1]:getSquare() or nil
@@ -17,7 +25,7 @@ function UIContext.findNpcActorInWorldObjects(worldObjects)
 
     for i = 0, square:getMovingObjects():size() - 1 do
         local obj = square:getMovingObjects():get(i)
-        if instanceof and instanceof(obj, "IsoSurvivor") and obj:getModData().LWN_NpcId then
+        if isManagedActor(obj) and obj:getModData().LWN_NpcId then
             return obj
         end
     end
@@ -69,6 +77,12 @@ local function addDebugSubmenu(context, player, actor)
     settingsSub:addOption("Debug: Delete Nearest NPC", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.deleteNearestNpc then
             LWN.DebugTools.deleteNearestNpc(p)
+        end
+    end)
+
+    settingsSub:addOption("Debug: Dump Last Actor Failure", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.dumpLastActorFailure then
+            LWN.DebugTools.dumpLastActorFailure(p)
         end
     end)
 

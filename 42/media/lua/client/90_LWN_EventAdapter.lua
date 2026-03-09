@@ -15,6 +15,14 @@ local function isPlayerAsleep(player)
     return false
 end
 
+local function isManagedActor(obj)
+    if not obj then return false end
+    if LWN.ActorFactory and LWN.ActorFactory.isManagedActor then
+        return LWN.ActorFactory.isManagedActor(obj)
+    end
+    return false
+end
+
 local function updateTravelledDistance(player)
     if not player then return end
 
@@ -52,7 +60,7 @@ local function findActorNearAnchor(record)
             if square and square:getMovingObjects() then
                 for i = 0, square:getMovingObjects():size() - 1 do
                     local obj = square:getMovingObjects():get(i)
-                    if instanceof and instanceof(obj, "IsoSurvivor") and obj:getModData().LWN_NpcId == record.id then
+                    if isManagedActor(obj) and obj:getModData().LWN_NpcId == record.id then
                         return obj
                     end
                 end
@@ -65,7 +73,12 @@ end
 
 local function resolveEmbodiedActor(record)
     local actor = LWN.EmbodimentManager.getActor(record)
-    if actor and actor:getModData() and actor:getModData().LWN_NpcId == record.id then
+    if actor
+        and actor:getModData()
+        and actor:getModData().LWN_NpcId == record.id
+        and (not actor.isExistInTheWorld or actor:isExistInTheWorld() ~= false)
+        and (not LWN.ActorFactory or not LWN.ActorFactory.hasRuntimeCore or LWN.ActorFactory.hasRuntimeCore(actor))
+    then
         return actor
     end
 
@@ -151,6 +164,12 @@ function Adapter.onTick()
     updateTravelledDistance(player)
 
     LWN.PopulationStore.eachNPC(function(record)
+        if record.embodiment.state == "hidden" and LWN.EmbodimentManager.tryRearmHidden then
+            LWN.EmbodimentManager.tryRearmHidden(record, player)
+        end
+    end)
+
+    LWN.PopulationStore.eachNPC(function(record)
         if record.embodiment.state == "eligible" then
             LWN.EmbodimentManager.tryEmbody(record, player)
         end
@@ -183,6 +202,7 @@ function Adapter.onTick()
             else
                 record.embodiment.missingTicks = (record.embodiment.missingTicks or 0) + 1
                 if record.embodiment.missingTicks >= 10 then
+                    print(string.format("[LWN][Embodiment] actor lost, hiding %s", tostring(record.id)))
                     record.embodiment.state = "hidden"
                     record.embodiment.actorId = nil
                     record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + ((LWN.Config.Population and LWN.Config.Population.EncounterCooldownHours) or 2.0)

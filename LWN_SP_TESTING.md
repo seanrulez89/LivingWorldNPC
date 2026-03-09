@@ -42,6 +42,14 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
 - 플레이어 근처에 eligible NPC를 즉시 staged/embodied로 승격
 - 랜덤 조우를 기다리지 않고 첫 조우 흐름 검증 가능
 
+### 6.1.1 현재 구현된 우클릭 디버그 메뉴
+- `LWN Settings`에서 디버그를 켠 뒤 월드 우클릭
+- `Debug: Spawn NPC Near Player`
+- `Debug: Delete Nearest NPC`
+- `Debug: Dump Last Actor Failure`
+
+이 메뉴는 실체화된 NPC의 생성/삭제/최근 실패 원인 확인을 인게임에서 바로 수행하기 위한 개발용 도구다.
+
 ### 6.2 최근접 NPC 덤프
 - nearest embodied NPC id
 - 장기/단기 목표
@@ -92,12 +100,14 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
 ### C. 첫 조우
 - [ ] 랜덤 또는 강제 인카운터로 NPC가 등장하는가
 - [ ] 실체화 위치가 플레이어 시야에 자연스러운가
+- [ ] 실제 월드에 보이는 인간형 actor(`IsoPlayer` 기반)가 생성되는가
 - [ ] 대사 1줄과 관계 초기화가 정상인가
 
 ### D. 화면 밖 비실체화
 - [ ] 일정 거리 이상 멀어지면 actor가 사라지는가
 - [ ] canonical record는 유지되는가
 - [ ] 다시 접근하면 같은 NPC가 다시 실체화되는가
+- [ ] 동료/디버그 spawn NPC는 짧은 cooldown 뒤 자동으로 재실체화 가능한가
 
 ### E. 명령/협상
 - [ ] Follow / Wait / Guard / Attack / Retreat / Talk가 동작하는가
@@ -127,4 +137,5 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
 ## 10. 주의
 - 개발 중에는 기존 저장을 계속 재사용하지 말고 `-cachedir`로 별도 개발 프로필을 두는 편이 좋다.
 - 한 번에 여러 기능을 붙이지 말고, 위 우선순위 순서로 기능을 잠그면서 테스트한다.
+- 실체화 실패가 보이면 `console.txt`에서 `[LWN][ActorFactory] failure record`, `failure actor`, `failure descriptor` 세 줄을 먼저 확인한다.
 

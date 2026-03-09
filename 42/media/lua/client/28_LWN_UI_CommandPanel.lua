@@ -34,11 +34,13 @@ function Panel.renderTarget(actor)
     if not record then return end
 
     local encounters = LWN.PopulationStore.root().encounters or {}
+    local lastFailure = LWN.ActorFactory and LWN.ActorFactory.getLastFailure and LWN.ActorFactory.getLastFailure() or nil
     local nowHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
     local cooldownLeft = math.max(0, (record.embodiment.cooldownUntilHour or 0) - nowHour)
 
     local lines = {}
     table.insert(lines, actor:getFullName())
+    table.insert(lines, "Actor: " .. tostring(actor:getObjectName()))
     table.insert(lines, "Profession: " .. tostring(record.identity.profession))
     table.insert(lines, string.format("Trust %.2f / Fear %.2f / Resentment %.2f", record.relationshipToPlayer.trust, record.relationshipToPlayer.fear, record.relationshipToPlayer.resentment))
     table.insert(lines, string.format("Hunger %.2f / Fatigue %.2f / Panic %.2f", record.stats.hunger, record.stats.fatigue, record.stats.panic))
@@ -48,6 +50,9 @@ function Panel.renderTarget(actor)
     table.insert(lines, "State: " .. tostring(record.embodiment.state) .. string.format(" / CD %.2fh", cooldownLeft))
     table.insert(lines, "Encounter currentEligible: " .. tostring(encounters.currentEligibleId))
     table.insert(lines, "Encounter firstTriggered: " .. tostring(encounters.firstEncounterTriggered) .. string.format(" / last %.2fh", tonumber(encounters.lastEncounterHour or -9999) or -9999))
+    if lastFailure then
+        table.insert(lines, "Last Failure: " .. tostring(lastFailure.npcId) .. " / " .. tostring(lastFailure.reason))
+    end
 
     Panel.textbox:SetText(table.concat(lines, "\n"))
 end

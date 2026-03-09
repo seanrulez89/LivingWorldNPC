@@ -92,6 +92,9 @@ function Runtime._startMovement(record, actor, intent)
     elseif intent.kind == "follow_player" then
         local player = getPlayer()
         if player then pf:pathToCharacter(player) end
+    elseif intent.kind == "guard_player" then
+        local player = getPlayer()
+        if player then pf:pathToCharacter(player) end
     elseif intent.kind == "retreat" then
         local px, py, pz = actor:getX(), actor:getY(), actor:getZ()
         local tx = math.floor(px + (px - (intent.data.threatPos and intent.data.threatPos.x or px)) * 4)
@@ -124,11 +127,43 @@ function Runtime.tick(record, actor)
     local current = Runtime.peek(record)
     if not current then return end
 
-    if current.kind == "move_to" or current.kind == "follow_player" or current.kind == "retreat" or current.kind == "wander_short" then
+    if current.kind == "move_to" or current.kind == "follow_player" or current.kind == "guard_player" or current.kind == "retreat" or current.kind == "wander_short" then
         if not current.started then
-            Runtime._startMovement(record, actor, current)
+            if current.kind == "guard_player" then
+                local player = getPlayer()
+                if player then
+                    local dx = actor:getX() - player:getX()
+                    local dy = actor:getY() - player:getY()
+                    if (dx * dx + dy * dy) <= 9 then
+                        actor:faceThisObject(player)
+                        current.done = true
+                    else
+                        Runtime._startMovement(record, actor, current)
+                    end
+                else
+                    current.failed = true
+                end
+            else
+                Runtime._startMovement(record, actor, current)
+            end
         else
-            Runtime._tickMovementIntent(actor, current)
+            if current.kind == "guard_player" then
+                local player = getPlayer()
+                if player then
+                    local dx = actor:getX() - player:getX()
+                    local dy = actor:getY() - player:getY()
+                    if (dx * dx + dy * dy) <= 9 then
+                        actor:faceThisObject(player)
+                        current.done = true
+                    else
+                        Runtime._tickMovementIntent(actor, current)
+                    end
+                else
+                    current.failed = true
+                end
+            else
+                Runtime._tickMovementIntent(actor, current)
+            end
         end
     elseif current.kind == "talk" then
         if not current.started then

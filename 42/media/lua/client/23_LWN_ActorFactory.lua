@@ -4,6 +4,12 @@ LWN.ActorFactory = LWN.ActorFactory or {}
 local Factory = LWN.ActorFactory
 local Store = LWN.PopulationStore
 
+local fallbackClothing = {
+    "Base.Tshirt_WhiteTINT",
+    "Base.Trousers_Denim",
+    "Base.Shoes",
+}
+
 local function callIf(obj, methodName, ...)
     if not obj then return nil end
     local fn = obj[methodName]
@@ -43,8 +49,24 @@ local function appendPart(parts, key, value)
     parts[#parts + 1] = tostring(key) .. "=" .. safeText(value)
 end
 
+local function dist2(ax, ay, bx, by)
+    local dx = (ax or 0) - (bx or 0)
+    local dy = (ay or 0) - (by or 0)
+    return dx * dx + dy * dy
+end
+
 local function coordSummary(x, y, z)
     return safeNumber(x) .. "," .. safeNumber(y) .. "," .. safeNumber(z)
+end
+
+local function getNpcIdFromActor(actor)
+    local modData = protectedCall(actor, "getModData")
+    return modData and modData.LWN_NpcId or nil
+end
+
+local function isManagedActor(obj)
+    if not obj then return false end
+    return getNpcIdFromActor(obj) ~= nil
 end
 
 local function squareSummary(square)
@@ -65,6 +87,8 @@ local function squareSummary(square)
 
     local building = room and protectedCall(room, "getBuilding") or nil
     appendPart(parts, "building", building ~= nil)
+    appendPart(parts, "free", protectedCall(square, "isFree", false))
+    appendPart(parts, "solidFloor", protectedCall(square, "isSolidFloor"))
     return table.concat(parts, " | ")
 end
 
@@ -94,6 +118,8 @@ local function recordSummary(record)
     local companion = record.companion or {}
     local storyArc = record.storyArc or {}
     local stats = record.stats or {}
+    local goals = record.goals or {}
+    local longTerm = goals.longTerm or {}
 
     local parts = {}
     appendPart(parts, "id", record.id)
@@ -107,10 +133,12 @@ local function recordSummary(record)
     appendPart(parts, "debugSpawnOnly", record.debugSpawnOnly == true)
     appendPart(parts, "recruited", companion.recruited == true)
     appendPart(parts, "story", storyArc.type)
+    appendPart(parts, "goal", longTerm.kind)
     appendPart(parts, "traits", #(identity.traitIds or {}))
     appendPart(parts, "hunger", safeNumber(stats.hunger))
     appendPart(parts, "thirst", safeNumber(stats.thirst))
     appendPart(parts, "fatigue", safeNumber(stats.fatigue))
+    appendPart(parts, "health", safeNumber(stats.health))
     return table.concat(parts, " | ")
 end
 
@@ -119,14 +147,14 @@ local function actorSummary(actor)
         return "actor=nil"
     end
 
-    local modData = protectedCall(actor, "getModData")
     local square = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
     local parts = {}
     appendPart(parts, "object", protectedCall(actor, "getObjectName"))
-    appendPart(parts, "npcId", modData and modData.LWN_NpcId or nil)
+    appendPart(parts, "npcId", getNpcIdFromActor(actor))
     appendPart(parts, "body", protectedCall(actor, "getBodyDamage") ~= nil)
     appendPart(parts, "stats", protectedCall(actor, "getStats") ~= nil)
     appendPart(parts, "inventory", protectedCall(actor, "getInventory") ~= nil)
+    appendPart(parts, "npc", protectedCall(actor, "getIsNPC"))
     appendPart(parts, "pos", coordSummary(protectedCall(actor, "getX"), protectedCall(actor, "getY"), protectedCall(actor, "getZ")))
     appendPart(parts, "destroyed", protectedCall(actor, "isDestroyed"))
     appendPart(parts, "world", protectedCall(actor, "isExistInTheWorld"))
@@ -141,6 +169,7 @@ local function extraSummary(extra)
     appendPart(parts, "source", extra.source)
     appendPart(parts, "detail", extra.detail)
     appendPart(parts, "thrown", extra.thrown)
+    appendPart(parts, "spawnSource", extra.spawnSource)
     if extra.square then
         appendPart(parts, "targetSquare", squareSummary(extra.square))
     end
@@ -173,10 +202,32 @@ local function logFailure(reason, record, actor, descriptor, descriptorMode, ext
     print("[LWN][ActorFactory] failure descriptor :: hour=" .. safeNumber(snapshot.worldAgeHours) .. " | " .. snapshot.descriptor .. " | " .. snapshot.extra)
 end
 
+local function logInfo(message, record, actor, extra)
+    if not LWN.Config.Debug.Enabled then return end
+
+    local parts = {
+        "[LWN][ActorFactory] " .. safeText(message),
+    }
+
+    if record then
+        parts[#parts + 1] = "record=" .. record.id
+    end
+    if actor then
+        parts[#parts + 1] = "npcId=" .. safeText(getNpcIdFromActor(actor))
+        parts[#parts + 1] = "actor=" .. safeText(protectedCall(actor, "getObjectName"))
+    end
+    if extra then
+        parts[#parts + 1] = extraSummary(extra)
+    end
+    print(table.concat(parts, " | "))
+end
+
 local function safeCleanupActor(actor)
     if not actor then return end
-    protectedCall(actor, "setDestroyed", true)
     protectedCall(actor, "StopAllActionQueue")
+    protectedCall(actor, "setSceneCulled", true)
+    protectedCall(actor, "setNPC", false)
+    protectedCall(actor, "setDestroyed", true)
     protectedCall(actor, "Despawn")
     protectedCall(actor, "removeFromSquare")
     protectedCall(actor, "removeFromWorld")
@@ -194,10 +245,68 @@ local function hasRuntimeCore(actor)
     return okBody and okStats and okInventory
 end
 
+local function isSquareSpawnable(square)
+    if not square then return false end
+
+    local solidFloor = protectedCall(square, "isSolidFloor")
+    if solidFloor == false then return false end
+
+    local isFree = protectedCall(square, "isFree", false)
+    if isFree == false then return false end
+
+    local movingObjects = protectedCall(square, "getMovingObjects")
+    if movingObjects and movingObjects.size then
+        for i = 0, movingObjects:size() - 1 do
+            local obj = movingObjects:get(i)
+            if obj and instanceof then
+                if instanceof(obj, "IsoZombie") or instanceof(obj, "IsoPlayer") or instanceof(obj, "IsoSurvivor") then
+                    return false
+                end
+            end
+        end
+    end
+
+    return true
+end
+
+local function addCandidate(candidates, square, source, player, anchorX, anchorY)
+    if not isSquareSpawnable(square) then return end
+
+    local sx = protectedCall(square, "getX") or 0
+    local sy = protectedCall(square, "getY") or 0
+    local score = dist2(anchorX, anchorY, sx, sy)
+
+    if player then
+        local pd2 = dist2(player:getX(), player:getY(), sx, sy)
+        if pd2 < 4 then
+            return
+        end
+        score = score + math.abs(pd2 - 16)
+    end
+
+    candidates[#candidates + 1] = {
+        square = square,
+        source = source,
+        score = score,
+    }
+end
+
+local function chooseBestCandidate(candidates)
+    local best = nil
+    for _, candidate in ipairs(candidates) do
+        if not best or candidate.score < best.score then
+            best = candidate
+        end
+    end
+    return best
+end
+
 local function createDescriptor(record)
+    local female = record.identity and record.identity.female == true
+
     if SurvivorFactory and SurvivorFactory.CreateSurvivor and SurvivorType and SurvivorType.Neutral ~= nil then
         local ok, desc = pcall(function()
-            return SurvivorFactory.CreateSurvivor(SurvivorType.Neutral, record.identity.female == true)
+            return SurvivorFactory.CreateSurvivor(SurvivorType.Neutral, female)
         end)
         if ok and desc then
             return desc, "neutral"
@@ -206,15 +315,90 @@ local function createDescriptor(record)
 
     if SurvivorFactory and SurvivorFactory.CreateSurvivor then
         local ok, desc = pcall(function()
+            return SurvivorFactory.CreateSurvivor(nil, female)
+        end)
+        if ok and desc then
+            return desc, "typed_nil"
+        end
+    end
+
+    if SurvivorFactory and SurvivorFactory.CreateSurvivor then
+        local ok, desc = pcall(function()
             return SurvivorFactory.CreateSurvivor()
         end)
         if ok and desc then
-            callIf(desc, "setFemale", record.identity.female == true)
+            callIf(desc, "setFemale", female)
             return desc, "default"
         end
     end
 
     return nil, "unavailable"
+end
+
+local function applyDescriptorAppearance(record, desc, descriptorMode)
+    local appearance = record.appearance or {}
+    if not appearance.outfit then
+        return
+    end
+
+    local ok, err = pcall(function()
+        desc:dressInNamedOutfit(appearance.outfit)
+    end)
+    if not ok then
+        logInfo("dressInNamedOutfit failed", record, nil, {
+            source = "buildDescriptor",
+            detail = appearance.outfit,
+            thrown = err,
+            descriptorMode = descriptorMode,
+        })
+    end
+end
+
+local function addAndWearItem(actor, fullType)
+    local inv = protectedCall(actor, "getInventory")
+    if not inv then return nil end
+
+    local item = inv:AddItem(fullType)
+    if not item then return nil end
+
+    local bodyLocation = protectedCall(item, "getBodyLocation")
+    if bodyLocation and bodyLocation ~= "" then
+        protectedCall(actor, "setWornItem", bodyLocation, item)
+    end
+    return item
+end
+
+local function ensureVisibleClothing(actor)
+    if protectedCall(actor, "getClothingItem_Torso") and protectedCall(actor, "getClothingItem_Legs") then
+        return
+    end
+
+    protectedCall(actor, "dressInRandomOutfit")
+
+    if protectedCall(actor, "getClothingItem_Torso") and protectedCall(actor, "getClothingItem_Legs") then
+        return
+    end
+
+    for _, fullType in ipairs(fallbackClothing) do
+        addAndWearItem(actor, fullType)
+    end
+    protectedCall(actor, "resetModelNextFrame")
+end
+
+local function ensurePrimaryWeapon(actor, fullType)
+    if not fullType then return nil end
+
+    local inv = protectedCall(actor, "getInventory")
+    if not inv then return nil end
+
+    local item = inv:AddItem(fullType)
+    if not item then return nil end
+
+    protectedCall(actor, "setPrimaryHandItem", item)
+    if protectedCall(item, "isRequiresEquippedBothHands") or protectedCall(item, "isTwoHandWeapon") then
+        protectedCall(actor, "setSecondaryHandItem", item)
+    end
+    return item
 end
 
 function Factory.buildDescriptor(record)
@@ -227,8 +411,6 @@ function Factory.buildDescriptor(record)
     callIf(desc, "setFemale", record.identity.female == true)
     callIf(desc, "setForename", record.identity.firstName)
     callIf(desc, "setSurname", record.identity.lastName)
-
-    -- Build 42 surfaces differ by branch; guard optional descriptor methods.
     callIf(desc, "setProfession", record.identity.profession)
 
     if ProfessionFactory and ProfessionFactory.getProfession then
@@ -238,7 +420,6 @@ function Factory.buildDescriptor(record)
         end
     end
 
-    -- Descriptor personality hints; all optional per runtime exposure.
     callIf(desc, "setBravery", record.personality.bravery)
     callIf(desc, "setCompassion", record.personality.empathy)
     callIf(desc, "setLoyalty", record.personality.loyalty)
@@ -247,20 +428,101 @@ function Factory.buildDescriptor(record)
     callIf(desc, "setTemper", record.personality.impulsiveness)
     callIf(desc, "setLoner", 1.0 - record.personality.sociability)
 
+    applyDescriptorAppearance(record, desc, descriptorMode)
     return desc, descriptorMode
+end
+
+function Factory.findSpawnSquare(record, player)
+    local cell = getCell()
+    if not cell then return nil, "no_cell" end
+
+    local ax = math.floor(record.anchor.x or 0)
+    local ay = math.floor(record.anchor.y or 0)
+    local az = math.floor(record.anchor.z or 0)
+    local anchorSquare = cell:getGridSquare(ax, ay, az)
+    local candidates = {}
+
+    -- Prefer tiles near the canonical anchor, but avoid popping directly on top of
+    -- the player or onto occupied/air squares. This keeps embodiment visible while
+    -- reducing collision-driven runtime faults.
+    addCandidate(candidates, anchorSquare, "anchor", player, ax, ay)
+
+    if anchorSquare and AdjacentFreeTileFinder and AdjacentFreeTileFinder.Find and player then
+        addCandidate(candidates, AdjacentFreeTileFinder.Find(anchorSquare, player), "anchor_adjacent", player, ax, ay)
+    end
+
+    for radius = 1, 3 do
+        for dy = -radius, radius do
+            for dx = -radius, radius do
+                if math.max(math.abs(dx), math.abs(dy)) == radius then
+                    local square = cell:getGridSquare(ax + dx, ay + dy, az)
+                    addCandidate(candidates, square, string.format("anchor_ring_%d", radius), player, ax, ay)
+                end
+            end
+        end
+    end
+
+    if player then
+        local px = math.floor(player:getX())
+        local py = math.floor(player:getY())
+        local pz = math.floor(player:getZ())
+
+        for radius = 2, 5 do
+            for dy = -radius, radius do
+                for dx = -radius, radius do
+                    if math.max(math.abs(dx), math.abs(dy)) == radius then
+                        local square = cell:getGridSquare(px + dx, py + dy, pz)
+                        addCandidate(candidates, square, string.format("player_ring_%d", radius), player, ax, ay)
+                    end
+                end
+            end
+        end
+    end
+
+    local best = chooseBestCandidate(candidates)
+    if not best then
+        return nil, "no_spawn_square"
+    end
+
+    return best.square, best.source
 end
 
 function Factory.hasRuntimeCore(actor)
     return hasRuntimeCore(actor)
 end
 
-function Factory.attachPendingRecord(survivor)
-    if not survivor then return nil end
+function Factory.isManagedActor(obj)
+    return isManagedActor(obj)
+end
+
+function Factory.getNpcIdFromActor(actor)
+    return getNpcIdFromActor(actor)
+end
+
+function Factory.getLastFailure()
+    return Factory._lastFailure
+end
+
+function Factory.dumpLastFailure()
+    local failure = Factory._lastFailure
+    if not failure then
+        print("[LWN][ActorFactory] last failure :: none")
+        return
+    end
+
+    print("[LWN][ActorFactory] last failure reason :: " .. safeText(failure.reason))
+    print("[LWN][ActorFactory] last failure record :: " .. safeText(failure.record))
+    print("[LWN][ActorFactory] last failure actor :: " .. safeText(failure.actor))
+    print("[LWN][ActorFactory] last failure descriptor :: " .. safeText(failure.descriptor) .. " | " .. safeText(failure.extra))
+end
+
+function Factory.attachPendingRecord(actor)
+    if not actor then return nil end
 
     local record = Factory._pendingRecord
     if not record then return nil end
 
-    local modData = protectedCall(survivor, "getModData")
+    local modData = protectedCall(actor, "getModData")
     if modData then
         modData.LWN_NpcId = record.id
     end
@@ -279,25 +541,33 @@ function Factory.rejectActor(actor, reason, npcId, record, descriptor, descripto
     safeCleanupActor(actor)
 end
 
+function Factory.cleanupActor(actor)
+    safeCleanupActor(actor)
+end
+
 function Factory.applyTraits(record, actor)
     for _, traitId in ipairs(record.identity.traitIds or {}) do
-        -- Trait application is kept abstract here.
-        -- For vanilla traits, the descriptor / profession setup usually handles the visible effects.
-        -- Custom trait registration should be done in a registry bootstrap before world load.
+        local traits = protectedCall(actor, "getTraits")
+        if traits and traits.add then
+            pcall(function()
+                traits:add(traitId)
+            end)
+        end
     end
 end
 
 function Factory.applyLoadout(record, actor)
-    local inv = actor:getInventory()
-    if not inv then return end
+    ensureVisibleClothing(actor)
 
-    if record.inventory.equipment.primaryWeapon then
-        local item = inv:AddItem(record.inventory.equipment.primaryWeapon)
-        if item then actor:setPrimaryHandItem(item) end
-    end
+    local primaryWeapon = record.inventory
+        and record.inventory.equipment
+        and record.inventory.equipment.primaryWeapon
+        or nil
+
+    ensurePrimaryWeapon(actor, primaryWeapon)
 end
 
-function Factory.createActor(record)
+function Factory.createActor(record, player)
     local desc, descriptorMode = Factory.buildDescriptor(record)
     if not desc then
         return nil
@@ -309,53 +579,81 @@ function Factory.createActor(record)
         return nil
     end
 
-    local x = math.floor(record.anchor.x or 0)
-    local y = math.floor(record.anchor.y or 0)
-    local z = math.floor(record.anchor.z or 0)
-    local square = cell:getGridSquare(x, y, z)
+    local square, spawnSource = Factory.findSpawnSquare(record, player)
     if not square then
-        logFailure("createActor skipped: target square missing", record, nil, desc, descriptorMode, {
+        logFailure("createActor skipped: no spawn square", record, nil, desc, descriptorMode, {
             source = "createActor",
-            detail = coordSummary(x, y, z),
+            spawnSource = spawnSource,
+            detail = coordSummary(record.anchor.x, record.anchor.y, record.anchor.z),
         })
         return nil
     end
 
-    Factory._pendingRecord = record
+    local x = math.floor(protectedCall(square, "getX") or record.anchor.x or 0)
+    local y = math.floor(protectedCall(square, "getY") or record.anchor.y or 0)
+    local z = math.floor(protectedCall(square, "getZ") or record.anchor.z or 0)
+
     local ok, actorOrErr = pcall(function()
-        return SurvivorFactory.InstansiateInCell(desc, cell, x, y, z)
+        -- Build 42 does not expose a complete first-party human NPC framework yet,
+        -- so embodied LWN NPCs are created as NPC-flagged IsoPlayer instances with
+        -- canonical state still living in ModData-backed records.
+        return IsoPlayer.new(cell, desc, x, y, z)
     end)
-    Factory._pendingRecord = nil
 
     if not ok then
-        logFailure("createActor failed: InstansiateInCell threw", record, nil, desc, descriptorMode, {
+        logFailure("createActor failed: IsoPlayer.new threw", record, nil, desc, descriptorMode, {
             source = "createActor",
             thrown = actorOrErr,
             square = square,
+            spawnSource = spawnSource,
         })
         return nil
     end
 
     local actor = actorOrErr
     if not actor then
-        logFailure("createActor failed: InstansiateInCell returned nil", record, nil, desc, descriptorMode, {
+        logFailure("createActor failed: IsoPlayer.new returned nil", record, nil, desc, descriptorMode, {
             source = "createActor",
             square = square,
+            spawnSource = spawnSource,
         })
         return nil
+    end
+
+    protectedCall(actor, "setDescriptor", desc)
+    protectedCall(actor, "setNPC", true)
+    protectedCall(actor, "setIsNPC", true)
+    protectedCall(actor, "setSceneCulled", false)
+    protectedCall(actor, "setVisibleToNPCs", true)
+    protectedCall(actor, "setForname", record.identity.firstName)
+    protectedCall(actor, "setSurname", record.identity.lastName)
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_NpcId = record.id
+        modData.LWN_ActorKind = "IsoPlayer"
+        modData.LWN_SpawnSource = spawnSource
     end
 
     if not hasRuntimeCore(actor) then
         Factory.rejectActor(actor, "createActor rejected invalid runtime actor", record.id, record, desc, descriptorMode, {
             source = "createActor",
             square = square,
+            spawnSource = spawnSource,
         })
         return nil
     end
 
-    actor:getModData().LWN_NpcId = record.id
     Factory.applyTraits(record, actor)
     Factory.applyLoadout(record, actor)
+    protectedCall(actor, "setHealth", record.stats and record.stats.health or 100)
+
+    logInfo("created embodied npc", record, actor, {
+        source = "createActor",
+        square = square,
+        spawnSource = spawnSource,
+        detail = descriptorMode,
+    })
 
     return actor
 end

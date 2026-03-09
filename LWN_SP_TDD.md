@@ -4,6 +4,8 @@
 
 This architecture targets **Project Zomboid Build 42 single-player only**. It deliberately excludes multiplayer. The design is built around API surfaces that are directly visible in the current Java modding docs or in shipped/community-documented Lua event layers.
 
+Build 42 note: the official first-party NPC initiative is aimed at later builds, so this mod implements visible humans by combining the exposed `SurvivorDesc` and `IsoPlayer` APIs with a strict data-first embodiment layer. Public Build 42 community work such as PZNS follows the same `IsoPlayer.new(...)` + `setNPC(true)` pattern, which makes it a useful reference for what is practical without engine patching.
+
 ### Hard guarantees
 
 1. NPCs do **not** exist as always-active world actors.
@@ -39,8 +41,10 @@ The implementation is split by evidence level.
 
 Used directly in the runtime design:
 
-- `SurvivorFactory.CreateSurvivor`, `SurvivorFactory.InstansiateInCell`
-- `IsoSurvivor`
+- `SurvivorFactory.CreateSurvivor`
+- `SurvivorDesc`
+- `IsoPlayer(IsoCell, SurvivorDesc, int, int, int)`
+- `IsoGameCharacter.setNPC`, `setSceneCulled`
 - `ILuaGameCharacter.getMoodles`, `getStats`, `getTraits`, `getInventory`, `getPerkLevel`, `getPathFindBehavior2`, `StartAction`, `StopAllActionQueue`, `Say`, `setDescriptor`
 - `PathFindBehavior2.pathToLocation`, `pathToCharacter`, `update`, `cancel`
 - `BaseAction`, `LuaTimedAction`
@@ -57,7 +61,7 @@ Used only behind adapter layers:
 
 - `Events.OnNewGame`
 - `Events.OnCreateUI`
-- `Events.OnCreateSurvivor`
+- `Events.OnCreateSurvivor` (defensive compatibility hook, not the primary embodiment path)
 - `Events.OnPlayerDeath`
 - `Events.OnFillWorldObjectContextMenu`
 - `Events.OnCustomUIKeyPressed`
@@ -323,10 +327,10 @@ Per embodied NPC:
 
 1. `EncounterDirector` marks a hidden NPC as `eligible`.
 2. `EmbodimentManager` checks distance and activation budget.
-3. `ActorFactory` builds `SurvivorDesc`, then `IsoSurvivor`.
+3. `ActorFactory` builds `SurvivorDesc`, chooses a safe visible square, then creates an NPC-flagged `IsoPlayer`.
 4. `ActorSync` pushes canonical record data into the actor.
 5. NPC becomes `embodied`.
-6. When the player leaves the despawn envelope and no sticky state is active, `ActorSync` pulls final state, then `IsoSurvivor:Despawn()` is called.
+6. When the player leaves the despawn envelope and no sticky state is active, `ActorSync` pulls final state, then the runtime actor is cleaned up with `Despawn()` and world-removal guards.
 
 Sticky states include:
 
@@ -392,9 +396,9 @@ Suggested defaults:
 
 1. Create `SurvivorDesc`.
 2. Apply name, sex, profession, XP boosts, descriptor personality hints.
-3. Instantiate actor with `SurvivorFactory.InstansiateInCell`.
-4. Sync clothing/equipment/health.
-5. Attach `npcId` in actor modData mirror.
+3. Pick a solid, free square near the canonical anchor with player-overlap avoidance.
+4. Instantiate actor with `IsoPlayer.new(...)`.
+5. Mark the actor as NPC, sync clothing/equipment/health, and attach `npcId` in actor modData mirror.
 6. Register in `embodied` mirror table.
 
 ### Actor destruction pipeline
@@ -402,8 +406,8 @@ Suggested defaults:
 1. Stop all active actions.
 2. Pull inventory/perks/stats summary into canonical record.
 3. Clear UI selections if needed.
-4. Call `Despawn()`.
-5. Return state to `hidden` or `cooldown`.
+4. Call cleanup guards (`Despawn`, `removeFromSquare`, `removeFromWorld`) as needed.
+5. Return state to `hidden` or short auto-rearm cooldown for companions/debug-spawned records.
 
 ---
 
@@ -826,7 +830,7 @@ Determines which hidden NPC becomes encounter-eligible and when.
 
 ### 23_LWN_ActorFactory
 
-Creates `SurvivorDesc`, applies profession/trait/personality-adjacent descriptor values, instantiates `IsoSurvivor`.
+Creates `SurvivorDesc`, applies profession/trait/personality-adjacent descriptor values, selects a safe spawn square, and instantiates an NPC-flagged `IsoPlayer`.
 
 ### 24_LWN_ActorSync
 
@@ -858,7 +862,7 @@ Death handling and continuation snapshot flow.
 
 ### 90_LWN_EventAdapter
 
-All engine hook bindings live here.
+All engine hook bindings live here, including the hidden-record rearm pass for companions/debug NPCs and the defensive `OnCreateSurvivor` compatibility hook.
 
 ### 99_LWN_Bootstrap
 

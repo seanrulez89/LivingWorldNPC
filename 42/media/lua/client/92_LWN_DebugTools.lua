@@ -19,14 +19,24 @@ local function sayInfo(player, text)
     print("[LWN][Debug] " .. tostring(text))
 end
 
-local function randomizeIdentity(record)
-    local desc = SurvivorFactory.CreateSurvivor()
-    desc:setFemale(ZombRand(0, 2) == 0)
-    SurvivorFactory.randomName(desc)
+local function isManagedActor(obj)
+    if not obj then return false end
+    if LWN.ActorFactory and LWN.ActorFactory.isManagedActor then
+        return LWN.ActorFactory.isManagedActor(obj)
+    end
+    return false
+end
 
-    record.identity.firstName = desc:getForename() or record.identity.firstName
-    record.identity.lastName = desc:getSurname() or record.identity.lastName
-    record.identity.female = desc:isFemale()
+local function randomizeIdentity(record)
+    local female = ZombRand(0, 2) == 0
+    record.identity.female = female
+
+    if SurvivorFactory and SurvivorFactory.getRandomForename then
+        record.identity.firstName = SurvivorFactory.getRandomForename(female) or record.identity.firstName
+    end
+    if SurvivorFactory and SurvivorFactory.getRandomSurname then
+        record.identity.lastName = SurvivorFactory.getRandomSurname() or record.identity.lastName
+    end
 end
 
 local function findActorForRecord(record)
@@ -38,9 +48,10 @@ local function findActorForRecord(record)
     local cell = getCell and getCell() or nil
     if not cell then return nil end
 
-    local cx = math.floor(record.anchor.x or 0)
-    local cy = math.floor(record.anchor.y or 0)
-    local cz = math.floor(record.anchor.z or 0)
+    local meta = Store.getEmbodiedMeta(record.id)
+    local cx = math.floor((meta and meta.x) or record.anchor.x or 0)
+    local cy = math.floor((meta and meta.y) or record.anchor.y or 0)
+    local cz = math.floor((meta and meta.z) or record.anchor.z or 0)
 
     for y = cy - 2, cy + 2 do
         for x = cx - 2, cx + 2 do
@@ -48,7 +59,7 @@ local function findActorForRecord(record)
             if square and square:getMovingObjects() then
                 for i = 0, square:getMovingObjects():size() - 1 do
                     local obj = square:getMovingObjects():get(i)
-                    if instanceof and instanceof(obj, "IsoSurvivor") and obj:getModData().LWN_NpcId == record.id then
+                    if isManagedActor(obj) and obj:getModData().LWN_NpcId == record.id then
                         LWN.EmbodimentManager.registerActor(record, obj)
                         return obj
                     end
@@ -83,24 +94,48 @@ function DebugTools.spawnOneNearPlayer(player)
     local record = LWN.Schema.newNPCRecord(id, seed)
 
     randomizeIdentity(record)
-    record.anchor.x = math.floor(player:getX())
-    record.anchor.y = math.floor(player:getY())
+    record.identity.profession = "unemployed"
+    record.backstory.formerProfession = record.identity.profession
+    record.relationshipToPlayer.trust = 0.25
+    record.relationshipToPlayer.respect = 0.15
+    record.companion.recruited = true
+    record.companion.squadRole = "debug"
+    record.goals.longTerm = LWN.Schema.newGoal("support_player", 1.0)
+    record.anchor.x = math.floor(player:getX()) + ZombRand(-2, 3)
+    record.anchor.y = math.floor(player:getY()) + ZombRand(-2, 3)
     record.anchor.z = math.floor(player:getZ())
     record.debugSpawnOnly = true
-    record.embodiment.state = "hidden"
-    record.embodiment.cooldownUntilHour = worldAgeHours() + 99999
+    record.embodiment.state = "eligible"
+    record.embodiment.cooldownUntilHour = worldAgeHours()
 
     Store.addNPC(record)
 
-    -- Let the normal tick pathway embody; avoids context-menu timing edge cases.
-    local actor = nil
-
+    local actor = LWN.EmbodimentManager.tryEmbody(record, player)
     if actor then
-        sayInfo(player, string.format("Spawned NPC %s", record.id))
+        sayInfo(player, string.format("Spawned embodied NPC %s", record.id))
     else
-        sayInfo(player, string.format("Debug NPC record created (spawn locked): %s", record.id))
+        local failure = LWN.ActorFactory and LWN.ActorFactory.getLastFailure and LWN.ActorFactory.getLastFailure() or nil
+        if failure and failure.npcId == record.id then
+            sayInfo(player, string.format("Spawn failed for %s; see console for ActorFactory failure details", record.id))
+        else
+            sayInfo(player, string.format("Spawn queued but embodiment failed: %s", record.id))
+        end
     end
     return record, actor
+end
+
+function DebugTools.dumpLastActorFailure(player)
+    local failure = LWN.ActorFactory and LWN.ActorFactory.getLastFailure and LWN.ActorFactory.getLastFailure() or nil
+    if not failure then
+        sayInfo(player, "No recorded actor failure")
+        return false
+    end
+
+    sayInfo(player, string.format("Last actor failure: %s", tostring(failure.npcId or failure.reason)))
+    if LWN.ActorFactory and LWN.ActorFactory.dumpLastFailure then
+        LWN.ActorFactory.dumpLastFailure()
+    end
+    return true
 end
 
 function DebugTools.deleteNpcById(npcId, player)
@@ -110,8 +145,9 @@ function DebugTools.deleteNpcById(npcId, player)
 
     local actor = findActorForRecord(record)
     if actor then
-        if actor.StopAllActionQueue then actor:StopAllActionQueue() end
-        if actor.Despawn then actor:Despawn() end
+        if LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
+            LWN.ActorFactory.cleanupActor(actor)
+        end
         LWN.EmbodimentManager.unregisterActor(record)
     end
 
