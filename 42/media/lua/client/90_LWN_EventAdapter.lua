@@ -118,6 +118,9 @@ end
 
 local function tickEmbodiedRecord(record, actor, player)
     record.embodiment.missingTicks = 0
+    if LWN.ActorSync and LWN.ActorSync.ensureEmbodiedActorState then
+        LWN.ActorSync.ensureEmbodiedActorState(record, actor)
+    end
     LWN.ActorSync.pullActorToRecord(record, actor)
     LWN.EmbodimentManager.registerActor(record, actor)
     LWN.GoalSystem.update(record, {})

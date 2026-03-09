@@ -51,19 +51,19 @@ function DialogueWindow:createChildren()
     logBox:initialise()
     logBox:setAnchorRight(true)
     logBox:setAnchorBottom(true)
+    self:addChild(logBox)
     logBox:setEditable(false)
     logBox:setMultipleLine(true)
     logBox:addScrollBars()
-    self:addChild(logBox)
 
     local inputBox = ISTextEntryBox:new("", 8, self.height - rh - inputHeight - 8, self.width - 16, inputHeight)
     inputBox:initialise()
     inputBox:setAnchorRight(true)
     inputBox:setAnchorTop(false)
     inputBox:setAnchorBottom(true)
+    self:addChild(inputBox)
     inputBox:setEditable(true)
     inputBox:setOnlyNumbers(false)
-    self:addChild(inputBox)
 
     self.logBox = logBox
     self.inputBox = inputBox

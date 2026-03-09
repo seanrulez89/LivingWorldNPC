@@ -160,6 +160,11 @@ local function actorSummary(actor)
     appendPart(parts, "stats", protectedCall(actor, "getStats") ~= nil)
     appendPart(parts, "inventory", protectedCall(actor, "getInventory") ~= nil)
     appendPart(parts, "npc", protectedCall(actor, "getIsNPC"))
+    appendPart(parts, "ghost", protectedCall(actor, "isGhostMode"))
+    appendPart(parts, "invisible", protectedCall(actor, "isInvisible"))
+    appendPart(parts, "sceneCulled", protectedCall(actor, "isSceneCulled"))
+    appendPart(parts, "alpha", safeNumber(protectedCall(actor, "getAlpha", 0)))
+    appendPart(parts, "targetAlpha", safeNumber(protectedCall(actor, "getTargetAlpha", 0)))
     appendPart(parts, "pos", coordSummary(protectedCall(actor, "getX"), protectedCall(actor, "getY"), protectedCall(actor, "getZ")))
     appendPart(parts, "destroyed", protectedCall(actor, "isDestroyed"))
     appendPart(parts, "world", protectedCall(actor, "isExistInTheWorld"))
@@ -225,6 +230,9 @@ local function logInfo(message, record, actor, extra)
         parts[#parts + 1] = extraSummary(extra)
     end
     print(table.concat(parts, " | "))
+    if actor then
+        print("[LWN][ActorFactory] actor state :: " .. actorSummary(actor))
+    end
 end
 
 local function safeCleanupActor(actor)
@@ -550,6 +558,24 @@ function Factory.cleanupActor(actor)
     safeCleanupActor(actor)
 end
 
+local function refreshActorPresentation(actor)
+    if not actor then return end
+
+    protectedCall(actor, "setGhostMode", false)
+    protectedCall(actor, "setInvisible", false)
+    protectedCall(actor, "setSceneCulled", false)
+    protectedCall(actor, "setNPC", true)
+    protectedCall(actor, "setIsNPC", true)
+
+    local inv = protectedCall(actor, "getInventory")
+    if inv then
+        protectedCall(inv, "setDrawDirty", true)
+    end
+
+    protectedCall(actor, "resetModel")
+    protectedCall(actor, "resetModelNextFrame")
+end
+
 function Factory.applyTraits(record, actor)
     for _, traitId in ipairs(record.identity.traitIds or {}) do
         local traits = protectedCall(actor, "getTraits")
@@ -570,6 +596,7 @@ function Factory.applyLoadout(record, actor)
         or nil
 
     ensurePrimaryWeapon(actor, primaryWeapon)
+    refreshActorPresentation(actor)
 end
 
 function Factory.createActor(record, player)
@@ -629,6 +656,8 @@ function Factory.createActor(record, player)
     protectedCall(actor, "setNPC", true)
     protectedCall(actor, "setIsNPC", true)
     protectedCall(actor, "setSceneCulled", false)
+    protectedCall(actor, "setGhostMode", false)
+    protectedCall(actor, "setInvisible", false)
     protectedCall(actor, "setVisibleToNPCs", true)
     protectedCall(actor, "setForname", record.identity.firstName)
     protectedCall(actor, "setSurname", record.identity.lastName)
@@ -652,6 +681,7 @@ function Factory.createActor(record, player)
     Factory.applyTraits(record, actor)
     Factory.applyLoadout(record, actor)
     protectedCall(actor, "setHealth", record.stats and record.stats.health or 100)
+    refreshActorPresentation(actor)
 
     logInfo("created embodied npc", record, actor, {
         source = "createActor",

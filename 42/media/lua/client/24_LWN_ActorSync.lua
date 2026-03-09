@@ -112,6 +112,23 @@ local function getNpcId(actor)
     return modData and modData.LWN_NpcId or nil
 end
 
+local function enforceEmbodiedFlags(record, actor)
+    if not actor then return end
+
+    local modData = protectedCall(actor, "getModData")
+    if modData and record then
+        modData.LWN_NpcId = record.id
+    end
+
+    protectedCall(actor, "setNPC", true)
+    protectedCall(actor, "setIsNPC", true)
+    protectedCall(actor, "setSceneCulled", false)
+    protectedCall(actor, "setGhostMode", false)
+    protectedCall(actor, "setInvisible", false)
+    protectedCall(actor, "setForname", record and record.identity and record.identity.firstName or nil)
+    protectedCall(actor, "setSurname", record and record.identity and record.identity.lastName or nil)
+end
+
 local function applyTrackedStats(record, stats)
     if not stats or not stats.set then return end
 
@@ -144,20 +161,15 @@ end
 function Sync.pushRecordToActor(record, actor)
     if not actor then return end
     ensureRecordShape(record)
-
-    local modData = protectedCall(actor, "getModData")
-    if modData then
-        modData.LWN_NpcId = record.id
-    end
-
-    protectedCall(actor, "setNPC", true)
-    protectedCall(actor, "setIsNPC", true)
-    protectedCall(actor, "setSceneCulled", false)
-    protectedCall(actor, "setForname", record.identity.firstName)
-    protectedCall(actor, "setSurname", record.identity.lastName)
+    enforceEmbodiedFlags(record, actor)
 
     applyTrackedStats(record, protectedCall(actor, "getStats"))
     protectedCall(actor, "setHealth", record.stats.health or protectedCall(actor, "getHealth"))
+end
+
+function Sync.ensureEmbodiedActorState(record, actor)
+    ensureRecordShape(record)
+    enforceEmbodiedFlags(record, actor)
 end
 
 function Sync.pullActorToRecord(record, actor)

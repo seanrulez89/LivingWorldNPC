@@ -49,10 +49,10 @@ function CommandPanelWindow:createChildren()
     box:initialise()
     box:setAnchorRight(true)
     box:setAnchorBottom(true)
+    self:addChild(box)
     box:setEditable(false)
     box:setMultipleLine(true)
     box:addScrollBars()
-    self:addChild(box)
 
     self.textbox = box
     Panel.textbox = box
@@ -123,6 +123,9 @@ function Panel.renderTarget(actor)
     lines[#lines + 1] = "Arc: " .. tostring(record.storyArc and record.storyArc.type or "none")
     lines[#lines + 1] = "Memories: " .. tostring(#(record.memories or {}))
     lines[#lines + 1] = "State: " .. tostring(record.embodiment and record.embodiment.state or "unknown") .. string.format(" / CD %.2fh", cooldownLeft)
+    if record.embodiment and record.embodiment.lastFailureReason then
+        lines[#lines + 1] = "Last Embody Block: " .. tostring(record.embodiment.lastFailureReason) .. " / " .. tostring(record.embodiment.lastFailureDetail or "")
+    end
     lines[#lines + 1] = "Encounter currentEligible: " .. tostring(encounters.currentEligibleId)
     lines[#lines + 1] = "Encounter firstTriggered: " .. tostring(encounters.firstEncounterTriggered) .. string.format(" / last %.2fh", tonumber(encounters.lastEncounterHour or -9999) or -9999)
     if lastFailure then

@@ -40,6 +40,14 @@ local function autoRearmCooldownHours(record)
     return ((LWN.Config.Population and LWN.Config.Population.EncounterCooldownHours) or 2.0)
 end
 
+local function setLastFailure(record, reason, detail)
+    if not record then return end
+    record.embodiment = record.embodiment or {}
+    record.embodiment.lastFailureReason = reason
+    record.embodiment.lastFailureDetail = detail
+    record.embodiment.lastFailureHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
+end
+
 function Embody.tryRearmHidden(record, player)
     if not record or not player then return false end
     if record.embodiment.state ~= "hidden" then return false end
@@ -59,12 +67,21 @@ function Embody.tryRearmHidden(record, player)
 end
 
 function Embody.tryEmbody(record, player)
-    if record.embodiment.state ~= "eligible" then return nil end
-    if Store.countEmbodied() >= LWN.Config.Population.MaxEmbodied then return nil end
+    if record.embodiment.state ~= "eligible" then
+        setLastFailure(record, "not_eligible", tostring(record.embodiment.state))
+        return nil
+    end
+    if Store.countEmbodied() >= LWN.Config.Population.MaxEmbodied then
+        setLastFailure(record, "max_embodied", tostring(Store.countEmbodied()))
+        return nil
+    end
 
     local radius = Embody._activationRadiusFor(record)
     local d2 = dist2(player:getX(), player:getY(), record.anchor.x, record.anchor.y)
-    if d2 > radius * radius then return nil end
+    if d2 > radius * radius then
+        setLastFailure(record, "out_of_range", string.format("%.2f", math.sqrt(d2)))
+        return nil
+    end
 
     local actor = LWN.ActorFactory.createActor(record, player)
     if actor then
@@ -84,6 +101,7 @@ function Embody.tryEmbody(record, player)
             record.embodiment.actorId = nil
             record.embodiment.missingTicks = 0
             record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
+            setLastFailure(record, "initial_sync_failed", syncErr)
             return nil
         end
 
@@ -91,6 +109,8 @@ function Embody.tryEmbody(record, player)
         record.embodiment.actorId = record.id
         record.embodiment.lastSeenHour = getGameTime():getWorldAgeHours()
         record.embodiment.missingTicks = 0
+        record.embodiment.lastFailureReason = nil
+        record.embodiment.lastFailureDetail = nil
         Embody.touchGrace(record)
         Embody.registerActor(record, actor)
         if LWN.EncounterDirector and LWN.EncounterDirector.notifyEmbodied then
@@ -109,6 +129,7 @@ function Embody.tryEmbody(record, player)
     -- Avoid spamming failed instantiation every tick.
     record.embodiment.state = "hidden"
     record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
+    setLastFailure(record, "create_actor_failed", "ActorFactory returned nil")
     return nil
 end
 

@@ -49,6 +49,7 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
 - `Debug: Dump Last Actor Failure`
 
 이 메뉴는 실체화된 NPC의 생성/삭제/최근 실패 원인 확인을 인게임에서 바로 수행하기 위한 개발용 도구다.
+`Debug: Spawn NPC Near Player`는 `MaxEmbodied` 한도에 걸리면 가장 멀리 있는 기존 디버그 NPC를 정리해 새 스폰 슬롯을 확보한다.
 
 ### 6.2 최근접 NPC 덤프
 - nearest embodied NPC id
@@ -138,4 +139,5 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
 - 개발 중에는 기존 저장을 계속 재사용하지 말고 `-cachedir`로 별도 개발 프로필을 두는 편이 좋다.
 - 한 번에 여러 기능을 붙이지 말고, 위 우선순위 순서로 기능을 잠그면서 테스트한다.
 - 실체화 실패가 보이면 `console.txt`에서 `[LWN][ActorFactory] failure record`, `failure actor`, `failure descriptor` 세 줄을 먼저 확인한다.
+- NPC가 보이지 않으면 같은 구간의 `created embodied npc` 직후 `actor state` 로그에서 `ghost`, `invisible`, `sceneCulled`, `alpha`, `targetAlpha`를 함께 확인한다.
 

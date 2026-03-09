@@ -80,6 +80,50 @@ local function findActorForRecord(record)
     return nil
 end
 
+local function chooseEmbodiedDebugVictim(player)
+    if not player then return nil end
+
+    local px, py = player:getX(), player:getY()
+    local bestRecord = nil
+    local bestD2 = -1
+
+    Store.eachNPC(function(record)
+        if record.embodiment and record.embodiment.state == "embodied" and record.debugSpawnOnly then
+            local dx = (record.anchor.x or 0) - px
+            local dy = (record.anchor.y or 0) - py
+            local d2 = dx * dx + dy * dy
+            if d2 > bestD2 then
+                bestRecord = record
+                bestD2 = d2
+            end
+        end
+    end)
+
+    return bestRecord
+end
+
+local function makeRoomForDebugSpawn(player)
+    local countEmbodied = Store.countEmbodied and Store.countEmbodied() or 0
+    local maxEmbodied = LWN.Config and LWN.Config.Population and LWN.Config.Population.MaxEmbodied or 0
+    if countEmbodied < maxEmbodied then
+        return true, nil
+    end
+
+    local victim = chooseEmbodiedDebugVictim(player)
+    if not victim then
+        return false, "max_embodied_no_debug_victim"
+    end
+
+    local actor = findActorForRecord(victim)
+    if actor and LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
+        LWN.ActorFactory.cleanupActor(actor)
+    end
+    LWN.EmbodimentManager.unregisterActor(victim)
+    Store.removeNPC(victim.id)
+    print("[LWN][Debug] Freed embodied slot by removing debug NPC " .. tostring(victim.id))
+    return true, victim.id
+end
+
 function DebugTools.isEnabled()
     return ensureDebugState().devToolsEnabled == true
 end
@@ -97,6 +141,14 @@ end
 
 function DebugTools.spawnOneNearPlayer(player)
     if not player then return nil end
+
+    local roomOk, roomDetail = makeRoomForDebugSpawn(player)
+    if not roomOk then
+        sayInfo(player, string.format("Spawn blocked: %s", tostring(roomDetail)))
+        return nil
+    elseif roomDetail then
+        sayInfo(player, string.format("Freed debug slot by removing %s", tostring(roomDetail)))
+    end
 
     local id = Store.nextNpcId()
     local seed = ZombRand(1, 2147483646)
@@ -127,7 +179,9 @@ function DebugTools.spawnOneNearPlayer(player)
         if failure and failure.npcId == record.id then
             sayInfo(player, string.format("Spawn failed for %s; see console for ActorFactory failure details", record.id))
         else
-            sayInfo(player, string.format("Spawn queued but embodiment failed: %s", record.id))
+            local reason = record.embodiment and record.embodiment.lastFailureReason or "unknown"
+            local detail = record.embodiment and record.embodiment.lastFailureDetail or ""
+            sayInfo(player, string.format("Spawn blocked for %s: %s %s", record.id, tostring(reason), tostring(detail)))
         end
     end
     return record, actor
