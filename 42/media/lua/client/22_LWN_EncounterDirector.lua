@@ -52,6 +52,10 @@ function Director._scoreBlockedByCooldown(record, now)
 end
 
 function Director.score(record, player)
+    if record.debugSpawnOnly then
+        return -math.huge
+    end
+
     if record.embodiment.state ~= "hidden" and record.embodiment.state ~= "eligible" then
         return -math.huge
     end

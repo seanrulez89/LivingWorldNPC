@@ -21,6 +21,7 @@ end
 
 function Embody.tryEmbody(record, player)
     if record.embodiment.state ~= "eligible" then return nil end
+    if record.debugSpawnOnly then return nil end
     if Store.countEmbodied() >= LWN.Config.Population.MaxEmbodied then return nil end
 
     local radius = LWN.Config.Embodiment.RadiusTiles

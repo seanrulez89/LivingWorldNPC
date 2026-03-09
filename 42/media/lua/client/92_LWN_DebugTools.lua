@@ -83,19 +83,22 @@ function DebugTools.spawnOneNearPlayer(player)
     local record = LWN.Schema.newNPCRecord(id, seed)
 
     randomizeIdentity(record)
-    record.anchor.x = math.floor(player:getX()) + ZombRand(-2, 3)
-    record.anchor.y = math.floor(player:getY()) + ZombRand(-2, 3)
+    record.anchor.x = math.floor(player:getX())
+    record.anchor.y = math.floor(player:getY())
     record.anchor.z = math.floor(player:getZ())
-    record.embodiment.state = "eligible"
-    record.embodiment.cooldownUntilHour = 0
+    record.debugSpawnOnly = true
+    record.embodiment.state = "hidden"
+    record.embodiment.cooldownUntilHour = worldAgeHours() + 99999
 
     Store.addNPC(record)
-    local actor = LWN.EmbodimentManager.tryEmbody(record, player)
+
+    -- Let the normal tick pathway embody; avoids context-menu timing edge cases.
+    local actor = nil
 
     if actor then
         sayInfo(player, string.format("Spawned NPC %s", record.id))
     else
-        sayInfo(player, string.format("Spawn request queued for %s (actor not ready)", record.id))
+        sayInfo(player, string.format("Debug NPC record created (spawn locked): %s", record.id))
     end
     return record, actor
 end
