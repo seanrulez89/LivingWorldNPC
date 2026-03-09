@@ -14,6 +14,20 @@ local function dist2(ax, ay, bx, by)
     return dx * dx + dy * dy
 end
 
+local function safeMoodleLevel(player, moodleTypeKey)
+    if not player or not moodleTypeKey then return 0 end
+    if not player.getMoodleLevel then return 0 end
+    if not MoodleType or not MoodleType[moodleTypeKey] then return 0 end
+
+    local ok, level = pcall(function()
+        return player:getMoodleLevel(MoodleType[moodleTypeKey])
+    end)
+    if not ok or type(level) ~= "number" then
+        return 0
+    end
+    return level
+end
+
 function Director.cooldownHours()
     return (LWN.Config.Population and LWN.Config.Population.EncounterCooldownHours) or 2.0
 end
@@ -83,13 +97,16 @@ function Director.score(record, player)
     end
 
     if record.storyArc.type then score = score + 0.35 end
-    if record.backstory.formerProfession == "nurse" and player:getMoodleLevel(MoodleType.Injured) > 0 then
+    if record.backstory.formerProfession == "nurse" and safeMoodleLevel(player, "Injured") > 0 then
         score = score + 0.5
     end
     if record.personality.paranoia > 0.7 and getGameTime():getHour() >= 20 then
         score = score - 0.2
     end
 
+    if type(score) ~= "number" then
+        return -math.huge
+    end
     return score
 end
 

@@ -86,9 +86,25 @@ function Adapter.onCreateUI()
 end
 
 function Adapter.onCreateSurvivor(survivor)
-    local npcId = survivor:getModData().LWN_NpcId
+    if not survivor then return end
+
+    local pendingRecord = nil
+    if LWN.ActorFactory and LWN.ActorFactory.attachPendingRecord then
+        pendingRecord = LWN.ActorFactory.attachPendingRecord(survivor)
+    end
+
+    local modData = survivor:getModData()
+    local npcId = (modData and modData.LWN_NpcId) or (pendingRecord and pendingRecord.id) or nil
     if not npcId then return end
-    local record = LWN.PopulationStore.getNPC(npcId)
+
+    if LWN.ActorFactory and LWN.ActorFactory.hasRuntimeCore and not LWN.ActorFactory.hasRuntimeCore(survivor) then
+        if LWN.ActorFactory.rejectActor then
+            LWN.ActorFactory.rejectActor(survivor, "onCreateSurvivor rejected invalid runtime actor", npcId)
+        end
+        return
+    end
+
+    local record = pendingRecord or LWN.PopulationStore.getNPC(npcId)
     if record then
         LWN.ActorSync.pushRecordToActor(record, survivor)
         if record.embodiment.state == "embodied" then

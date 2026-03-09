@@ -12,48 +12,70 @@ local function callIf(obj, methodName, ...)
     return nil
 end
 
+local function protectedCall(obj, methodName, ...)
+    if not obj then return nil end
+    local fn = obj[methodName]
+    if not fn then return nil end
+
+    local ok, result = pcall(fn, obj, ...)
+    if ok then
+        return result
+    end
+    return nil
+end
+
 local function safeCleanupActor(actor)
     if not actor then return end
-    if actor.StopAllActionQueue then
-        actor:StopAllActionQueue()
-    end
-    if actor.Despawn then
-        actor:Despawn()
-        return
-    end
-    if actor.removeFromSquare then
-        actor:removeFromSquare()
-    end
-    if actor.removeFromWorld then
-        actor:removeFromWorld()
-    end
+    protectedCall(actor, "setDestroyed", true)
+    protectedCall(actor, "StopAllActionQueue")
+    protectedCall(actor, "Despawn")
+    protectedCall(actor, "removeFromSquare")
+    protectedCall(actor, "removeFromWorld")
+    protectedCall(actor, "setCurrent", nil)
+    protectedCall(actor, "setMovingSquare", nil)
 end
 
 local function hasRuntimeCore(actor)
     if not actor then return false end
 
-    local okBody = true
-    if actor.getBodyDamage then
-        okBody = actor:getBodyDamage() ~= nil
-    end
-
-    local okStats = true
-    if actor.getStats then
-        okStats = actor:getStats() ~= nil
-    end
-
-    local okInventory = true
-    if actor.getInventory then
-        okInventory = actor:getInventory() ~= nil
-    end
+    local okBody = protectedCall(actor, "getBodyDamage") ~= nil
+    local okStats = protectedCall(actor, "getStats") ~= nil
+    local okInventory = protectedCall(actor, "getInventory") ~= nil
 
     return okBody and okStats and okInventory
 end
 
-function Factory.buildDescriptor(record)
-    local desc = SurvivorFactory.CreateSurvivor()
+local function createDescriptor(record)
+    if SurvivorFactory and SurvivorFactory.CreateSurvivor and SurvivorType and SurvivorType.Neutral ~= nil then
+        local ok, desc = pcall(function()
+            return SurvivorFactory.CreateSurvivor(SurvivorType.Neutral, record.identity.female == true)
+        end)
+        if ok and desc then
+            return desc
+        end
+    end
 
-    callIf(desc, "setFemale", record.identity.female)
+    if SurvivorFactory and SurvivorFactory.CreateSurvivor then
+        local ok, desc = pcall(function()
+            return SurvivorFactory.CreateSurvivor()
+        end)
+        if ok and desc then
+            callIf(desc, "setFemale", record.identity.female == true)
+            return desc
+        end
+    end
+
+    return nil
+end
+
+function Factory.buildDescriptor(record)
+    local desc = createDescriptor(record)
+    if not desc then
+        print("[LWN][ActorFactory] buildDescriptor failed: CreateSurvivor returned nil for " .. tostring(record.id))
+        return nil
+    end
+
+    callIf(desc, "setFemale", record.identity.female == true)
     callIf(desc, "setForename", record.identity.firstName)
     callIf(desc, "setSurname", record.identity.lastName)
 
@@ -79,6 +101,28 @@ function Factory.buildDescriptor(record)
     return desc
 end
 
+function Factory.hasRuntimeCore(actor)
+    return hasRuntimeCore(actor)
+end
+
+function Factory.attachPendingRecord(survivor)
+    if not survivor then return nil end
+
+    local record = Factory._pendingRecord
+    if not record then return nil end
+
+    local modData = protectedCall(survivor, "getModData")
+    if modData then
+        modData.LWN_NpcId = record.id
+    end
+    return record
+end
+
+function Factory.rejectActor(actor, reason, npcId)
+    print("[LWN][ActorFactory] " .. tostring(reason) .. " for " .. tostring(npcId))
+    safeCleanupActor(actor)
+end
+
 function Factory.applyTraits(record, actor)
     for _, traitId in ipairs(record.identity.traitIds or {}) do
         -- Trait application is kept abstract here.
@@ -99,17 +143,44 @@ end
 
 function Factory.createActor(record)
     local desc = Factory.buildDescriptor(record)
-    local cell = getCell()
-    local actor = SurvivorFactory.InstansiateInCell(desc, cell, record.anchor.x, record.anchor.y, record.anchor.z)
+    if not desc then
+        return nil
+    end
 
+    local cell = getCell()
+    if not cell then
+        print("[LWN][ActorFactory] createActor failed: getCell() returned nil for " .. tostring(record.id))
+        return nil
+    end
+
+    local x = math.floor(record.anchor.x or 0)
+    local y = math.floor(record.anchor.y or 0)
+    local z = math.floor(record.anchor.z or 0)
+    local square = cell:getGridSquare(x, y, z)
+    if not square then
+        print("[LWN][ActorFactory] createActor skipped: target square missing for " .. tostring(record.id))
+        return nil
+    end
+
+    Factory._pendingRecord = record
+    local ok, actorOrErr = pcall(function()
+        return SurvivorFactory.InstansiateInCell(desc, cell, x, y, z)
+    end)
+    Factory._pendingRecord = nil
+
+    if not ok then
+        print("[LWN][ActorFactory] createActor failed: InstansiateInCell threw for " .. tostring(record.id) .. " :: " .. tostring(actorOrErr))
+        return nil
+    end
+
+    local actor = actorOrErr
     if not actor then
         print("[LWN][ActorFactory] createActor failed: InstansiateInCell returned nil for " .. tostring(record.id))
         return nil
     end
 
     if not hasRuntimeCore(actor) then
-        print("[LWN][ActorFactory] createActor rejected invalid runtime actor for " .. tostring(record.id))
-        safeCleanupActor(actor)
+        Factory.rejectActor(actor, "createActor rejected invalid runtime actor", record.id)
         return nil
     end
 
