@@ -68,7 +68,25 @@ function Embody.tryEmbody(record, player)
 
     local actor = LWN.ActorFactory.createActor(record, player)
     if actor then
-        LWN.ActorSync.pushRecordToActor(record, actor)
+        local ok, syncErr = pcall(LWN.ActorSync.pushRecordToActor, record, actor)
+        if not ok then
+            print(string.format("[LWN][Embodiment] initial sync failed for %s :: %s", tostring(record.id), tostring(syncErr)))
+            if LWN.ActorFactory and LWN.ActorFactory.rejectActor then
+                LWN.ActorFactory.rejectActor(actor, "tryEmbody failed during initial sync", record.id, record, nil, nil, {
+                    source = "tryEmbody",
+                    thrown = syncErr,
+                })
+            elseif LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
+                LWN.ActorFactory.cleanupActor(actor)
+            end
+
+            record.embodiment.state = "hidden"
+            record.embodiment.actorId = nil
+            record.embodiment.missingTicks = 0
+            record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
+            return nil
+        end
+
         record.embodiment.state = "embodied"
         record.embodiment.actorId = record.id
         record.embodiment.lastSeenHour = getGameTime():getWorldAgeHours()

@@ -18,6 +18,15 @@ local function isManagedActor(obj)
     return false
 end
 
+local function getNpcId(actor)
+    if not actor then return nil end
+    if LWN.ActorFactory and LWN.ActorFactory.getNpcIdFromActor then
+        return LWN.ActorFactory.getNpcIdFromActor(actor)
+    end
+    local modData = actor.getModData and actor:getModData() or nil
+    return modData and modData.LWN_NpcId or nil
+end
+
 function UIContext.findNpcActorInWorldObjects(worldObjects)
     if not worldObjects or #worldObjects == 0 then return nil end
     local square = worldObjects[1] and worldObjects[1]:getSquare() or nil
@@ -25,7 +34,7 @@ function UIContext.findNpcActorInWorldObjects(worldObjects)
 
     for i = 0, square:getMovingObjects():size() - 1 do
         local obj = square:getMovingObjects():get(i)
-        if isManagedActor(obj) and obj:getModData().LWN_NpcId then
+        if isManagedActor(obj) and getNpcId(obj) then
             return obj
         end
     end
@@ -86,8 +95,8 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
-    if actor and actor:getModData() and actor:getModData().LWN_NpcId then
-        local npcId = actor:getModData().LWN_NpcId
+    local npcId = getNpcId(actor)
+    if npcId then
         settingsSub:addOption("Debug: Delete This NPC (" .. tostring(npcId) .. ")", player, function(p)
             if LWN.DebugTools and LWN.DebugTools.deleteNpcById then
                 LWN.DebugTools.deleteNpcById(npcId, p)

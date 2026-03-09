@@ -23,6 +23,15 @@ local function isManagedActor(obj)
     return false
 end
 
+local function getNpcId(actor)
+    if not actor then return nil end
+    if LWN.ActorFactory and LWN.ActorFactory.getNpcIdFromActor then
+        return LWN.ActorFactory.getNpcIdFromActor(actor)
+    end
+    local modData = actor.getModData and actor:getModData() or nil
+    return modData and modData.LWN_NpcId or nil
+end
+
 local function updateTravelledDistance(player)
     if not player then return end
 
@@ -60,7 +69,7 @@ local function findActorNearAnchor(record)
             if square and square:getMovingObjects() then
                 for i = 0, square:getMovingObjects():size() - 1 do
                     local obj = square:getMovingObjects():get(i)
-                    if isManagedActor(obj) and obj:getModData().LWN_NpcId == record.id then
+                    if isManagedActor(obj) and getNpcId(obj) == record.id then
                         return obj
                     end
                 end
@@ -74,8 +83,7 @@ end
 local function resolveEmbodiedActor(record)
     local actor = LWN.EmbodimentManager.getActor(record)
     if actor
-        and actor:getModData()
-        and actor:getModData().LWN_NpcId == record.id
+        and getNpcId(actor) == record.id
         and (not actor.isExistInTheWorld or actor:isExistInTheWorld() ~= false)
         and (not LWN.ActorFactory or not LWN.ActorFactory.hasRuntimeCore or LWN.ActorFactory.hasRuntimeCore(actor))
     then
@@ -87,6 +95,47 @@ local function resolveEmbodiedActor(record)
         LWN.EmbodimentManager.registerActor(record, actor)
     end
     return actor
+end
+
+local function hideEmbodiedRecord(record, actor, reason, detail)
+    print(string.format("[LWN][Embodiment] hiding %s because %s :: %s", tostring(record.id), tostring(reason), tostring(detail)))
+
+    if actor and LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
+        LWN.ActorFactory.cleanupActor(actor)
+    end
+
+    local cooldownHours = ((LWN.Config.Population and LWN.Config.Population.EncounterCooldownHours) or 2.0)
+    if (record.companion and record.companion.recruited) or record.debugSpawnOnly then
+        cooldownHours = math.max((LWN.Config.Embodiment and LWN.Config.Embodiment.GraceHours) or 0.05, 0.05)
+    end
+
+    record.embodiment.state = "hidden"
+    record.embodiment.actorId = nil
+    record.embodiment.missingTicks = 0
+    record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + cooldownHours
+    LWN.EmbodimentManager.unregisterActor(record)
+end
+
+local function tickEmbodiedRecord(record, actor, player)
+    record.embodiment.missingTicks = 0
+    LWN.ActorSync.pullActorToRecord(record, actor)
+    LWN.EmbodimentManager.registerActor(record, actor)
+    LWN.GoalSystem.update(record, {})
+
+    local combatCtx = LWN.Combat.buildContext(record, actor)
+    local combatIntent = LWN.Combat.chooseIntent(record, actor, combatCtx)
+    if combatIntent then
+        LWN.ActionRuntime.enqueue(record, combatIntent)
+    else
+        local chosen = LWN.UtilityAI.choose(record, {})
+        local intent = LWN.BehaviorTree.tick(record, actor, {}, chosen)
+        if intent and not LWN.ActionRuntime.peek(record) then
+            LWN.ActionRuntime.enqueue(record, intent)
+        end
+    end
+
+    LWN.ActionRuntime.tick(record, actor)
+    LWN.EmbodimentManager.tryDespawn(record, actor, player)
 end
 
 function Adapter.onNewGame(player, square)
@@ -180,40 +229,27 @@ function Adapter.onTick()
             local actor = resolveEmbodiedActor(record)
 
             if actor then
-                record.embodiment.missingTicks = 0
-                LWN.ActorSync.pullActorToRecord(record, actor)
-                LWN.EmbodimentManager.registerActor(record, actor)
-                LWN.GoalSystem.update(record, {})
-
-                local combatCtx = LWN.Combat.buildContext(record, actor)
-                local combatIntent = LWN.Combat.chooseIntent(record, actor, combatCtx)
-                if combatIntent then
-                    LWN.ActionRuntime.enqueue(record, combatIntent)
-                else
-                    local chosen = LWN.UtilityAI.choose(record, {})
-                    local intent = LWN.BehaviorTree.tick(record, actor, {}, chosen)
-                    if intent and not LWN.ActionRuntime.peek(record) then
-                        LWN.ActionRuntime.enqueue(record, intent)
-                    end
+                local ok, err = pcall(tickEmbodiedRecord, record, actor, player)
+                if not ok then
+                    hideEmbodiedRecord(record, actor, "embodied_tick_error", err)
                 end
-
-                LWN.ActionRuntime.tick(record, actor)
-                LWN.EmbodimentManager.tryDespawn(record, actor, player)
             else
                 record.embodiment.missingTicks = (record.embodiment.missingTicks or 0) + 1
                 if record.embodiment.missingTicks >= 10 then
-                    print(string.format("[LWN][Embodiment] actor lost, hiding %s", tostring(record.id)))
-                    record.embodiment.state = "hidden"
-                    record.embodiment.actorId = nil
-                    record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + ((LWN.Config.Population and LWN.Config.Population.EncounterCooldownHours) or 2.0)
-                    LWN.EmbodimentManager.unregisterActor(record)
+                    hideEmbodiedRecord(record, nil, "actor_lost", "resolveEmbodiedActor returned nil")
                 end
             end
         end
     end)
 
+    if LWN.UIRadialMenu and LWN.UIRadialMenu.refresh then
+        LWN.UIRadialMenu:refresh()
+    end
     if LWN.UICommandPanel and LWN.UICommandPanel.refresh then
         LWN.UICommandPanel:refresh()
+    end
+    if LWN.UIDialogueWindow and LWN.UIDialogueWindow.refresh then
+        LWN.UIDialogueWindow:refresh()
     end
 end
 

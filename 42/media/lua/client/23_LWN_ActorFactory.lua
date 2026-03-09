@@ -7,7 +7,7 @@ local Store = LWN.PopulationStore
 local fallbackClothing = {
     "Base.Tshirt_WhiteTINT",
     "Base.Trousers_Denim",
-    "Base.Shoes",
+    "Base.Shoes_Random",
 }
 
 local function callIf(obj, methodName, ...)
@@ -66,7 +66,12 @@ end
 
 local function isManagedActor(obj)
     if not obj then return false end
-    return getNpcIdFromActor(obj) ~= nil
+    if getNpcIdFromActor(obj) == nil then return false end
+    if protectedCall(obj, "isDestroyed") == true then return false end
+    if protectedCall(obj, "isExistInTheWorld") == false then return false end
+    return protectedCall(obj, "getBodyDamage") ~= nil
+        and protectedCall(obj, "getStats") ~= nil
+        and protectedCall(obj, "getInventory") ~= nil
 end
 
 local function squareSummary(square)

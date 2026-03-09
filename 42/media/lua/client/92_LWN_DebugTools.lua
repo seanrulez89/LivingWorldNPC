@@ -27,6 +27,15 @@ local function isManagedActor(obj)
     return false
 end
 
+local function getNpcId(actor)
+    if not actor then return nil end
+    if LWN.ActorFactory and LWN.ActorFactory.getNpcIdFromActor then
+        return LWN.ActorFactory.getNpcIdFromActor(actor)
+    end
+    local modData = actor.getModData and actor:getModData() or nil
+    return modData and modData.LWN_NpcId or nil
+end
+
 local function randomizeIdentity(record)
     local female = ZombRand(0, 2) == 0
     record.identity.female = female
@@ -41,7 +50,7 @@ end
 
 local function findActorForRecord(record)
     local actor = LWN.EmbodimentManager.getActor(record)
-    if actor and actor:getModData() and actor:getModData().LWN_NpcId == record.id then
+    if actor and getNpcId(actor) == record.id then
         return actor
     end
 
@@ -59,7 +68,7 @@ local function findActorForRecord(record)
             if square and square:getMovingObjects() then
                 for i = 0, square:getMovingObjects():size() - 1 do
                     local obj = square:getMovingObjects():get(i)
-                    if isManagedActor(obj) and obj:getModData().LWN_NpcId == record.id then
+                    if isManagedActor(obj) and getNpcId(obj) == record.id then
                         LWN.EmbodimentManager.registerActor(record, obj)
                         return obj
                     end
@@ -149,6 +158,16 @@ function DebugTools.deleteNpcById(npcId, player)
             LWN.ActorFactory.cleanupActor(actor)
         end
         LWN.EmbodimentManager.unregisterActor(record)
+    end
+
+    if LWN.UICommandPanel and LWN.UICommandPanel.target and getNpcId(LWN.UICommandPanel.target) == npcId then
+        LWN.UICommandPanel.hide()
+    end
+    if LWN.UIDialogueWindow and LWN.UIDialogueWindow.target and getNpcId(LWN.UIDialogueWindow.target) == npcId then
+        LWN.UIDialogueWindow.hide()
+    end
+    if LWN.UIRadialMenu and LWN.UIRadialMenu.target and getNpcId(LWN.UIRadialMenu.target) == npcId then
+        LWN.UIRadialMenu.hide()
     end
 
     Store.removeNPC(npcId)
