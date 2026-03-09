@@ -1,0 +1,15 @@
+LWN_EN = {
+    LWN_UI_CommandPanel_Title = "NPC Status",
+    LWN_UI_DialogueWindow_Title = "Conversation",
+    LWN_UI_Context_Root = "Living NPC",
+    LWN_UI_Context_Talk = "Talk",
+    LWN_UI_Context_Quick = "Quick Command",
+    LWN_UI_Context_Panel = "Open Panel",
+    LWN_Dialogue_Refuse_Hunger_Weary = "I'm too hungry for that right now.",
+    LWN_Dialogue_Accept_Follow = "Alright. I'll follow.",
+    LWN_Dialogue_Suggest_Rest = "We should rest soon.",
+    LWN_Halo_Trust_Up = "Trust ↑",
+    LWN_Halo_Trust_Down = "Trust ↓",
+    LWN_Legacy_Title = "Continue the Story?",
+    LWN_Legacy_Text = "Your survivor is gone. Continue as a trusted companion?",
+}

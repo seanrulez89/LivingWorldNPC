@@ -1,0 +1,15 @@
+LWN_KO = {
+    LWN_UI_CommandPanel_Title = "NPC 상태",
+    LWN_UI_DialogueWindow_Title = "대화",
+    LWN_UI_Context_Root = "생존자 NPC",
+    LWN_UI_Context_Talk = "대화하기",
+    LWN_UI_Context_Quick = "빠른 명령",
+    LWN_UI_Context_Panel = "상태 패널 열기",
+    LWN_Dialogue_Refuse_Hunger_Weary = "지금은 너무 배가 고파.",
+    LWN_Dialogue_Accept_Follow = "알겠어. 따라갈게.",
+    LWN_Dialogue_Suggest_Rest = "곧 쉬는 게 좋겠어.",
+    LWN_Halo_Trust_Up = "신뢰 ↑",
+    LWN_Halo_Trust_Down = "신뢰 ↓",
+    LWN_Legacy_Title = "이야기를 이어가겠습니까?",
+    LWN_Legacy_Text = "당신의 생존자는 죽었습니다. 믿을 수 있는 동료로 이어하시겠습니까?",
+}
