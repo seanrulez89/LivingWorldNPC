@@ -99,7 +99,9 @@ function Adapter.onCreateSurvivor(survivor)
 
     if LWN.ActorFactory and LWN.ActorFactory.hasRuntimeCore and not LWN.ActorFactory.hasRuntimeCore(survivor) then
         if LWN.ActorFactory.rejectActor then
-            LWN.ActorFactory.rejectActor(survivor, "onCreateSurvivor rejected invalid runtime actor", npcId)
+            LWN.ActorFactory.rejectActor(survivor, "onCreateSurvivor rejected invalid runtime actor", npcId, pendingRecord, nil, nil, {
+                source = "onCreateSurvivor",
+            })
         end
         return
     end

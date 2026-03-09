@@ -2,6 +2,7 @@ LWN = LWN or {}
 LWN.ActorFactory = LWN.ActorFactory or {}
 
 local Factory = LWN.ActorFactory
+local Store = LWN.PopulationStore
 
 local function callIf(obj, methodName, ...)
     if not obj then return nil end
@@ -22,6 +23,154 @@ local function protectedCall(obj, methodName, ...)
         return result
     end
     return nil
+end
+
+local function safeText(value)
+    if value == nil then return "nil" end
+    local text = tostring(value)
+    text = text:gsub("[\r\n|]", " ")
+    return text
+end
+
+local function safeNumber(value)
+    if type(value) ~= "number" then
+        return safeText(value)
+    end
+    return string.format("%.2f", value)
+end
+
+local function appendPart(parts, key, value)
+    parts[#parts + 1] = tostring(key) .. "=" .. safeText(value)
+end
+
+local function coordSummary(x, y, z)
+    return safeNumber(x) .. "," .. safeNumber(y) .. "," .. safeNumber(z)
+end
+
+local function squareSummary(square)
+    if not square then return "square=nil" end
+
+    local parts = {}
+    appendPart(parts, "square", coordSummary(protectedCall(square, "getX"), protectedCall(square, "getY"), protectedCall(square, "getZ")))
+
+    local zone = protectedCall(square, "getZone")
+    if zone and zone.getType then
+        appendPart(parts, "zone", protectedCall(zone, "getType"))
+    end
+
+    local room = protectedCall(square, "getRoom")
+    if room and room.getName then
+        appendPart(parts, "room", protectedCall(room, "getName"))
+    end
+
+    local building = room and protectedCall(room, "getBuilding") or nil
+    appendPart(parts, "building", building ~= nil)
+    return table.concat(parts, " | ")
+end
+
+local function descriptorSummary(desc, descriptorMode)
+    if not desc then
+        return "descriptor=nil"
+    end
+
+    local parts = {}
+    appendPart(parts, "descriptorMode", descriptorMode)
+    appendPart(parts, "female", protectedCall(desc, "isFemale"))
+    appendPart(parts, "forename", protectedCall(desc, "getForename"))
+    appendPart(parts, "surname", protectedCall(desc, "getSurname"))
+    appendPart(parts, "profession", protectedCall(desc, "getProfession"))
+    return table.concat(parts, " | ")
+end
+
+local function recordSummary(record)
+    if not record then
+        return "record=nil"
+    end
+
+    local identity = record.identity or {}
+    local backstory = record.backstory or {}
+    local anchor = record.anchor or {}
+    local embodiment = record.embodiment or {}
+    local companion = record.companion or {}
+    local storyArc = record.storyArc or {}
+    local stats = record.stats or {}
+
+    local parts = {}
+    appendPart(parts, "id", record.id)
+    appendPart(parts, "name", safeText(identity.firstName) .. " " .. safeText(identity.lastName))
+    appendPart(parts, "female", identity.female == true)
+    appendPart(parts, "profession", identity.profession)
+    appendPart(parts, "formerProfession", backstory.formerProfession)
+    appendPart(parts, "anchor", coordSummary(anchor.x, anchor.y, anchor.z))
+    appendPart(parts, "state", embodiment.state)
+    appendPart(parts, "cooldownUntil", safeNumber(embodiment.cooldownUntilHour))
+    appendPart(parts, "debugSpawnOnly", record.debugSpawnOnly == true)
+    appendPart(parts, "recruited", companion.recruited == true)
+    appendPart(parts, "story", storyArc.type)
+    appendPart(parts, "traits", #(identity.traitIds or {}))
+    appendPart(parts, "hunger", safeNumber(stats.hunger))
+    appendPart(parts, "thirst", safeNumber(stats.thirst))
+    appendPart(parts, "fatigue", safeNumber(stats.fatigue))
+    return table.concat(parts, " | ")
+end
+
+local function actorSummary(actor)
+    if not actor then
+        return "actor=nil"
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    local square = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
+    local parts = {}
+    appendPart(parts, "object", protectedCall(actor, "getObjectName"))
+    appendPart(parts, "npcId", modData and modData.LWN_NpcId or nil)
+    appendPart(parts, "body", protectedCall(actor, "getBodyDamage") ~= nil)
+    appendPart(parts, "stats", protectedCall(actor, "getStats") ~= nil)
+    appendPart(parts, "inventory", protectedCall(actor, "getInventory") ~= nil)
+    appendPart(parts, "pos", coordSummary(protectedCall(actor, "getX"), protectedCall(actor, "getY"), protectedCall(actor, "getZ")))
+    appendPart(parts, "destroyed", protectedCall(actor, "isDestroyed"))
+    appendPart(parts, "world", protectedCall(actor, "isExistInTheWorld"))
+    appendPart(parts, "square", squareSummary(square))
+    return table.concat(parts, " | ")
+end
+
+local function extraSummary(extra)
+    if not extra then return "extra=nil" end
+
+    local parts = {}
+    appendPart(parts, "source", extra.source)
+    appendPart(parts, "detail", extra.detail)
+    appendPart(parts, "thrown", extra.thrown)
+    if extra.square then
+        appendPart(parts, "targetSquare", squareSummary(extra.square))
+    end
+    return table.concat(parts, " | ")
+end
+
+local function rememberFailure(snapshot)
+    Factory._lastFailure = snapshot
+    if Store and Store.debugState then
+        Store.debugState().lastActorFailure = snapshot
+    end
+end
+
+local function logFailure(reason, record, actor, descriptor, descriptorMode, extra)
+    local snapshot = {
+        reason = reason,
+        npcId = record and record.id or (extra and extra.npcId) or nil,
+        worldAgeHours = getGameTime() and getGameTime():getWorldAgeHours() or nil,
+        record = recordSummary(record),
+        actor = actorSummary(actor),
+        descriptor = descriptorSummary(descriptor, descriptorMode),
+        extra = extraSummary(extra),
+    }
+
+    rememberFailure(snapshot)
+
+    print("[LWN][ActorFactory] " .. safeText(reason) .. " for " .. safeText(snapshot.npcId))
+    print("[LWN][ActorFactory] failure record :: " .. snapshot.record)
+    print("[LWN][ActorFactory] failure actor :: " .. snapshot.actor)
+    print("[LWN][ActorFactory] failure descriptor :: hour=" .. safeNumber(snapshot.worldAgeHours) .. " | " .. snapshot.descriptor .. " | " .. snapshot.extra)
 end
 
 local function safeCleanupActor(actor)
@@ -51,7 +200,7 @@ local function createDescriptor(record)
             return SurvivorFactory.CreateSurvivor(SurvivorType.Neutral, record.identity.female == true)
         end)
         if ok and desc then
-            return desc
+            return desc, "neutral"
         end
     end
 
@@ -61,18 +210,18 @@ local function createDescriptor(record)
         end)
         if ok and desc then
             callIf(desc, "setFemale", record.identity.female == true)
-            return desc
+            return desc, "default"
         end
     end
 
-    return nil
+    return nil, "unavailable"
 end
 
 function Factory.buildDescriptor(record)
-    local desc = createDescriptor(record)
+    local desc, descriptorMode = createDescriptor(record)
     if not desc then
-        print("[LWN][ActorFactory] buildDescriptor failed: CreateSurvivor returned nil for " .. tostring(record.id))
-        return nil
+        logFailure("buildDescriptor failed: CreateSurvivor returned nil", record, nil, nil, descriptorMode, { source = "buildDescriptor" })
+        return nil, descriptorMode
     end
 
     callIf(desc, "setFemale", record.identity.female == true)
@@ -98,7 +247,7 @@ function Factory.buildDescriptor(record)
     callIf(desc, "setTemper", record.personality.impulsiveness)
     callIf(desc, "setLoner", 1.0 - record.personality.sociability)
 
-    return desc
+    return desc, descriptorMode
 end
 
 function Factory.hasRuntimeCore(actor)
@@ -118,8 +267,15 @@ function Factory.attachPendingRecord(survivor)
     return record
 end
 
-function Factory.rejectActor(actor, reason, npcId)
-    print("[LWN][ActorFactory] " .. tostring(reason) .. " for " .. tostring(npcId))
+function Factory.rejectActor(actor, reason, npcId, record, descriptor, descriptorMode, extra)
+    local failureRecord = record
+    if not failureRecord and Store and Store.getNPC and npcId then
+        failureRecord = Store.getNPC(npcId)
+    end
+
+    local failureExtra = extra or {}
+    failureExtra.npcId = npcId
+    logFailure(reason, failureRecord, actor, descriptor, descriptorMode, failureExtra)
     safeCleanupActor(actor)
 end
 
@@ -142,14 +298,14 @@ function Factory.applyLoadout(record, actor)
 end
 
 function Factory.createActor(record)
-    local desc = Factory.buildDescriptor(record)
+    local desc, descriptorMode = Factory.buildDescriptor(record)
     if not desc then
         return nil
     end
 
     local cell = getCell()
     if not cell then
-        print("[LWN][ActorFactory] createActor failed: getCell() returned nil for " .. tostring(record.id))
+        logFailure("createActor failed: getCell() returned nil", record, nil, desc, descriptorMode, { source = "createActor" })
         return nil
     end
 
@@ -158,7 +314,10 @@ function Factory.createActor(record)
     local z = math.floor(record.anchor.z or 0)
     local square = cell:getGridSquare(x, y, z)
     if not square then
-        print("[LWN][ActorFactory] createActor skipped: target square missing for " .. tostring(record.id))
+        logFailure("createActor skipped: target square missing", record, nil, desc, descriptorMode, {
+            source = "createActor",
+            detail = coordSummary(x, y, z),
+        })
         return nil
     end
 
@@ -169,18 +328,28 @@ function Factory.createActor(record)
     Factory._pendingRecord = nil
 
     if not ok then
-        print("[LWN][ActorFactory] createActor failed: InstansiateInCell threw for " .. tostring(record.id) .. " :: " .. tostring(actorOrErr))
+        logFailure("createActor failed: InstansiateInCell threw", record, nil, desc, descriptorMode, {
+            source = "createActor",
+            thrown = actorOrErr,
+            square = square,
+        })
         return nil
     end
 
     local actor = actorOrErr
     if not actor then
-        print("[LWN][ActorFactory] createActor failed: InstansiateInCell returned nil for " .. tostring(record.id))
+        logFailure("createActor failed: InstansiateInCell returned nil", record, nil, desc, descriptorMode, {
+            source = "createActor",
+            square = square,
+        })
         return nil
     end
 
     if not hasRuntimeCore(actor) then
-        Factory.rejectActor(actor, "createActor rejected invalid runtime actor", record.id)
+        Factory.rejectActor(actor, "createActor rejected invalid runtime actor", record.id, record, desc, descriptorMode, {
+            source = "createActor",
+            square = square,
+        })
         return nil
     end
 
