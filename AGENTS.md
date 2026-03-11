@@ -30,7 +30,12 @@
 - Before proposing a large rewrite, summarize the affected modules.
 
 ## Commands
-- Validate mod structure: `pwsh -File ./scripts/validate-mod-structure.ps1`
+- Validate mod structure (Windows/PowerShell path): `pwsh -File ./scripts/validate-mod-structure.ps1`
+- Validate current WSL working tree: `./scripts/validate-wsl.sh`
 - Open latest Project Zomboid console log: `pwsh -File ./scripts/read-console.ps1`
 - Wipe this mod's test data from the current cache dir: `pwsh -File ./scripts/wipe-lwn-data.ps1`
 - Create a local zip artifact: `pwsh -File ./scripts/zip-local-release.ps1`
+
+## WSL validation preference
+- When working inside WSL, prefer `./scripts/validate-wsl.sh` before falling back to PowerShell tooling.
+- Use PowerShell validation scripts as secondary helpers, not the default validation path.

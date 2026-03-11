@@ -94,3 +94,12 @@ Date: 2026-03-11
   - Bandits는 world entity + visual rebuild에 강한 근거를 준다.
   - BanditsCreator는 preview actor 예시라서 world embodiment 근거로 오용하면 위험하다.
   - PZNS는 manager/context menu/template 구조는 참고 가치가 높지만 Build 41 save/load, ghost-mode unload, OnRenderTick AI는 Build 42 LWN에 그대로 가져오면 위험하다.
+
+## 작업 플로우 고정 메모
+- WSL에서는 PowerShell 검증보다 `./scripts/validate-wsl.sh`를 기본 검증 경로로 사용한다.
+- 메인 저장소에서는 `reference_mods/` 원본 스냅샷을 추적하지 않고, 분석 문서만 유지한다.
+- 아직 남은 핵심 작업:
+  - 인게임 재테스트 + `EmbodimentTrace` 로그 수집
+  - Stage 3 최소 패치의 가설 판정
+  - 그 결과에 따라 다음 최소 패치 방향 결정
+  - `lua5.4`/`luac5.4` 설치 후 Lua 문법 검사 활성화
