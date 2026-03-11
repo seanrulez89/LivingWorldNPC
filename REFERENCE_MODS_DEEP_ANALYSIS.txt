@@ -1,0 +1,359 @@
+REFERENCE MODS DEEP ANALYSIS
+Project: LivingWorldNPC
+Date: 2026-03-11
+
+Overview
+- 대상 모드:
+  - reference_mods/3268487204 -> Bandits
+  - reference_mods/3403180543 -> BanditsWeekOne
+  - reference_mods/3469292499 -> BanditsCreator
+- 분석 목적:
+  - Project Zomboid Build 42 환경에서 "인간형 NPC 비슷한 존재"를 어떻게 구현/표현/상호작용시키는지 구조적으로 파악
+  - LivingWorldNPC가 취해야 할 안정적인 구현 방향을 추출
+
+================================================================================
+1. Bandits (3268487204)
+================================================================================
+
+1-1. 파일 계층 구조
+- client/
+  - BanditUpdate.lua
+  - BanditZombie.lua
+  - BanditMenu.lua
+  - BanditPlayer.lua
+  - BanditSquareLoader.lua
+  - BanditEventMarkers.lua / Handler
+  - ModPatches/*
+  - ISUI/*
+- server/
+  - BanditServerSpawner.lua
+  - BanditServerSync.lua
+  - BanditServerPlayers.lua
+  - BanditServerCommands.lua
+  - BanditServerCustom.lua
+- shared/
+  - Bandit.lua
+  - BanditBrain.lua
+  - BanditPrograms.lua
+  - BanditCompatibility.lua
+  - BanditCustom.lua
+  - BanditGMD.lua
+  - BanditUtils.lua
+  - BanditWeapons.lua
+  - BanditLoot.lua
+  - BanditBases/*
+  - ZombieActions/*
+  - ZombiePrograms/*
+
+1-2. 핵심 진입점과 역할
+- BanditUpdate.lua
+  - 실제 세계 안의 bandit 엔티티를 프레임/틱 단위로 갱신하는 중심 루프
+  - AI 판단 결과를 행동 실행으로 연결
+- BanditZombie.lua
+  - 핵심 구현 포인트
+  - 인간형 NPC를 새 엔진 엔티티로 직접 만들기보다, 이미 월드에 안정적으로 존재하는 zombie를 "banditized" 해서 사용
+  - `Banditize(zombie, brain)`에서 brain 탑재, animation 변수, 손 장비 변수, hit reaction 우회, emitter 정리 등을 수행
+- Bandit.lua
+  - 외형, 장비, 음성, 전문성, 비주얼 데미지, 아이템 부착 등 공통 조립 계층
+- BanditBrain.lua
+  - bandit 개체의 canonical runtime state
+  - `modData.brain` 저장, task 존재 여부, 탄약/보급 필요 여부 등 상태 조회 담당
+- BanditPrograms.lua
+  - task 생성 계층
+  - 상위 프로그램이 행동 의도를 결정하면 task 배열을 만든다
+- ZombieActions/*
+  - task 해석기
+  - Move, GoTo, Shoot, TimeItem, Equip, Sleep 같은 세부 행동을 실제 엔진 호출로 번역
+- ZombiePrograms/*
+  - 상위 행위 정책
+  - Bandit, Companion, Guard, Looter 같은 archetype별 의사결정 로직
+- BanditServerSpawner.lua / BanditServerSync.lua
+  - 스폰과 동기화 담당
+  - MP 대응 때문에 서버가 authoritative
+
+1-3. 내부 관계
+- 상위 계층:
+  - BanditUpdate -> ZombiePrograms/* -> BanditPrograms -> ZombieActions/*
+- 상태 계층:
+  - BanditBrain <-> zombie:getModData().brain
+- 시각/장비 계층:
+  - Bandit.lua -> BanditCompatibility / BanditWeapons / BanditUtils
+- 월드 배치 계층:
+  - BanditBases/* -> 절차적 배치와 scene 세트 정의
+- 디버그/상호작용 계층:
+  - BanditMenu -> context menu -> program 전환, debug inspection, spawn command
+
+1-4. 구조적 특징
+- "새 인간 NPC 엔진을 만들지 않는다"
+  - 안정적으로 월드에 존재하고 pathfinding/animation/event를 이미 타는 zombie를 기반으로 바꿈
+- canonical state는 brain/modData에 존재
+- 행동은 task/action 단위로 잘게 쪼개짐
+- 외형/장비/행동/거점/상황 정의가 파일 단위로 분리됨
+- compatibility layer를 별도 파일로 두어 버전/모드 차이를 격리
+
+1-5. 시사점
+- LWN의 "ModData canonical, embodied actor는 cache" 방향은 맞다
+- 단, embodied actor는 반드시 엔진이 정상 추적하는 월드 엔티티여야 한다
+- task/action 해석기를 분리한 구조는 유지 가치가 높다
+- Context menu도 "월드에 실제 존재하는 엔티티"를 기준으로 붙여야 안정적이다
+
+================================================================================
+2. BanditsWeekOne (3403180543)
+================================================================================
+
+2-1. 파일 계층 구조
+- client/
+  - BWOScheduler.lua
+  - BWOAmbience.lua
+  - BWOClimate.lua
+  - BWOEffects.lua
+  - BWORadio.lua
+  - BWOVehicles.lua
+  - BWOSquareLoader.lua
+  - BWOMenu.lua
+- shared/
+  - BWOEvents.lua
+  - BWOEventsPlace.lua
+  - BWOPrograms.lua
+  - BWORoomPrograms.lua
+  - BWORoutes.lua
+  - BWORooms.lua
+  - BWOBuildings.lua
+  - BWOBandit.lua
+  - BWOBanditCreator.lua
+  - Variants/*
+  - ZombiePrograms/WeekOne/*
+  - ZombieClans/*
+- server/
+  - BWOClientCommands.lua
+  - BWOVehicleFunctions.lua
+
+2-2. Bandits와의 관계
+- mod.info에서 `require=Bandits2`
+- 즉, Bandits 본체가 제공하는 bandit brain/action/program/runtime 위에
+  - 시간표 기반 월드 이벤트
+  - 장소/상황별 변형
+  - 분위기/라디오/음향/기후
+  - civilian/riot/police/army 시나리오
+  를 얹는 확장층이다
+
+2-3. 핵심 진입점과 역할
+- BWOScheduler.lua
+  - 전체 시나리오 컨트롤 타워
+  - world age 계산, variant schedule 로딩, sandbox 값 조정, 이벤트 큐 삽입
+- BWOEvents.lua
+  - 실제 이벤트 로직
+  - 폭발, 공중 폭격, 감염 증상 단계별 효과, NPC 반응 패턴 등
+- BWOEventsPlace.lua
+  - 특정 좌표/장소에 월드 오브젝트, 차량, emitter, clan 스폰을 배치
+  - `sendClientCommand(... 'Spawner', 'Clan', args)`로 본체 Bandits 스포너를 호출
+- BWOBandit.lua / BWOBanditCreator.lua
+  - room/zone/variant 조건으로 bandit data를 조립
+- BWOPrograms.lua / BWORoomPrograms.lua
+  - world mood와 local room semantics를 task 생성으로 변환
+- Variants/*
+  - 시나리오 데이터 모듈
+  - original, barricaded, plane, prison 등 variant별 setup/schedule 보유
+
+2-4. 내부 관계
+- BWOScheduler -> BWOVariants[*].schedule / setup
+- schedule -> BWOEvents / BWOEventsPlace
+- BWOEventsPlace -> Spawner commands -> Bandits 본체
+- BWOPrograms / BWORoomPrograms -> Bandits task/action 계층 재사용
+- BWOObjects / BWORooms / BWORoutes -> world semantics 제공
+
+2-5. 구조적 특징
+- "엔티티 구현"보다 "세계 상태와 상황 연출"에 집중
+- 상위 오케스트레이션 레이어가 매우 강함
+- variant, room, route, event placement가 데이터성 모듈로 분리
+- engine 침습 패치도 존재하지만, 핵심 시나리오 로직은 독립 모듈화가 잘 되어 있음
+
+2-6. 시사점
+- LWN는 행동 AI만으로 충분하지 않고, encounter/scene/schedule 계층이 필요하다
+- 오프스크린 NPC 시뮬레이션에는 room/building/route 의미 계층이 중요하다
+- 시각 효과와 상호작용 문제는 entity runtime과 UI가 안정화된 뒤 얹어야 한다
+- 현재 LWN는 반대로 "세계 연출 전에 엔티티 월드 등록"이 먼저 해결돼야 한다
+
+================================================================================
+3. BanditsCreator (3469292499)
+================================================================================
+
+3-1. 파일 계층 구조
+- client/
+  - BCMenu.lua
+  - OptionScreens/BanditClansMain.lua
+  - OptionScreens/BanditClanMain.lua
+  - OptionScreens/BanditCreationMain.lua
+  - OptionScreens/BanditCreationAvatar.lua
+  - OptionScreens/BanditMainScreen.lua
+  - OptionScreens/BanditItemsListTable.lua
+- shared/
+  - Translate/EN/UI.json
+
+3-2. 핵심 진입점
+- BCMenu.lua
+  - 월드 컨텍스트 메뉴나 메인 UI에서 creator를 여는 진입점
+- BanditCreationMain.lua
+  - 이름, 성별, 피부, 헤어, 장비, stats 등을 편집
+  - 내부적으로 `IsoPlayer.new(...)`를 사용하지만 "월드 엔티티"로 쓰지 않고 preview model로만 사용
+- BanditCreationAvatar.lua
+  - ISUI3DModel에 캐릭터를 연결해 시각 프리뷰 제공
+- BanditMainScreen.lua / BanditClanMain.lua
+  - 생성된 bandit preset/클랜 목록을 보여주고 편집기로 이동
+
+3-3. 구조적 특징
+- preview model은 `setInvisible(true)` / `setGhostMode(true)` / `setNPC(true)` 상태여도 문제 없다
+- 이유는 월드 상호작용용 엔티티가 아니라 UI 3D 모델 소스로만 쓰기 때문
+- 즉, "IsoPlayer를 만들었다"는 사실 자체가 곧 "월드에 보이는 NPC가 생겼다"를 뜻하지 않는다
+
+3-4. 시사점
+- LivingWorldNPC의 현재 구현이 `IsoPlayer.new(...)`만으로 충분하다고 가정했다면 그 가정은 틀릴 수 있다
+- preview actor와 world actor를 구분해야 한다
+- BanditsCreator는 editor/preview 용도로는 좋은 참고지만, 월드 embodiment 구현의 직접 답은 아니다
+
+================================================================================
+4. 세 모드 전체를 관통하는 구조적 결론
+================================================================================
+
+4-1. 엔티티 안정성 우선순위
+- Bandits 본체는 월드 안정성이 검증된 zombie 기반 runtime을 택한다
+- BanditsCreator는 IsoPlayer를 쓰지만 world entity가 아니라 UI preview로만 쓴다
+- 결론:
+  - "NPC가 보이고 클릭된다" 문제는 엔진이 world actor로 인식하느냐의 문제다
+  - 단순히 descriptor, clothes, hand item을 채우는 것만으로 해결되지 않는다
+
+4-2. 상태와 표현의 분리
+- canonical state:
+  - Bandits -> brain/modData
+  - LWN -> PopulationStore/record
+- embodied presentation:
+  - Bandits -> banditized zombie
+  - LWN -> embodied IsoPlayer cache
+- 결론:
+  - 상태/표현 분리는 맞지만, 표현 객체는 실제 월드 등록이 필수다
+
+4-3. 상호작용은 월드 탐색에 달려 있다
+- BanditMenu는 clicked square와 인접 square를 적극적으로 탐색해 bandit zombie를 찾는다
+- 현재 LWN context menu는 `worldObjects[1]:getSquare()` 한 칸만 보는 단순 구조였다
+- 결론:
+  - 우클릭 상호작용은 더 넓은 square/moving object 탐색이 필요하다
+
+4-4. 계층화된 설계
+- Bandits:
+  - state
+  - high-level program
+  - task builder
+  - action executor
+- WeekOne:
+  - scenario scheduler
+  - event placer
+  - variant data
+- Creator:
+  - editor UI
+  - preview renderer
+- 결론:
+  - LWN는 현재 state/AI/UI는 있으나 embodied runtime registration layer가 약했다
+
+================================================================================
+5. LivingWorldNPC에 대한 직접 적용 포인트
+================================================================================
+
+5-1. 바로 적용해야 하는 것
+- embodied actor 생성 후 반드시 월드 등록 보장
+- actor가 cache에만 있고 world=false 상태로 남지 않도록 재보정 함수 필요
+- context menu에서 클릭 square 인접칸까지 managed actor 탐색
+
+5-2. 유지해야 하는 것
+- canonical NPC state를 PopulationStore/ModData 쪽에 두는 현재 아키텍처
+- GoalSystem / UtilityAI / BehaviorTree / ActionRuntime 분리
+- debug tooling 유지
+
+5-3. 장기 개선 포인트
+- companion/follower형 NPC는 우선 "가시성과 상호작용"이 확보된 embodiment를 기준으로 안정화
+- scene/schedule/variant 계층은 WeekOne 식으로 별도 모듈로 추가
+- preview/editor는 BanditsCreator처럼 UI 전용 actor를 별도 관리
+
+================================================================================
+6. 현재 문제에 대한 직접 진단
+================================================================================
+
+Updated observation from 2026-03-11 console + code
+- 현재 LWN 콘솔에는 embodied 직후 아래가 기록된다
+  - `world=true`
+  - `ghost=false`
+  - `invisible=false`
+  - `sceneCulled=false`
+  - `alpha=1.00`
+- 즉, 적어도 지금 시점의 핵심 실패는 "엔티티가 월드에 없어서 안 보인다" 하나로 설명되지 않는다
+- 남은 핵심 후보는 "월드 엔티티는 존재하지만 HumanVisual / worn item / model manager 경로가 실제 메시를 만들지 못한다" 쪽이다
+
+Reference-code evidence
+- Bandits 본체:
+  - zombie를 월드 엔티티로 두고 `Bandit.ApplyVisuals()`에서
+    - `getHumanVisual()`
+    - `getItemVisuals()`
+    - `getWornItems():clear()`
+    - `setFemaleEtc(...)`
+    - `resetModelNextFrame()`
+    - `resetModel()`
+    를 강하게 묶어 호출한다
+- BanditsCreator:
+  - preview용 `IsoPlayer.new(...)` 직후
+    - `setFemale(...)`
+    - `getHumanVisual():setSkinTextureIndex(...)`
+    - `setWornItem(...)`
+    를 직접 호출한다
+  - 즉, descriptor만 넘겨두고 끝내지 않는다
+
+Current conclusion
+- 1차 문제:
+  - cleanup 타이밍 문제로 인한 currentSquare/NPE 위험은 별도 수정 대상이었다
+- 2차 문제:
+  - createActor 이후 world registration은 필요조건일 뿐 충분조건이 아니다
+- 3차 문제:
+  - 시각적 실체화에는
+    - descriptor -> actor dressup
+    - actor gender / body visual seed
+    - worn item 반영
+    - model manager reset
+    가 함께 필요할 가능성이 높다
+- 4차 문제:
+  - context menu actor 탐색 범위가 좁으면 "안 보이는 것처럼" 느껴지는 상호작용 실패가 겹칠 수 있다
+
+Recommended implementation direction
+- ActorFactory:
+  - createActor 후 `Dressup(desc)` / `InitSpriteParts(desc)` / `setFemale(...)` / `onWornItemsChanged()` / `resetModel*()` 보강
+  - 가능하면 `ModelManager.instance:Add/Reset/ResetNextFrame`까지 호출해 실제 렌더 경로를 강제로 깨운다
+  - `actor visuals` 로그에 `skin`, `hair`, `beard`, `itemVisuals`, `wornItems`, `persistentOutfitId`를 남긴다
+- EventAdapter:
+  - embodied actor cached reference 재사용 시에도 visual refresh 경로를 재호출할 수 있게 유지
+- UIContextMenu:
+  - clicked square 1칸만 보지 말고 인접 square의 moving objects까지 탐색
+
+Official API / blog grounding used for this pass
+- Project Zomboid official modding docs:
+  - ILuaGameCharacter `Dressup(SurvivorDesc)`
+  - ModelManager `Add`, `ContainsChar`, `Reset`, `ResetNextFrame`
+- Project Zomboid official blog/update note:
+  - Build 42 unstable branch announcement (2024-02-22 기준 공개)
+  - Build 42는 아직 공식 human NPC gameplay framework를 모더에게 완성형으로 제공하지 않는 상태로 읽는 편이 안전하다
+
+================================================================================
+7. 최종 요약
+================================================================================
+
+Bandits가 주는 핵심 교훈
+- 인간형 NPC 흉내의 본질은 "모델 생성"이 아니라 "엔진이 안정적으로 업데이트하는 월드 엔티티 확보"다
+
+BanditsWeekOne이 주는 핵심 교훈
+- 안정적인 entity runtime 위에 schedule/event/variant를 얹어야 세계가 살아난다
+
+BanditsCreator가 주는 핵심 교훈
+- preview actor와 world actor는 엄격히 분리해야 한다
+
+LivingWorldNPC 적용 결론
+- 이번 수정의 우선순위는 AI sophistication이 아니라
+  - world registration
+  - visibility
+  - context interaction
+  의 복구다
