@@ -102,4 +102,5 @@ Date: 2026-03-11
   - 인게임 재테스트 + `EmbodimentTrace` 로그 수집
   - Stage 3 최소 패치의 가설 판정
   - 그 결과에 따라 다음 최소 패치 방향 결정
-  - `lua5.4`/`luac5.4` 설치 후 Lua 문법 검사 활성화
+- 환경 업데이트:
+  - WSL에 `lua`/`luac`가 설치되어, 이제 `./scripts/validate-wsl.sh`에서 변경된 Lua 파일 문법 검사가 가능하다.
