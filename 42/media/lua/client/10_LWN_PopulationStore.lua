@@ -1,6 +1,8 @@
 LWN = LWN or {}
 LWN.PopulationStore = LWN.PopulationStore or {}
 
+-- Thin ModData-backed persistence layer. Other modules should keep canonical NPC
+-- state here instead of treating embodied actors as authoritative.
 local Store = LWN.PopulationStore
 
 function Store.root()
@@ -84,6 +86,20 @@ function Store.addWorldEvent(event)
     table.insert(root.worldStory.pendingEvents, event)
 end
 
+function Store.addWorldClue(clue)
+    local root = Store.root()
+    root.worldStory.clues = root.worldStory.clues or {}
+
+    for _, existing in ipairs(root.worldStory.clues) do
+        if existing.npcId == clue.npcId and existing.kind == clue.kind and existing.text == clue.text then
+            return existing
+        end
+    end
+
+    table.insert(root.worldStory.clues, clue)
+    return clue
+end
+
 function Store.setLegacyCandidates(candidates)
     Store.root().legacy.candidates = candidates or {}
 end
@@ -105,6 +121,18 @@ function Store.getEmbodiedMeta(npcId)
     local root = Store.root()
     root.embodied = root.embodied or {}
     return root.embodied[npcId]
+end
+
+function Store.resetRoot()
+    local fresh = LWN.Schema.newRoot()
+    local root = ModData.getOrCreate(LWN.Config.ModDataTag)
+    for key in pairs(root) do
+        root[key] = nil
+    end
+    for key, value in pairs(fresh) do
+        root[key] = value
+    end
+    return root
 end
 function Store.removeNPC(id)
     local root = Store.root()

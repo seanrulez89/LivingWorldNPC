@@ -1,6 +1,8 @@
 LWN = LWN or {}
 LWN.WorldStory = LWN.WorldStory or {}
 
+-- Light-weight off-screen story pulse. It only mutates canonical records and
+-- clue/event tables so the embodiment layer stays presentation-only.
 local Story = LWN.WorldStory
 local Store = LWN.PopulationStore
 

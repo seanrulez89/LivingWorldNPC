@@ -48,6 +48,12 @@ local function setLastFailure(record, reason, detail)
     record.embodiment.lastFailureHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
 end
 
+local function traceStage(stage, record, actor, extra)
+    if LWN.ActorFactory and LWN.ActorFactory.debugStage then
+        LWN.ActorFactory.debugStage("EmbodimentManager", stage, record, actor, protectedCall(actor, "getDescriptor"), extra)
+    end
+end
+
 function Embody.tryRearmHidden(record, player)
     if not record or not player then return false end
     if record.embodiment.state ~= "hidden" then return false end
@@ -62,6 +68,10 @@ function Embody.tryRearmHidden(record, player)
     if d2 > radius * radius then return false end
 
     record.embodiment.state = "eligible"
+    traceStage("tryRearmHidden.eligible", record, nil, {
+        source = "tryRearmHidden",
+        detail = string.format("radius=%.2f distance=%.2f", radius, math.sqrt(d2)),
+    })
     print(string.format("[LWN][Embodiment] rearmed hidden npc %s", tostring(record.id)))
     return true
 end
@@ -69,10 +79,18 @@ end
 function Embody.tryEmbody(record, player)
     if record.embodiment.state ~= "eligible" then
         setLastFailure(record, "not_eligible", tostring(record.embodiment.state))
+        traceStage("tryEmbody.not_eligible", record, nil, {
+            source = "tryEmbody",
+            detail = tostring(record.embodiment.state),
+        })
         return nil
     end
     if Store.countEmbodied() >= LWN.Config.Population.MaxEmbodied then
         setLastFailure(record, "max_embodied", tostring(Store.countEmbodied()))
+        traceStage("tryEmbody.max_embodied", record, nil, {
+            source = "tryEmbody",
+            detail = tostring(Store.countEmbodied()),
+        })
         return nil
     end
 
@@ -80,17 +98,30 @@ function Embody.tryEmbody(record, player)
     local d2 = dist2(player:getX(), player:getY(), record.anchor.x, record.anchor.y)
     if d2 > radius * radius then
         setLastFailure(record, "out_of_range", string.format("%.2f", math.sqrt(d2)))
+        traceStage("tryEmbody.out_of_range", record, nil, {
+            source = "tryEmbody",
+            detail = string.format("radius=%.2f distance=%.2f", radius, math.sqrt(d2)),
+        })
         return nil
     end
 
+    traceStage("tryEmbody.start", record, nil, {
+        source = "tryEmbody",
+        detail = string.format("radius=%.2f distance=%.2f", radius, math.sqrt(d2)),
+    })
+
     local actor = LWN.ActorFactory.createActor(record, player)
     if actor then
+        traceStage("tryEmbody.actor_created", record, actor, {
+            source = "tryEmbody",
+        })
         local ok, syncErr = pcall(LWN.ActorSync.pushRecordToActor, record, actor)
         if not ok then
             print(string.format("[LWN][Embodiment] initial sync failed for %s :: %s", tostring(record.id), tostring(syncErr)))
             if LWN.ActorFactory and LWN.ActorFactory.rejectActor then
                 LWN.ActorFactory.rejectActor(actor, "tryEmbody failed during initial sync", record.id, record, nil, nil, {
                     source = "tryEmbody",
+                    stage = "tryEmbody.initial_sync_failed",
                     thrown = syncErr,
                 })
             elseif LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
@@ -102,8 +133,16 @@ function Embody.tryEmbody(record, player)
             record.embodiment.missingTicks = 0
             record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
             setLastFailure(record, "initial_sync_failed", syncErr)
+            traceStage("tryEmbody.initial_sync_failed", record, actor, {
+                source = "tryEmbody",
+                detail = syncErr,
+            })
             return nil
         end
+
+        traceStage("tryEmbody.initial_sync_ok", record, actor, {
+            source = "tryEmbody",
+        })
 
         record.embodiment.state = "embodied"
         record.embodiment.actorId = record.id
@@ -113,6 +152,10 @@ function Embody.tryEmbody(record, player)
         record.embodiment.lastFailureDetail = nil
         Embody.touchGrace(record)
         Embody.registerActor(record, actor)
+        traceStage("tryEmbody.embodied", record, actor, {
+            source = "tryEmbody",
+            detail = string.format("graceUntil=%.2f", tonumber(record.embodiment.graceUntilHour or 0) or 0),
+        })
         if LWN.EncounterDirector and LWN.EncounterDirector.notifyEmbodied then
             LWN.EncounterDirector.notifyEmbodied(record)
         end
@@ -130,6 +173,10 @@ function Embody.tryEmbody(record, player)
     record.embodiment.state = "hidden"
     record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
     setLastFailure(record, "create_actor_failed", "ActorFactory returned nil")
+    traceStage("tryEmbody.create_actor_failed", record, nil, {
+        source = "tryEmbody",
+        detail = "ActorFactory returned nil",
+    })
     return nil
 end
 
@@ -148,6 +195,10 @@ function Embody.tryDespawn(record, actor, player)
     local d2 = dist2(player:getX(), player:getY(), actor:getX(), actor:getY())
     if d2 < radius * radius then return false end
 
+    traceStage("tryDespawn.start", record, actor, {
+        source = "tryDespawn",
+        detail = string.format("radius=%.2f distance=%.2f", radius, math.sqrt(d2)),
+    })
     LWN.ActorSync.pullActorToRecord(record, actor)
     Store.setEmbodiedMeta(record.id, {
         state = "embodied",
@@ -169,6 +220,10 @@ function Embody.tryDespawn(record, actor, player)
     record.embodiment.missingTicks = 0
     record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
     Embody.unregisterActor(record)
+    traceStage("tryDespawn.hidden", record, actor, {
+        source = "tryDespawn",
+        detail = string.format("cooldownUntil=%.2f", tonumber(record.embodiment.cooldownUntilHour or 0) or 0),
+    })
     print(string.format("[LWN][Embodiment] despawned %s", tostring(record.id)))
     return true
 end

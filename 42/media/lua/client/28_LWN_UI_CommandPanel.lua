@@ -4,6 +4,7 @@ require "ISUI/ISTextEntryBox"
 LWN = LWN or {}
 LWN.UICommandPanel = LWN.UICommandPanel or {}
 
+-- Read-only status window for the currently targeted embodied NPC.
 local Panel = LWN.UICommandPanel
 Panel.window = nil
 Panel.textbox = nil
@@ -119,8 +120,10 @@ function Panel.renderTarget(actor)
         tonumber(record.stats and record.stats.panic or 0) or 0
     )
     lines[#lines + 1] = "Goal: " .. tostring(record.goals and record.goals.longTerm and record.goals.longTerm.kind or "idle")
+    lines[#lines + 1] = "Intent: " .. tostring(record.goals and record.goals.currentIntent or "none")
     lines[#lines + 1] = "Squad Role: " .. tostring(record.companion and record.companion.squadRole or "none")
     lines[#lines + 1] = "Arc: " .. tostring(record.storyArc and record.storyArc.type or "none")
+    lines[#lines + 1] = "Clues: " .. tostring(record.storyArc and record.storyArc.clueCount or 0)
     lines[#lines + 1] = "Memories: " .. tostring(#(record.memories or {}))
     lines[#lines + 1] = "State: " .. tostring(record.embodiment and record.embodiment.state or "unknown") .. string.format(" / CD %.2fh", cooldownLeft)
     if record.embodiment and record.embodiment.lastFailureReason then

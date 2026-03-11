@@ -1,6 +1,8 @@
 LWN = LWN or {}
 LWN.UIContextMenu = LWN.UIContextMenu or {}
 
+-- World-object context entry point. We intentionally scan nearby squares because
+-- a clicked tile often isn't the actor's exact moving-object square.
 local UIContext = LWN.UIContextMenu
 
 local function getPlayerByNum(playerNum)
@@ -29,16 +31,67 @@ end
 
 function UIContext.findNpcActorInWorldObjects(worldObjects)
     if not worldObjects or #worldObjects == 0 then return nil end
-    local square = worldObjects[1] and worldObjects[1]:getSquare() or nil
-    if not square then return nil end
+    local cell = getCell and getCell() or nil
+    if not cell then return nil end
 
-    for i = 0, square:getMovingObjects():size() - 1 do
-        local obj = square:getMovingObjects():get(i)
+    local candidateSquares = {}
+    local seenSquares = {}
+    local originSquare = nil
+
+    for i = 1, #worldObjects do
+        local obj = worldObjects[i]
         if isManagedActor(obj) and getNpcId(obj) then
             return obj
         end
+
+        local square = obj and obj.getSquare and obj:getSquare() or nil
+        if square then
+            originSquare = originSquare or square
+            local key = tostring(square:getX()) .. ":" .. tostring(square:getY()) .. ":" .. tostring(square:getZ())
+            if not seenSquares[key] then
+                seenSquares[key] = true
+                candidateSquares[#candidateSquares + 1] = square
+            end
+        end
     end
-    return nil
+
+    originSquare = originSquare or candidateSquares[1]
+    if not originSquare then return nil end
+
+    local ox = originSquare:getX()
+    local oy = originSquare:getY()
+    local oz = originSquare:getZ()
+    local bestActor = nil
+    local bestD2 = math.huge
+
+    local function scanSquare(square)
+        if not square or not square.getMovingObjects then return end
+        local movingObjects = square:getMovingObjects()
+        if not movingObjects then return end
+
+        for i = 0, movingObjects:size() - 1 do
+            local obj = movingObjects:get(i)
+            if isManagedActor(obj) and getNpcId(obj) then
+                local dx = (obj:getX() or square:getX()) - ox
+                local dy = (obj:getY() or square:getY()) - oy
+                local d2 = dx * dx + dy * dy
+                if d2 < bestD2 then
+                    bestActor = obj
+                    bestD2 = d2
+                end
+            end
+        end
+    end
+
+    for _, square in ipairs(candidateSquares) do
+        for dy = -1, 1 do
+            for dx = -1, 1 do
+                scanSquare(cell:getGridSquare(square:getX() + dx, square:getY() + dy, square:getZ()))
+            end
+        end
+    end
+
+    return bestActor
 end
 
 local function addNpcInteractionSubmenu(context, actor)
@@ -95,8 +148,43 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
+    settingsSub:addOption("Debug: Dump Nearest NPC Summary", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.dumpNearestNpcSummary then
+            LWN.DebugTools.dumpNearestNpcSummary(p)
+        end
+    end)
+
+    settingsSub:addOption("Debug: Wipe Data + Reseed", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.wipeAndReseed then
+            LWN.DebugTools.wipeAndReseed(p)
+        end
+    end)
+
+    settingsSub:addOption("Debug: Boost Nearest NPC Trust", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.adjustNearestRelationship then
+            LWN.DebugTools.adjustNearestRelationship(p, "trust", 0.20)
+        end
+    end)
+
+    settingsSub:addOption("Debug: Shared Food Beat (Nearest)", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.applyStoryBeat then
+            LWN.DebugTools.applyStoryBeat(p, "shared_food")
+        end
+    end)
+
+    settingsSub:addOption("Debug: Force Legacy Candidate (Nearest)", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.forceLegacyCandidate then
+            LWN.DebugTools.forceLegacyCandidate(p)
+        end
+    end)
+
     local npcId = getNpcId(actor)
     if npcId then
+        settingsSub:addOption("Debug: Dump This NPC (" .. tostring(npcId) .. ")", player, function(p)
+            if LWN.DebugTools and LWN.DebugTools.dumpNpcById then
+                LWN.DebugTools.dumpNpcById(npcId, p)
+            end
+        end)
         settingsSub:addOption("Debug: Delete This NPC (" .. tostring(npcId) .. ")", player, function(p)
             if LWN.DebugTools and LWN.DebugTools.deleteNpcById then
                 LWN.DebugTools.deleteNpcById(npcId, p)

@@ -1,6 +1,7 @@
 LWN = LWN or {}
 LWN.ActorSync = LWN.ActorSync or {}
 
+-- Keeps engine-facing actor stats aligned with canonical record state.
 local Sync = LWN.ActorSync
 
 local trackedMoodles = {
@@ -120,11 +121,15 @@ local function enforceEmbodiedFlags(record, actor)
         modData.LWN_NpcId = record.id
     end
 
+    local female = record and record.identity and record.identity.female == true
+    protectedCall(actor, "setFemale", female)
+    protectedCall(actor, "setFemaleEtc", female)
     protectedCall(actor, "setNPC", true)
     protectedCall(actor, "setIsNPC", true)
     protectedCall(actor, "setSceneCulled", false)
     protectedCall(actor, "setGhostMode", false)
     protectedCall(actor, "setInvisible", false)
+    protectedCall(actor, "setVisibleToNPCs", true)
     protectedCall(actor, "setForname", record and record.identity and record.identity.firstName or nil)
     protectedCall(actor, "setSurname", record and record.identity and record.identity.lastName or nil)
 end

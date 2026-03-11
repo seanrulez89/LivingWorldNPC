@@ -1,7 +1,27 @@
 LWN = LWN or {}
 LWN.EventAdapter = LWN.EventAdapter or {}
 
+-- Central event bridge. It owns world tick orchestration but delegates actual
+-- state changes to specialized modules so hook wiring stays isolated here.
 local Adapter = LWN.EventAdapter
+
+local function protectedCall(obj, methodName, ...)
+    if not obj then return nil end
+    local fn = obj[methodName]
+    if not fn then return nil end
+
+    local ok, result = pcall(fn, obj, ...)
+    if ok then
+        return result
+    end
+    return nil
+end
+
+local function traceStage(stage, record, actor, extra)
+    if LWN.ActorFactory and LWN.ActorFactory.debugStage then
+        LWN.ActorFactory.debugStage("EventAdapter", stage, record, actor, protectedCall(actor, "getDescriptor"), extra)
+    end
+end
 
 local function getPlayerSafe()
     return getPlayer and getPlayer() or nil
@@ -80,8 +100,33 @@ local function findActorNearAnchor(record)
     return nil
 end
 
+local function getAnchorSquare(record)
+    local cell = getCell and getCell() or nil
+    if not cell or not record then return nil end
+
+    local meta = LWN.PopulationStore.getEmbodiedMeta(record.id)
+    local cx = math.floor((meta and meta.x) or record.anchor.x or 0)
+    local cy = math.floor((meta and meta.y) or record.anchor.y or 0)
+    local cz = math.floor((meta and meta.z) or record.anchor.z or 0)
+    return cell:getGridSquare(cx, cy, cz)
+end
+
 local function resolveEmbodiedActor(record)
     local actor = LWN.EmbodimentManager.getActor(record)
+    if actor and LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
+        local hadWorld = protectedCall(actor, "isExistInTheWorld")
+        local hadSquare = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
+        LWN.ActorFactory.ensureActorInWorld(actor, getAnchorSquare(record))
+        local hasWorld = protectedCall(actor, "isExistInTheWorld")
+        local hasSquare = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
+        if hadWorld ~= true or not hadSquare then
+            traceStage("resolveEmbodiedActor.repaired_cached", record, actor, {
+                source = "resolveEmbodiedActor",
+                square = getAnchorSquare(record),
+                detail = string.format("hadWorld=%s hasWorld=%s", tostring(hadWorld), tostring(hasWorld)),
+            })
+        end
+    end
     if actor
         and getNpcId(actor) == record.id
         and (not actor.isExistInTheWorld or actor:isExistInTheWorld() ~= false)
@@ -93,11 +138,19 @@ local function resolveEmbodiedActor(record)
     actor = findActorNearAnchor(record)
     if actor then
         LWN.EmbodimentManager.registerActor(record, actor)
+        traceStage("resolveEmbodiedActor.relinked_near_anchor", record, actor, {
+            source = "resolveEmbodiedActor",
+            square = getAnchorSquare(record),
+        })
     end
     return actor
 end
 
 local function hideEmbodiedRecord(record, actor, reason, detail)
+    traceStage("hideEmbodiedRecord.start", record, actor, {
+        source = "hideEmbodiedRecord",
+        detail = tostring(reason) .. ":" .. tostring(detail),
+    })
     print(string.format("[LWN][Embodiment] hiding %s because %s :: %s", tostring(record.id), tostring(reason), tostring(detail)))
 
     if actor and LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
@@ -114,6 +167,10 @@ local function hideEmbodiedRecord(record, actor, reason, detail)
     record.embodiment.missingTicks = 0
     record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + cooldownHours
     LWN.EmbodimentManager.unregisterActor(record)
+    traceStage("hideEmbodiedRecord.hidden", record, actor, {
+        source = "hideEmbodiedRecord",
+        detail = string.format("reason=%s cooldownUntil=%.2f", tostring(reason), tonumber(record.embodiment.cooldownUntilHour or 0) or 0),
+    })
 end
 
 local function tickEmbodiedRecord(record, actor, player)
@@ -162,10 +219,20 @@ function Adapter.onCreateSurvivor(survivor)
     local npcId = (modData and modData.LWN_NpcId) or (pendingRecord and pendingRecord.id) or nil
     if not npcId then return end
 
+    traceStage("onCreateSurvivor.attached", pendingRecord, survivor, {
+        source = "onCreateSurvivor",
+        npcId = npcId,
+    })
+
     if LWN.ActorFactory and LWN.ActorFactory.hasRuntimeCore and not LWN.ActorFactory.hasRuntimeCore(survivor) then
+        traceStage("onCreateSurvivor.invalid_runtime", pendingRecord, survivor, {
+            source = "onCreateSurvivor",
+            npcId = npcId,
+        })
         if LWN.ActorFactory.rejectActor then
             LWN.ActorFactory.rejectActor(survivor, "onCreateSurvivor rejected invalid runtime actor", npcId, pendingRecord, nil, nil, {
                 source = "onCreateSurvivor",
+                stage = "onCreateSurvivor.invalid_runtime",
             })
         end
         return
@@ -173,9 +240,29 @@ function Adapter.onCreateSurvivor(survivor)
 
     local record = pendingRecord or LWN.PopulationStore.getNPC(npcId)
     if record then
+        if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
+            LWN.ActorFactory.ensureActorInWorld(survivor, getAnchorSquare(record))
+        end
+        traceStage("onCreateSurvivor.world_ready", record, survivor, {
+            source = "onCreateSurvivor",
+            square = getAnchorSquare(record),
+        })
+        if LWN.ActorFactory and LWN.ActorFactory.refreshEmbodiedPresentation then
+            LWN.ActorFactory.refreshEmbodiedPresentation(record, survivor, survivor:getDescriptor())
+        end
+        traceStage("onCreateSurvivor.presentation_refreshed", record, survivor, {
+            source = "onCreateSurvivor",
+            square = getAnchorSquare(record),
+        })
         LWN.ActorSync.pushRecordToActor(record, survivor)
+        traceStage("onCreateSurvivor.synced", record, survivor, {
+            source = "onCreateSurvivor",
+        })
         if record.embodiment.state == "embodied" then
             LWN.EmbodimentManager.registerActor(record, survivor)
+            traceStage("onCreateSurvivor.registered", record, survivor, {
+                source = "onCreateSurvivor",
+            })
         end
     end
 end
@@ -206,7 +293,21 @@ function Adapter.onEveryOneMinute()
 end
 
 function Adapter.onEveryTenMinutes()
-    -- Reserved for heavier off-screen simulation and world-story pulses.
+    LWN.PopulationStore.eachNPC(function(record)
+        local clue = LWN.WorldStory.maybeCreateClue(record)
+        if clue then
+            LWN.PopulationStore.addWorldClue(clue)
+            LWN.PopulationStore.addWorldEvent({
+                kind = "story_clue_created",
+                npcId = clue.npcId,
+                x = clue.x,
+                y = clue.y,
+                z = clue.z,
+                text = clue.text,
+            })
+            print(string.format("[LWN][WorldStory] created clue for %s", tostring(clue.npcId)))
+        end
+    end)
 end
 
 function Adapter.onTick()
@@ -238,7 +339,17 @@ function Adapter.onTick()
                 end
             else
                 record.embodiment.missingTicks = (record.embodiment.missingTicks or 0) + 1
+                if record.embodiment.missingTicks == 1 then
+                    traceStage("onTick.actor_missing", record, nil, {
+                        source = "onTick",
+                        detail = "missingTicks=1",
+                    })
+                end
                 if record.embodiment.missingTicks >= 10 then
+                    traceStage("onTick.actor_missing_threshold", record, nil, {
+                        source = "onTick",
+                        detail = "missingTicks=" .. tostring(record.embodiment.missingTicks),
+                    })
                     hideEmbodiedRecord(record, nil, "actor_lost", "resolveEmbodiedActor returned nil")
                 end
             end
@@ -264,6 +375,9 @@ function Adapter.bind()
     Events.OnPlayerDeath.Add(Adapter.onPlayerDeath)
     Events.OnFillWorldObjectContextMenu.Add(LWN.UIContextMenu.onFillWorldObjectContextMenu)
     Events.OnCustomUIKeyPressed.Add(LWN.UIRadialMenu.onCustomUIKeyPressed)
+    if LWN.DebugTools and LWN.DebugTools.onKeyPressed then
+        Events.OnKeyPressed.Add(LWN.DebugTools.onKeyPressed)
+    end
     Events.EveryOneMinute.Add(Adapter.onEveryOneMinute)
     Events.EveryTenMinutes.Add(Adapter.onEveryTenMinutes)
     Events.OnTick.Add(Adapter.onTick)

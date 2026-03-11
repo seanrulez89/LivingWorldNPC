@@ -1,6 +1,8 @@
 LWN = LWN or {}
 LWN.DebugTools = LWN.DebugTools or {}
 
+-- Development-only helpers. They should stay available in debug builds because
+-- most embodiment failures are easiest to diagnose from live saves.
 local DebugTools = LWN.DebugTools
 local Store = LWN.PopulationStore
 
@@ -10,6 +12,15 @@ end
 
 local function ensureDebugState()
     return Store.debugState()
+end
+
+local function clamp(value, minValue, maxValue)
+    if type(value) ~= "number" then
+        value = minValue
+    end
+    if value < minValue then value = minValue end
+    if value > maxValue then value = maxValue end
+    return value
 end
 
 local function sayInfo(player, text)
@@ -100,6 +111,128 @@ local function chooseEmbodiedDebugVictim(player)
     end)
 
     return bestRecord
+end
+
+local function findNearestRecord(player)
+    if not player then return nil, nil end
+
+    local px, py = player:getX(), player:getY()
+    local bestRecord = nil
+    local bestD2 = math.huge
+
+    Store.eachNPC(function(record)
+        local ax = record.anchor and record.anchor.x or 0
+        local ay = record.anchor and record.anchor.y or 0
+        local dx = ax - px
+        local dy = ay - py
+        local d2 = dx * dx + dy * dy
+        if d2 < bestD2 then
+            bestRecord = record
+            bestD2 = d2
+        end
+    end)
+
+    return bestRecord, bestD2
+end
+
+local function relationshipValue(record, key)
+    local rel = record.relationshipToPlayer or {}
+    return tonumber(rel[key] or 0) or 0
+end
+
+local function actorDebugLine(actor)
+    if not actor then
+        return "actor=nil"
+    end
+
+    return string.format(
+        "actor=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f",
+        tostring(actor:getObjectName()),
+        tostring(actor.isExistInTheWorld and actor:isExistInTheWorld() or nil),
+        tostring(actor.isGhostMode and actor:isGhostMode() or nil),
+        tostring(actor.isInvisible and actor:isInvisible() or nil),
+        tostring(actor.isSceneCulled and actor:isSceneCulled() or nil),
+        tonumber(actor:getX() or 0) or 0,
+        tonumber(actor:getY() or 0) or 0,
+        tonumber(actor:getZ() or 0) or 0
+    )
+end
+
+local function dumpRecordSummary(record, actor, player)
+    if not record then
+        sayInfo(player, "No NPC record to dump")
+        return false
+    end
+
+    local currentIntent = record.goals and record.goals.currentIntent or nil
+    local currentPlan = record.goals and record.goals.currentPlan or {}
+    local summary = string.format(
+        "NPC %s %s state=%s goal=%s intent=%s",
+        tostring(record.id),
+        tostring(record.identity and record.identity.firstName or "Unknown"),
+        tostring(record.embodiment and record.embodiment.state or "unknown"),
+        tostring(record.goals and record.goals.longTerm and record.goals.longTerm.kind or "idle"),
+        tostring(currentIntent or "none")
+    )
+
+    sayInfo(player, summary)
+    print("[LWN][Debug] npc summary :: " .. summary)
+    print(string.format(
+        "[LWN][Debug] npc relations :: trust=%.2f respect=%.2f fear=%.2f resentment=%.2f loyaltyShift=%.2f",
+        relationshipValue(record, "trust"),
+        relationshipValue(record, "respect"),
+        relationshipValue(record, "fear"),
+        relationshipValue(record, "resentment"),
+        relationshipValue(record, "loyaltyShift")
+    ))
+    print(string.format(
+        "[LWN][Debug] npc stats :: hunger=%.2f thirst=%.2f fatigue=%.2f panic=%.2f health=%.2f role=%s story=%s clueCount=%s memories=%d",
+        tonumber(record.stats and record.stats.hunger or 0) or 0,
+        tonumber(record.stats and record.stats.thirst or 0) or 0,
+        tonumber(record.stats and record.stats.fatigue or 0) or 0,
+        tonumber(record.stats and record.stats.panic or 0) or 0,
+        tonumber(record.stats and record.stats.health or 0) or 0,
+        tostring(record.companion and record.companion.squadRole or "none"),
+        tostring(record.storyArc and record.storyArc.type or "none"),
+        tostring(record.storyArc and record.storyArc.clueCount or 0),
+        #(record.memories or {})
+    ))
+    print("[LWN][Debug] npc actionQueue :: " .. table.concat(currentPlan, ","))
+    print("[LWN][Debug] npc actor :: " .. actorDebugLine(actor))
+    return true
+end
+
+local function tweakRelationshipField(record, field, delta)
+    record.relationshipToPlayer = record.relationshipToPlayer or {}
+    local rel = record.relationshipToPlayer
+
+    if field == "trust" and LWN.Social and LWN.Social.adjustTrust then
+        LWN.Social.adjustTrust(record, delta, "debug_trust")
+        return rel.trust
+    end
+    if field == "resentment" and LWN.Social and LWN.Social.adjustResentment then
+        LWN.Social.adjustResentment(record, delta, "debug_resentment")
+        return rel.resentment
+    end
+
+    local minValue, maxValue = -1, 1
+    if field == "fear" then
+        minValue, maxValue = 0, 1.5
+    elseif field == "respect" or field == "attachment" or field == "debt" then
+        minValue, maxValue = -1, 1.5
+    elseif field == "loyaltyShift" then
+        minValue, maxValue = -1.5, 1.5
+    end
+
+    rel[field] = clamp((rel[field] or 0) + delta, minValue, maxValue)
+    return rel[field]
+end
+
+local function sayActorLine(record, line)
+    local actor = findActorForRecord(record)
+    if actor and actor.Say then
+        actor:Say(line)
+    end
 end
 
 local function makeRoomForDebugSpawn(player)
@@ -201,6 +334,140 @@ function DebugTools.dumpLastActorFailure(player)
     return true
 end
 
+function DebugTools.dumpNearestNpcSummary(player)
+    local record = findNearestRecord(player)
+    if not record then
+        sayInfo(player, "No NPCs found")
+        return false
+    end
+
+    return dumpRecordSummary(record, findActorForRecord(record), player)
+end
+
+function DebugTools.dumpNpcById(npcId, player)
+    if not npcId then return false end
+    local record = Store.getNPC(npcId)
+    if not record then
+        sayInfo(player, string.format("Unknown NPC %s", tostring(npcId)))
+        return false
+    end
+
+    return dumpRecordSummary(record, findActorForRecord(record), player)
+end
+
+function DebugTools.adjustNearestRelationship(player, field, delta)
+    local record = findNearestRecord(player)
+    if not record then
+        sayInfo(player, "No NPCs found")
+        return false
+    end
+
+    local value = tweakRelationshipField(record, field, delta)
+    sayInfo(player, string.format("%s %s %.2f", tostring(record.id), tostring(field), tonumber(value or 0) or 0))
+    return true, record
+end
+
+function DebugTools.applyStoryBeat(player, beat)
+    local record = findNearestRecord(player)
+    if not record then
+        sayInfo(player, "No NPCs found")
+        return false
+    end
+
+    record.drama = record.drama or {}
+    if beat == "shared_food" then
+        tweakRelationshipField(record, "trust", 0.20)
+        tweakRelationshipField(record, "resentment", -0.10)
+        record.stats.hunger = clamp((record.stats.hunger or 0) - 0.15, 0, 1)
+        LWN.Memory.add(record, "shared_food", 0.45, { debug = true })
+        sayActorLine(record, "That helped. Thanks.")
+    elseif beat == "rescued_me" then
+        tweakRelationshipField(record, "trust", 0.30)
+        tweakRelationshipField(record, "fear", -0.10)
+        LWN.Memory.add(record, "rescued_me", 0.60, { debug = true })
+        sayActorLine(record, "You pulled me out of that.")
+    elseif beat == "promise_broken" then
+        tweakRelationshipField(record, "resentment", 0.25)
+        record.drama.promiseBroken = true
+        LWN.Memory.add(record, "promise_broken", 0.55, { debug = true })
+        sayActorLine(record, "You said we'd do this together.")
+    elseif beat == "theft_suspected" then
+        tweakRelationshipField(record, "resentment", 0.20)
+        record.drama.suspectsTheft = true
+        LWN.Memory.add(record, "theft_suspected", 0.40, { debug = true })
+        sayActorLine(record, "Something is missing.")
+    elseif beat == "jealousy" then
+        tweakRelationshipField(record, "resentment", 0.15)
+        record.drama.jealousy = true
+        LWN.Memory.add(record, "jealousy", 0.35, { debug = true })
+        sayActorLine(record, "You trust them more than me.")
+    else
+        sayInfo(player, string.format("Unknown story beat %s", tostring(beat)))
+        return false
+    end
+
+    sayInfo(player, string.format("Applied beat %s to %s", tostring(beat), tostring(record.id)))
+    return true, record
+end
+
+function DebugTools.forceLegacyCandidate(player)
+    local record = findNearestRecord(player)
+    if not record then
+        sayInfo(player, "No NPCs found")
+        return false
+    end
+
+    record.companion = record.companion or {}
+    record.companion.recruited = true
+    record.companion.canContinueAsLegacy = true
+    record.companion.squadRole = record.companion.squadRole or "companion"
+    record.relationshipToPlayer = record.relationshipToPlayer or {}
+    record.relationshipToPlayer.trust = math.max(record.relationshipToPlayer.trust or 0, LWN.Config.Legacy.MinTrust)
+    Store.setLegacyCandidates(LWN.Legacy.collectCandidates())
+    sayInfo(player, string.format("Forced legacy candidate %s", tostring(record.id)))
+    return true, record
+end
+
+function DebugTools.wipeAndReseed(player)
+    local records = {}
+    Store.eachNPC(function(record)
+        records[#records + 1] = record
+    end)
+
+    for _, record in ipairs(records) do
+        local actor = findActorForRecord(record)
+        if actor and LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
+            LWN.ActorFactory.cleanupActor(actor)
+        end
+    end
+
+    if LWN.ActionRuntime then
+        LWN.ActionRuntime.Queues = {}
+    end
+    if LWN.EmbodimentManager then
+        LWN.EmbodimentManager._actors = {}
+    end
+
+    if ModData and ModData.remove then
+        pcall(ModData.remove, LWN.Config.ModDataTag)
+    end
+    Store.resetRoot()
+
+    if LWN.EventAdapter then
+        LWN.EventAdapter._lastPlayerPos = nil
+    end
+
+    if player and LWN.PopulationSeeder and LWN.PopulationSeeder.seedNewWorld then
+        LWN.PopulationSeeder.seedNewWorld(player, player:getSquare())
+    end
+    if LWN.WorldStory and LWN.WorldStory.seed then
+        LWN.WorldStory.seed()
+    end
+
+    sayInfo(player, "Wiped LWN data and reseeded current save")
+    return true
+end
+
 function DebugTools.deleteNpcById(npcId, player)
     if not npcId then return false end
     local record = Store.getNPC(npcId)
@@ -248,4 +515,29 @@ function DebugTools.deleteNearestNpc(player)
 
     if not bestId then return false end
     return DebugTools.deleteNpcById(bestId, player)
+end
+
+function DebugTools.onKeyPressed(key)
+    if not key or not Keyboard then return end
+
+    local player = getPlayer and getPlayer() or nil
+    if key == Keyboard.KEY_F3 then
+        local after = DebugTools.toggleEnabled()
+        sayInfo(player, after and "LWN debug on" or "LWN debug off")
+        return
+    end
+
+    if not DebugTools.isEnabled() then return end
+
+    if key == Keyboard.KEY_F4 then
+        DebugTools.spawnOneNearPlayer(player)
+    elseif key == Keyboard.KEY_F5 then
+        DebugTools.dumpNearestNpcSummary(player)
+    elseif key == Keyboard.KEY_F6 then
+        DebugTools.wipeAndReseed(player)
+    elseif key == Keyboard.KEY_F7 then
+        DebugTools.adjustNearestRelationship(player, "trust", 0.20)
+    elseif key == Keyboard.KEY_F8 then
+        DebugTools.forceLegacyCandidate(player)
+    end
 end

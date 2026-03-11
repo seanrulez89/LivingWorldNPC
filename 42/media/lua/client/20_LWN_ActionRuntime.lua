@@ -1,6 +1,8 @@
 LWN = LWN or {}
 LWN.ActionRuntime = LWN.ActionRuntime or {}
 
+-- Translates high-level intents into small engine actions and keeps a debug view
+-- of the queue on the record for inspection.
 local Runtime = LWN.ActionRuntime
 
 Runtime.Queues = Runtime.Queues or {}
@@ -10,8 +12,22 @@ local function queueFor(id)
     return Runtime.Queues[id]
 end
 
+local function syncPlanMirror(record)
+    if not record then return end
+    record.goals = record.goals or {}
+    record.goals.currentPlan = {}
+
+    local q = queueFor(record.id)
+    for i = 1, #q do
+        record.goals.currentPlan[i] = q[i].kind
+    end
+
+    record.goals.currentIntent = q[1] and q[1].kind or nil
+end
+
 function Runtime.clear(record, actor)
     Runtime.Queues[record.id] = {}
+    syncPlanMirror(record)
     if actor and actor.StopAllActionQueue then
         actor:StopAllActionQueue()
     end
@@ -20,6 +36,7 @@ end
 function Runtime.enqueue(record, intent)
     local q = queueFor(record.id)
     table.insert(q, intent)
+    syncPlanMirror(record)
 end
 
 function Runtime.peek(record)
@@ -30,6 +47,7 @@ end
 function Runtime.pop(record)
     local q = queueFor(record.id)
     table.remove(q, 1)
+    syncPlanMirror(record)
 end
 
 function Runtime._newTimedActionTable(record, actor, intent)

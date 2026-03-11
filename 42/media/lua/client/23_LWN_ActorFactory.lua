@@ -1,6 +1,8 @@
 LWN = LWN or {}
 LWN.ActorFactory = LWN.ActorFactory or {}
 
+-- Embodied actors are a render/runtime cache over canonical ModData records.
+-- This module is responsible for making that cache visible and debuggable.
 local Factory = LWN.ActorFactory
 local Store = LWN.PopulationStore
 
@@ -47,6 +49,15 @@ end
 
 local function appendPart(parts, key, value)
     parts[#parts + 1] = tostring(key) .. "=" .. safeText(value)
+end
+
+local function safeSize(value)
+    if not value then return 0 end
+    local size = protectedCall(value, "size")
+    if type(size) == "number" then
+        return size
+    end
+    return 0
 end
 
 local function dist2(ax, ay, bx, by)
@@ -111,6 +122,32 @@ local function descriptorSummary(desc, descriptorMode)
     return table.concat(parts, " | ")
 end
 
+local function isDebugModeEnabled()
+    if LWN and LWN.Config and LWN.Config.Debug and LWN.Config.Debug.Enabled == true then
+        return true
+    end
+    if LWN.DebugTools and LWN.DebugTools.isEnabled then
+        return LWN.DebugTools.isEnabled() == true
+    end
+    return false
+end
+
+local function isVisualProbeEnabled(record)
+    if not isDebugModeEnabled() then
+        return false
+    end
+    if LWN.Config.Debug.Verbose == true then
+        return true
+    end
+    if record and record.debugSpawnOnly == true then
+        return true
+    end
+    if LWN.DebugTools and LWN.DebugTools.isEnabled then
+        return LWN.DebugTools.isEnabled() == true
+    end
+    return false
+end
+
 local function recordSummary(record)
     if not record then
         return "record=nil"
@@ -172,6 +209,40 @@ local function actorSummary(actor)
     return table.concat(parts, " | ")
 end
 
+local function squareCoords(square)
+    if not square then return "nil" end
+    return coordSummary(
+        protectedCall(square, "getX"),
+        protectedCall(square, "getY"),
+        protectedCall(square, "getZ")
+    )
+end
+
+local function visualSummary(actor, descriptor)
+    if not actor then
+        return "visual=nil"
+    end
+
+    local visual = protectedCall(actor, "getHumanVisual")
+    local itemVisuals = protectedCall(actor, "getItemVisuals")
+    local wornItems = protectedCall(actor, "getWornItems")
+    local actorDescriptor = protectedCall(actor, "getDescriptor")
+    local desc = actorDescriptor or descriptor
+    local parts = {}
+
+    appendPart(parts, "descriptor", descriptor ~= nil)
+    appendPart(parts, "actorDescriptor", actorDescriptor ~= nil)
+    appendPart(parts, "humanVisual", visual ~= nil)
+    appendPart(parts, "female", protectedCall(actor, "isFemale") or (desc and protectedCall(desc, "isFemale")) or nil)
+    appendPart(parts, "skin", visual and (protectedCall(visual, "getSkinTexture") or protectedCall(visual, "getSkinTextureName")) or nil)
+    appendPart(parts, "hair", visual and protectedCall(visual, "getHairModel") or nil)
+    appendPart(parts, "beard", visual and protectedCall(visual, "getBeardModel") or nil)
+    appendPart(parts, "itemVisuals", safeSize(itemVisuals))
+    appendPart(parts, "wornItems", safeSize(wornItems))
+    appendPart(parts, "persistentOutfitId", protectedCall(actor, "getPersistentOutfitID"))
+    return table.concat(parts, " | ")
+end
+
 local function extraSummary(extra)
     if not extra then return "extra=nil" end
 
@@ -184,6 +255,68 @@ local function extraSummary(extra)
         appendPart(parts, "targetSquare", squareSummary(extra.square))
     end
     return table.concat(parts, " | ")
+end
+
+local function stageTrace(moduleName, stage, record, actor, descriptor, extra)
+    if not isDebugModeEnabled() then return end
+
+    local currentSquare = actor and (protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")) or nil
+    local targetSquare = extra and extra.square or nil
+    local actorDescriptor = actor and protectedCall(actor, "getDescriptor") or nil
+    local visual = actor and protectedCall(actor, "getHumanVisual") or nil
+    local itemVisuals = actor and protectedCall(actor, "getItemVisuals") or nil
+    local wornItems = actor and protectedCall(actor, "getWornItems") or nil
+
+    local parts = {
+        "[LWN][EmbodimentTrace]",
+    }
+
+    appendPart(parts, "module", moduleName)
+    appendPart(parts, "stage", stage)
+    appendPart(parts, "npcId", record and record.id or getNpcIdFromActor(actor) or (extra and extra.npcId) or nil)
+    appendPart(parts, "world", actor and protectedCall(actor, "isExistInTheWorld") or nil)
+    appendPart(parts, "currentSquare", squareCoords(currentSquare))
+    appendPart(parts, "targetSquare", squareCoords(targetSquare))
+    appendPart(parts, "ghost", actor and protectedCall(actor, "isGhostMode") or nil)
+    appendPart(parts, "invisible", actor and protectedCall(actor, "isInvisible") or nil)
+    appendPart(parts, "sceneCulled", actor and protectedCall(actor, "isSceneCulled") or nil)
+    appendPart(parts, "descriptor", descriptor ~= nil)
+    appendPart(parts, "actorDescriptor", actorDescriptor ~= nil)
+    appendPart(parts, "humanVisual", visual ~= nil)
+    appendPart(parts, "skin", visual and (protectedCall(visual, "getSkinTexture") or protectedCall(visual, "getSkinTextureName")) or nil)
+    appendPart(parts, "hair", visual and protectedCall(visual, "getHairModel") or nil)
+    appendPart(parts, "beard", visual and protectedCall(visual, "getBeardModel") or nil)
+    appendPart(parts, "itemVisuals", safeSize(itemVisuals))
+    appendPart(parts, "wornItems", safeSize(wornItems))
+    appendPart(parts, "persistentOutfitId", actor and protectedCall(actor, "getPersistentOutfitID") or nil)
+
+    if record and record.anchor then
+        appendPart(parts, "anchor", coordSummary(record.anchor.x, record.anchor.y, record.anchor.z))
+    end
+    if extra and extra.source then
+        appendPart(parts, "source", extra.source)
+    end
+    if extra and extra.spawnSource then
+        appendPart(parts, "spawnSource", extra.spawnSource)
+    end
+    if extra and extra.detail then
+        appendPart(parts, "detail", extra.detail)
+    end
+
+    print(table.concat(parts, " | "))
+
+    if isVisualProbeEnabled(record) then
+        if record then
+            print("[LWN][EmbodimentTrace] module=" .. safeText(moduleName) .. " | stage=" .. safeText(stage) .. " | record :: " .. recordSummary(record))
+        end
+        if actor then
+            print("[LWN][EmbodimentTrace] module=" .. safeText(moduleName) .. " | stage=" .. safeText(stage) .. " | actor :: " .. actorSummary(actor))
+            print("[LWN][EmbodimentTrace] module=" .. safeText(moduleName) .. " | stage=" .. safeText(stage) .. " | visuals :: " .. visualSummary(actor, descriptor))
+        end
+        if descriptor then
+            print("[LWN][EmbodimentTrace] module=" .. safeText(moduleName) .. " | stage=" .. safeText(stage) .. " | descriptor :: " .. descriptorSummary(descriptor, extra and extra.descriptorMode or nil))
+        end
+    end
 end
 
 local function rememberFailure(snapshot)
@@ -205,15 +338,26 @@ local function logFailure(reason, record, actor, descriptor, descriptorMode, ext
     }
 
     rememberFailure(snapshot)
+    stageTrace("ActorFactory", extra and extra.stage or "failure", record, actor, descriptor, {
+        source = extra and extra.source or "logFailure",
+        square = extra and extra.square or nil,
+        spawnSource = extra and extra.spawnSource or nil,
+        detail = reason,
+        descriptorMode = descriptorMode,
+        npcId = snapshot.npcId,
+    })
 
     print("[LWN][ActorFactory] " .. safeText(reason) .. " for " .. safeText(snapshot.npcId))
     print("[LWN][ActorFactory] failure record :: " .. snapshot.record)
     print("[LWN][ActorFactory] failure actor :: " .. snapshot.actor)
+    if actor then
+        print("[LWN][ActorFactory] failure visuals :: " .. visualSummary(actor, descriptor))
+    end
     print("[LWN][ActorFactory] failure descriptor :: hour=" .. safeNumber(snapshot.worldAgeHours) .. " | " .. snapshot.descriptor .. " | " .. snapshot.extra)
 end
 
 local function logInfo(message, record, actor, extra)
-    if not LWN.Config.Debug.Enabled then return end
+    if not isDebugModeEnabled() then return end
 
     local parts = {
         "[LWN][ActorFactory] " .. safeText(message),
@@ -232,20 +376,58 @@ local function logInfo(message, record, actor, extra)
     print(table.concat(parts, " | "))
     if actor then
         print("[LWN][ActorFactory] actor state :: " .. actorSummary(actor))
+        print("[LWN][ActorFactory] actor visuals :: " .. visualSummary(actor))
     end
+end
+
+local function modelManager()
+    if ModelManager and ModelManager.instance then
+        return ModelManager.instance
+    end
+    return nil
+end
+
+local function refreshModelManager(actor, reason)
+    local manager = modelManager()
+    if not manager or not actor then return nil end
+
+    local before = protectedCall(manager, "ContainsChar", actor)
+    if before ~= true then
+        protectedCall(manager, "Add", actor)
+    end
+
+    protectedCall(manager, "Reset", actor)
+    protectedCall(manager, "ResetNextFrame", actor)
+    protectedCall(manager, "ResetCharacterEquippedHands", actor)
+
+    local after = protectedCall(manager, "ContainsChar", actor)
+    if LWN.Config.Debug.Verbose then
+        print(string.format(
+            "[LWN][ActorFactory] ModelManager refresh reason=%s before=%s after=%s npcId=%s",
+            safeText(reason),
+            safeText(before),
+            safeText(after),
+            safeText(getNpcIdFromActor(actor))
+        ))
+    end
+    return after
 end
 
 local function safeCleanupActor(actor)
     if not actor then return end
     protectedCall(actor, "StopAllActionQueue")
+    protectedCall(actor, "setGhostMode", true)
+    protectedCall(actor, "setInvisible", true)
     protectedCall(actor, "setSceneCulled", true)
     protectedCall(actor, "setNPC", false)
-    protectedCall(actor, "setDestroyed", true)
-    protectedCall(actor, "Despawn")
-    protectedCall(actor, "removeFromSquare")
-    protectedCall(actor, "removeFromWorld")
-    protectedCall(actor, "setCurrent", nil)
-    protectedCall(actor, "setMovingSquare", nil)
+    protectedCall(actor, "setIsNPC", false)
+
+    -- Prefer the engine-managed despawn path. Clearing square/current references
+    -- here can leave a scheduled update with a nil currentSquare in the same frame.
+    local despawned = protectedCall(actor, "Despawn")
+    if despawned == nil then
+        protectedCall(actor, "removeFromWorld")
+    end
 end
 
 local function hasRuntimeCore(actor)
@@ -350,21 +532,77 @@ end
 
 local function applyDescriptorAppearance(record, desc, descriptorMode)
     local appearance = record.appearance or {}
-    if not appearance.outfit then
+    local outfit = appearance.outfit
+    if not outfit or outfit == "" then
         return
     end
 
     local ok, err = pcall(function()
-        desc:dressInNamedOutfit(appearance.outfit)
+        desc:dressInNamedOutfit(outfit)
     end)
     if not ok then
         logInfo("dressInNamedOutfit failed", record, nil, {
             source = "buildDescriptor",
-            detail = appearance.outfit,
+            detail = outfit,
             thrown = err,
             descriptorMode = descriptorMode,
         })
     end
+end
+
+local function setBaselineHumanVisual(record, actor, desc)
+    if not actor then return end
+
+    local female = record.identity and record.identity.female == true
+    protectedCall(actor, "setFemale", female)
+    protectedCall(actor, "setFemaleEtc", female)
+    if desc then
+        protectedCall(actor, "setDescriptor", desc)
+        protectedCall(actor, "Dressup", desc)
+        protectedCall(actor, "InitSpriteParts", desc)
+    end
+
+    local visual = protectedCall(actor, "getHumanVisual")
+    if visual then
+        local skin = protectedCall(visual, "getSkinTexture") or protectedCall(visual, "getSkinTextureName")
+        if not skin or tostring(skin) == "" then
+            protectedCall(visual, "setSkinTextureIndex", 0)
+        end
+
+        -- BanditsCreator explicitly flips gender and seeds a baseline body visual
+        -- on every preview IsoPlayer. World actors need the same nudge when the
+        -- descriptor path alone doesn't materialize a mesh.
+        if female then
+            protectedCall(visual, "removeBodyVisualFromItemType", "Base.M_Hair_Stubble")
+            protectedCall(visual, "removeBodyVisualFromItemType", "Base.M_Beard_Stubble")
+        else
+            protectedCall(visual, "removeBodyVisualFromItemType", "Base.F_Hair_Stubble")
+        end
+    end
+
+    protectedCall(actor, "onWornItemsChanged")
+    protectedCall(actor, "resetModel")
+    protectedCall(actor, "resetModelNextFrame")
+    refreshModelManager(actor, "baseline_visual")
+end
+
+local function resolveWearLocation(item)
+    if not item then return nil end
+
+    local bodyLocation = protectedCall(item, "getBodyLocation")
+    if bodyLocation and bodyLocation ~= "" then
+        if ItemBodyLocation and ItemBodyLocation.get and ResourceLocation and ResourceLocation.of and type(bodyLocation) == "string" then
+            local ok, resolved = pcall(function()
+                return ItemBodyLocation.get(ResourceLocation.of(bodyLocation))
+            end)
+            if ok and resolved then
+                return resolved
+            end
+        end
+        return bodyLocation
+    end
+
+    return protectedCall(item, "canBeEquipped")
 end
 
 local function addAndWearItem(actor, fullType)
@@ -374,9 +612,9 @@ local function addAndWearItem(actor, fullType)
     local item = inv:AddItem(fullType)
     if not item then return nil end
 
-    local bodyLocation = protectedCall(item, "getBodyLocation")
-    if bodyLocation and bodyLocation ~= "" then
-        protectedCall(actor, "setWornItem", bodyLocation, item)
+    local wearLocation = resolveWearLocation(item)
+    if wearLocation and wearLocation ~= "" then
+        protectedCall(actor, "setWornItem", wearLocation, item)
     end
     return item
 end
@@ -389,13 +627,84 @@ local function ensureVisibleClothing(actor)
     protectedCall(actor, "dressInRandomOutfit")
 
     if protectedCall(actor, "getClothingItem_Torso") and protectedCall(actor, "getClothingItem_Legs") then
+        protectedCall(actor, "onWornItemsChanged")
+        refreshModelManager(actor, "random_outfit")
         return
     end
 
     for _, fullType in ipairs(fallbackClothing) do
         addAndWearItem(actor, fullType)
     end
+    protectedCall(actor, "onWornItemsChanged")
+    protectedCall(actor, "resetModel")
     protectedCall(actor, "resetModelNextFrame")
+    refreshModelManager(actor, "fallback_clothing")
+end
+
+local function bridgeWornItemsToItemVisuals(actor)
+    local visual = protectedCall(actor, "getHumanVisual")
+    local itemVisuals = protectedCall(actor, "getItemVisuals")
+    local wornItems = protectedCall(actor, "getWornItems")
+    local result = {
+        wornItems = safeSize(wornItems),
+        itemVisualsBefore = safeSize(itemVisuals),
+        itemVisualsAfter = safeSize(itemVisuals),
+        added = 0,
+        mode = "skipped",
+    }
+
+    if not actor or not visual or not itemVisuals or not wornItems then
+        result.mode = "missing_visual_containers"
+        return result
+    end
+
+    if result.wornItems <= 0 then
+        result.mode = "no_worn_items"
+        return result
+    end
+
+    if result.itemVisualsBefore > 0 then
+        result.mode = "item_visuals_present"
+        return result
+    end
+
+    for i = 0, wornItems:size() - 1 do
+        local wornEntry = protectedCall(wornItems, "get", i)
+        local item = protectedCall(wornEntry, "getItem") or wornEntry
+        local clothingItem = protectedCall(item, "getClothingItem")
+        local itemVisual = nil
+
+        if clothingItem then
+            itemVisual = protectedCall(visual, "addClothingItem", itemVisuals, clothingItem)
+        end
+
+        if not itemVisual and ItemVisual and ItemVisual.new then
+            local fullType = protectedCall(item, "getFullType")
+            if fullType then
+                itemVisual = ItemVisual.new()
+                protectedCall(itemVisual, "setItemType", fullType)
+                protectedCall(itemVisual, "setClothingItemName", fullType)
+                protectedCall(itemVisuals, "add", itemVisual)
+            end
+        end
+
+        if itemVisual then
+            result.added = result.added + 1
+        end
+    end
+
+    result.itemVisualsAfter = safeSize(itemVisuals)
+    if result.itemVisualsAfter > result.itemVisualsBefore then
+        result.mode = "rebuilt_from_worn_items"
+        protectedCall(actor, "onWornItemsChanged")
+        protectedCall(actor, "resetModel")
+        protectedCall(actor, "resetModelNextFrame")
+        refreshModelManager(actor, "item_visual_bridge")
+        return result
+    end
+
+    result.mode = "no_visuals_added"
+    return result
 end
 
 local function ensurePrimaryWeapon(actor, fullType)
@@ -414,10 +723,45 @@ local function ensurePrimaryWeapon(actor, fullType)
     return item
 end
 
+local function ensureActorRegisteredInWorld(actor, square)
+    if not actor or not square then return false end
+
+    local sx = tonumber(protectedCall(square, "getX") or protectedCall(actor, "getX") or 0) or 0
+    local sy = tonumber(protectedCall(square, "getY") or protectedCall(actor, "getY") or 0) or 0
+    local sz = tonumber(protectedCall(square, "getZ") or protectedCall(actor, "getZ") or 0) or 0
+
+    protectedCall(actor, "setX", sx + 0.5)
+    protectedCall(actor, "setY", sy + 0.5)
+    protectedCall(actor, "setZ", sz)
+    protectedCall(actor, "setCurrent", square)
+    protectedCall(actor, "setMovingSquare", square)
+    protectedCall(actor, "setCurrentSquare", square)
+    protectedCall(actor, "setSquare", square)
+
+    if protectedCall(actor, "isExistInTheWorld") ~= true then
+        protectedCall(square, "AddMovingObject", actor)
+        protectedCall(actor, "addToWorld")
+    end
+
+    protectedCall(actor, "setSceneCulled", false)
+    protectedCall(actor, "setGhostMode", false)
+    protectedCall(actor, "setInvisible", false)
+    protectedCall(actor, "resetModel")
+    protectedCall(actor, "resetModelNextFrame")
+    refreshModelManager(actor, "world_registration")
+
+    local currentSquare = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
+    local inWorld = protectedCall(actor, "isExistInTheWorld")
+    return currentSquare ~= nil and inWorld ~= false
+end
+
 function Factory.buildDescriptor(record)
     local desc, descriptorMode = createDescriptor(record)
     if not desc then
-        logFailure("buildDescriptor failed: CreateSurvivor returned nil", record, nil, nil, descriptorMode, { source = "buildDescriptor" })
+        logFailure("buildDescriptor failed: CreateSurvivor returned nil", record, nil, nil, descriptorMode, {
+            source = "buildDescriptor",
+            stage = "buildDescriptor.failed",
+        })
         return nil, descriptorMode
     end
 
@@ -442,6 +786,11 @@ function Factory.buildDescriptor(record)
     callIf(desc, "setLoner", 1.0 - record.personality.sociability)
 
     applyDescriptorAppearance(record, desc, descriptorMode)
+    stageTrace("ActorFactory", "buildDescriptor.ready", record, nil, desc, {
+        source = "buildDescriptor",
+        descriptorMode = descriptorMode,
+        detail = descriptorMode,
+    })
     return desc, descriptorMode
 end
 
@@ -516,6 +865,10 @@ function Factory.getLastFailure()
     return Factory._lastFailure
 end
 
+function Factory.debugStage(moduleName, stage, record, actor, descriptor, extra)
+    stageTrace(moduleName, stage, record, actor, descriptor, extra)
+end
+
 function Factory.dumpLastFailure()
     local failure = Factory._lastFailure
     if not failure then
@@ -555,10 +908,41 @@ function Factory.rejectActor(actor, reason, npcId, record, descriptor, descripto
 end
 
 function Factory.cleanupActor(actor)
+    stageTrace("ActorFactory", "cleanupActor.start", nil, actor, nil, {
+        source = "cleanupActor",
+        npcId = getNpcIdFromActor(actor),
+    })
     safeCleanupActor(actor)
 end
 
-local function refreshActorPresentation(actor)
+local refreshActorPresentation
+
+function Factory.ensureActorInWorld(actor, square)
+    return ensureActorRegisteredInWorld(actor, square)
+end
+
+function Factory.refreshEmbodiedPresentation(record, actor, descriptor)
+    setBaselineHumanVisual(record or {}, actor, descriptor)
+    ensureVisibleClothing(actor)
+    local bridge = bridgeWornItemsToItemVisuals(actor)
+    stageTrace("ActorFactory", "refreshEmbodiedPresentation.item_visual_bridge", record, actor, descriptor, {
+        source = "refreshEmbodiedPresentation",
+        detail = string.format(
+            "mode=%s wornItems=%d itemVisualsBefore=%d itemVisualsAfter=%d added=%d",
+            safeText(bridge.mode),
+            tonumber(bridge.wornItems or 0) or 0,
+            tonumber(bridge.itemVisualsBefore or 0) or 0,
+            tonumber(bridge.itemVisualsAfter or 0) or 0,
+            tonumber(bridge.added or 0) or 0
+        ),
+    })
+    refreshActorPresentation(actor)
+    stageTrace("ActorFactory", "refreshEmbodiedPresentation.ready", record, actor, descriptor, {
+        source = "refreshEmbodiedPresentation",
+    })
+end
+
+refreshActorPresentation = function(actor)
     if not actor then return end
 
     protectedCall(actor, "setGhostMode", false)
@@ -566,14 +950,17 @@ local function refreshActorPresentation(actor)
     protectedCall(actor, "setSceneCulled", false)
     protectedCall(actor, "setNPC", true)
     protectedCall(actor, "setIsNPC", true)
+    protectedCall(actor, "setVisibleToNPCs", true)
 
     local inv = protectedCall(actor, "getInventory")
     if inv then
         protectedCall(inv, "setDrawDirty", true)
     end
 
+    protectedCall(actor, "onWornItemsChanged")
     protectedCall(actor, "resetModel")
     protectedCall(actor, "resetModelNextFrame")
+    refreshModelManager(actor, "presentation")
 end
 
 function Factory.applyTraits(record, actor)
@@ -605,9 +992,17 @@ function Factory.createActor(record, player)
         return nil
     end
 
+    stageTrace("ActorFactory", "createActor.start", record, nil, desc, {
+        source = "createActor",
+        descriptorMode = descriptorMode,
+    })
+
     local cell = getCell()
     if not cell then
-        logFailure("createActor failed: getCell() returned nil", record, nil, desc, descriptorMode, { source = "createActor" })
+        logFailure("createActor failed: getCell() returned nil", record, nil, desc, descriptorMode, {
+            source = "createActor",
+            stage = "createActor.no_cell",
+        })
         return nil
     end
 
@@ -615,26 +1010,37 @@ function Factory.createActor(record, player)
     if not square then
         logFailure("createActor skipped: no spawn square", record, nil, desc, descriptorMode, {
             source = "createActor",
+            stage = "createActor.no_spawn_square",
             spawnSource = spawnSource,
             detail = coordSummary(record.anchor.x, record.anchor.y, record.anchor.z),
         })
         return nil
     end
 
+    stageTrace("ActorFactory", "createActor.spawn_selected", record, nil, desc, {
+        source = "createActor",
+        square = square,
+        spawnSource = spawnSource,
+        descriptorMode = descriptorMode,
+    })
+
     local x = math.floor(protectedCall(square, "getX") or record.anchor.x or 0)
     local y = math.floor(protectedCall(square, "getY") or record.anchor.y or 0)
     local z = math.floor(protectedCall(square, "getZ") or record.anchor.z or 0)
 
+    Factory._pendingRecord = record
     local ok, actorOrErr = pcall(function()
         -- Build 42 does not expose a complete first-party human NPC framework yet,
         -- so embodied LWN NPCs are created as NPC-flagged IsoPlayer instances with
         -- canonical state still living in ModData-backed records.
         return IsoPlayer.new(cell, desc, x, y, z)
     end)
+    Factory._pendingRecord = nil
 
     if not ok then
         logFailure("createActor failed: IsoPlayer.new threw", record, nil, desc, descriptorMode, {
             source = "createActor",
+            stage = "createActor.alloc_throw",
             thrown = actorOrErr,
             square = square,
             spawnSource = spawnSource,
@@ -646,11 +1052,19 @@ function Factory.createActor(record, player)
     if not actor then
         logFailure("createActor failed: IsoPlayer.new returned nil", record, nil, desc, descriptorMode, {
             source = "createActor",
+            stage = "createActor.alloc_nil",
             square = square,
             spawnSource = spawnSource,
         })
         return nil
     end
+
+    stageTrace("ActorFactory", "createActor.actor_allocated", record, actor, desc, {
+        source = "createActor",
+        square = square,
+        spawnSource = spawnSource,
+        descriptorMode = descriptorMode,
+    })
 
     protectedCall(actor, "setDescriptor", desc)
     protectedCall(actor, "setNPC", true)
@@ -659,6 +1073,7 @@ function Factory.createActor(record, player)
     protectedCall(actor, "setGhostMode", false)
     protectedCall(actor, "setInvisible", false)
     protectedCall(actor, "setVisibleToNPCs", true)
+    protectedCall(actor, "setFemale", record.identity and record.identity.female == true)
     protectedCall(actor, "setForname", record.identity.firstName)
     protectedCall(actor, "setSurname", record.identity.lastName)
 
@@ -669,9 +1084,27 @@ function Factory.createActor(record, player)
         modData.LWN_SpawnSource = spawnSource
     end
 
+    if not ensureActorRegisteredInWorld(actor, square) then
+        Factory.rejectActor(actor, "createActor rejected actor not registered in world", record.id, record, desc, descriptorMode, {
+            source = "createActor",
+            stage = "createActor.world_rejected",
+            square = square,
+            spawnSource = spawnSource,
+        })
+        return nil
+    end
+
+    stageTrace("ActorFactory", "createActor.world_registered", record, actor, desc, {
+        source = "createActor",
+        square = square,
+        spawnSource = spawnSource,
+        descriptorMode = descriptorMode,
+    })
+
     if not hasRuntimeCore(actor) then
         Factory.rejectActor(actor, "createActor rejected invalid runtime actor", record.id, record, desc, descriptorMode, {
             source = "createActor",
+            stage = "createActor.runtime_rejected",
             square = square,
             spawnSource = spawnSource,
         })
@@ -679,9 +1112,16 @@ function Factory.createActor(record, player)
     end
 
     Factory.applyTraits(record, actor)
+    Factory.refreshEmbodiedPresentation(record, actor, desc)
     Factory.applyLoadout(record, actor)
     protectedCall(actor, "setHealth", record.stats and record.stats.health or 100)
     refreshActorPresentation(actor)
+    stageTrace("ActorFactory", "createActor.presentation_ready", record, actor, desc, {
+        source = "createActor",
+        square = square,
+        spawnSource = spawnSource,
+        descriptorMode = descriptorMode,
+    })
 
     logInfo("created embodied npc", record, actor, {
         source = "createActor",
