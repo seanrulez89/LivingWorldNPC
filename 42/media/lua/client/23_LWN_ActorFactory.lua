@@ -831,11 +831,17 @@ local function markPresentationPending(actor, reason)
     modData.LWN_PresentationPendingAt = getGameTime() and getGameTime():getWorldAgeHours() or nil
 end
 
-local function safeCleanupActor(actor)
+local function safeCleanupActor(actor, cleanupReason)
     if not actor then return end
     local modData = protectedCall(actor, "getModData")
     if modData and modData.LWN_NpcId ~= nil then
         modData.LWN_LastNpcId = modData.LWN_NpcId
+    end
+    if modData then
+        modData.LWN_CleanupPending = true
+        modData.LWN_CleanupStage = "safeCleanupActor.start"
+        modData.LWN_CleanupReason = cleanupReason or modData.LWN_CleanupReason or "cleanupActor"
+        modData.LWN_CleanupNpcId = modData.LWN_NpcId or modData.LWN_LastNpcId
     end
 
     protectedCall(actor, "StopAllActionQueue")
@@ -860,6 +866,9 @@ local function safeCleanupActor(actor)
         modData.LWN_CreateHookPending = false
         modData.LWN_LastCleanupHour = getGameTime() and getGameTime():getWorldAgeHours() or nil
         modData.LWN_LastCleanupWorld = stillWorld
+        modData.LWN_LastCleanupReason = modData.LWN_CleanupReason
+        modData.LWN_LastCleanupStage = "safeCleanupActor.complete"
+        modData.LWN_CleanupStage = "safeCleanupActor.complete"
         modData.LWN_NpcId = nil
     end
 end
@@ -1404,21 +1413,21 @@ function Factory.rejectActor(actor, reason, npcId, record, descriptor, descripto
     local failureExtra = extra or {}
     failureExtra.npcId = npcId
     logFailure(reason, failureRecord, actor, descriptor, descriptorMode, failureExtra)
-    safeCleanupActor(actor)
+    safeCleanupActor(actor, reason)
 end
 
-function Factory.cleanupActor(actor)
+function Factory.cleanupActor(actor, reason)
     local npcId = getNpcIdFromActor(actor)
     stageTrace("ActorFactory", "cleanupActor.start", nil, actor, nil, {
         source = "cleanupActor",
         npcId = npcId,
-        detail = presentationStateSummary(actor),
+        detail = string.format("reason=%s %s", tostring(reason), tostring(presentationStateSummary(actor))),
     })
-    safeCleanupActor(actor)
+    safeCleanupActor(actor, reason or "cleanupActor")
     stageTrace("ActorFactory", "cleanupActor.complete", nil, actor, nil, {
         source = "cleanupActor",
         npcId = npcId,
-        detail = presentationStateSummary(actor),
+        detail = string.format("reason=%s %s", tostring(reason), tostring(presentationStateSummary(actor))),
     })
 end
 
