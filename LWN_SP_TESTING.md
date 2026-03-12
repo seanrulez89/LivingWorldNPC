@@ -50,8 +50,10 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
   - `stage=onCreateLivingCharacter.presentation_refreshed`
   - `stage=onCreateLivingCharacter.synced`
   - `stage=onCreateLivingCharacter.registered`
+  - `stage=onCreateLivingCharacter.applied`
   - `stage=onCreateLivingCharacter.compare_only`
   - `stage=onCreateSurvivor.observed`
+  - `stage=onCreateSurvivor.applied`
   - `stage=onCreateSurvivor.compare_only`
   - `stage=pushRecordToActor.presentation_changed`
   - `stage=ensureEmbodiedActorState.presentation_changed`
@@ -71,6 +73,7 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
   - `stage=onCreateSurvivor.cleanup_rejected`
 - alpha zero / object identity 추적용으로는 아래 로그 블록을 같은 `npcId`로 이어서 본다.
   - `[LWN][PresentationWatch]`
+  - `[LWN][AlphaTrace]`
   - `stage=deathState.changed`
   - `stage=deathProbe.objects_changed`
   - `[LWN][DeathTrace]`
@@ -80,7 +83,8 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
   - `itemVisualsBefore=0` / `itemVisualsAfter>0`면 이번 가설이 맞을 가능성이 올라감
   - `mode=item_visuals_present`면 이번 패치는 실질적으로 개입하지 않은 것
 - descriptor/materialization 가설용 추가 detail:
-  - `expected=OnCreateLivingCharacter`, `previousHook=`, `appliedBy=`로 어느 생성 훅이 실제 post-create anchor였는지 본다
+  - `observedOrder=`, `expected=OnCreateLivingCharacter`, `previousHook=`, `appliedBy=`로 어느 생성 훅이 실제 post-create anchor였는지 본다
+  - `registeredRef=`, `registeredMatch=`, `presentationPending=`, `settledBy=`, `alpha=`, `targetAlpha=`로 훅별 post-create 상태 차이를 본다
   - `phase=refresh_pre_clothing`에서 `dressup=true`, `initSpriteParts=true`가 찍히는지
   - `phase=refresh_post_clothing` 또는 `phase=apply_loadout`에서 `initSpriteParts=true`가 다시 찍히는지
   - `pushRecordToActor.presentation_settled` 또는 `ensureEmbodiedActorState.presentation_settled`가 1회만 찍히는지
@@ -91,6 +95,8 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
   - 기존 `world=`, `currentSquare=`, `ghost=`, `invisible=`, `sceneCulled=`, `alpha=`, `targetAlpha=`
 - alpha zero 의심 시 추가로 볼 필드:
   - `alphaZero=`, `targetAlphaZero=`
+  - `[LWN][AlphaTrace] stage=request`의 `method=`, `value=`, `reason=`
+  - `[LWN][AlphaTrace] stage=alive_zero_observed`의 `verdict=`, `lastMethod=`, `lastReason=`, `lastZeroMethod=`
   - `[LWN][PresentationWatch] action=alpha_repair`의 `beforeAlpha`, `afterAlpha`, `beforeTargetAlpha`, `afterTargetAlpha`
 - corpse/reanimated object 판정 시 추가로 볼 필드:
   - `[LWN][DeathTrace] relatedKind=corpse|zombie|player`
@@ -104,6 +110,7 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
   - `[LWN][DeathTrace]`에서 `sameActorRef=true`면 기존 embodied actor, `sameActorRef=false`면 별도 corpse/reanimated object로 본다.
   - delete 직후에는 `CleanupTrace stage=request -> record.deactivated -> actor.cleanup.* -> registry.cleared -> record.removed`가 같은 `npcId`로 이어져야 한다.
   - delete 직후 우클릭에 `ContextTrace stage=candidate.rejected | reason=cleanup_blocked`가 찍히면 corpse/zombie/player leftover가 남아 있어도 canonical target은 끊긴 것이다.
+  - delete 뒤 재등장 후보는 `ContextTrace`의 `marker=stale`, `registeredMatch=false`, `reason=stale_cleanup_marker|record_not_registered|stale_registered_actor|leftover_death_object`로 바로 걸러지는지 본다.
   - despawn/hide 뒤 우클릭에 `ContextTrace stage=candidate.rejected | reason=record_not_embodied`가 찍히면 canonical record가 hidden으로 내려간 뒤 leftover actor를 메뉴에서 배제한 것이다.
 
 ## 6. 반드시 넣어야 할 디버그 훅

@@ -171,10 +171,13 @@ Date: 2026-03-11
   - 기존 `EmbodimentTrace` 한 줄 요약에 `objectRef`, `alpha`, `targetAlpha`, `alphaZero`, `targetAlphaZero`를 추가해 같은 `npcId` 안에서 객체 identity와 alpha 상태를 바로 비교한다.
   - 새 `PresentationWatch` 로그로 `object`, `objectRef`, `npc`, `world`, `health`, `dead`, `downed`, `deathLike`, `ghost`, `invisible`, `sceneCulled`, `alpha`, `targetAlpha`, `humanVisual`, `actorDescriptor`의 변화만 따로 뽑아낸다.
   - visible actor인데 alpha만 0으로 남는 경우에만 `setAlphaAndTarget(1.0)` + `setAlphaToTarget(0)`를 보수적으로 재시도한다.
+  - 저장소 로컬 검색 기준으로는 아직 `setAlpha(0)`, `setTargetAlpha(0)`, `setAlphaAndTarget(0)` 같은 명시적 강제 0 호출은 보이지 않았고, 대신 LWN이 실제로 호출한 alpha 관련 메서드/이유를 `[LWN][AlphaTrace]`로 남겨 내부 엔진 경로와 구분한다.
   - death 쪽은 확실한 이벤트 이름을 추측하지 않고, `OnTick`에서 death-like/downed actor 주변 square를 probe해 corpse/zombie/player 계열 object를 `objectRef` 기준으로 비교한다.
 - 이번 턴에 추가된 핵심 로그:
   - `[LWN][PresentationWatch] ... detail=alpha:...->...`
   - `[LWN][PresentationWatch] ... alphaWatch=true ...`
+  - `[LWN][AlphaTrace] stage=request ... method=setAlphaAndTarget|setAlphaToTarget ... reason=...`
+  - `[LWN][AlphaTrace] stage=alive_zero_observed ... verdict=no_lwn_alpha_request_recorded|last_lwn_alpha_value_request_was_nonzero|...`
   - `[LWN][PresentationWatch] action=alpha_repair ...`
   - `stage=deathState.changed`
   - `stage=deathProbe.objects_changed`
@@ -182,6 +185,7 @@ Date: 2026-03-11
 - 다음 테스트에서 특히 볼 블록:
   - 같은 `npcId`에서 `module=ActorFactory/EventAdapter/ActorSync`의 `objectRef=...`, `alpha=...`, `targetAlpha=...`
   - 직후 이어지는 `[LWN][PresentationWatch]`의 `detail=...` 또는 `alphaWatch=true`
+  - `[LWN][AlphaTrace] stage=alive_zero_observed`의 `lastMethod=`, `lastReason=`, `lastZeroMethod=`, `verdict=`
   - `action=alpha_repair`가 찍히면 before/after alpha 값이 실제로 회복되는지
   - 죽는 순간 `stage=deathState.changed` 다음 `[LWN][DeathTrace] relatedKind=...`가 어떤 `relatedRef`를 남기는지
 - 객체 판정 기준:
@@ -200,6 +204,7 @@ Date: 2026-03-11
   - `[LWN][ContextTrace] stage=debug.delete.request`
   - `[LWN][ContextTrace] stage=worldObject.inspect`
   - `[LWN][ContextTrace] stage=candidate.accepted|candidate.rejected`
+  - `[LWN][ContextTrace] ... marker=active|stale ... registeredRef=... registeredMatch=...`
   - `stage=registerActor.bound`
   - `stage=unregisterActor.start`
   - `stage=unregisterActor.complete`
@@ -214,6 +219,7 @@ Date: 2026-03-11
   - `unregisterActor.complete`
   - `CleanupTrace stage=record.removed`
   - 삭제 후 다시 우클릭했을 때 `ContextTrace stage=candidate.rejected | reason=cleanup_blocked` 또는 `reason=record_not_embodied`
+  - stale leftover가 다시 걸리면 `reason=stale_cleanup_marker`, `reason=record_not_registered`, `reason=stale_registered_actor`, `reason=leftover_death_object`, `reason=death_like_actor` 중 어디서 끊기는지 본다
 - 삭제 후에도 corpse / zombie가 남아 있으면:
   - `CleanupTrace stage=leftover.cleanup.start|complete`가 같은 `npcId`로 찍히는지 본다.
   - `ContextTrace`는 메뉴 타깃에서 제외되는지 확인한다.
@@ -231,8 +237,10 @@ Date: 2026-03-11
     - `onCreateLivingCharacter.presentation_refreshed`
     - `onCreateLivingCharacter.synced`
     - `onCreateLivingCharacter.registered`
+    - `onCreateLivingCharacter.applied`
     - `onCreateLivingCharacter.compare_only`
     - 동일 패턴의 `onCreateSurvivor.*`
+  - 같은 stage의 `detail=`에는 이제 `observedOrder=`, `expected=`, `previousHook=`, `appliedBy=`, `registeredRef=`, `registeredMatch=`, `presentationPending=`, `settledBy=`, `alpha=`, `targetAlpha=`가 함께 남는다.
 - 실험 2:
   - death-like actor가 cleanup 전에 embodied로 남아 있는지 `CleanupTrace stage=death_like.embodied_observed`로 확인 가능하게 했다.
   - canonical cleanup 직전 leftover representation 전체를 `CleanupTrace stage=leftover.snapshot`으로 묶어, `player/corpse/zombie` 동시 잔류를 한 블록에서 비교 가능하게 했다.

@@ -67,6 +67,23 @@ local function getNpcId(actor)
     return modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or nil
 end
 
+local function getModData(obj)
+    if not obj then return nil end
+    return obj.getModData and obj:getModData() or nil
+end
+
+local function getActiveNpcId(obj)
+    local modData = getModData(obj)
+    return modData and modData.LWN_NpcId or nil
+end
+
+local function hasStaleNpcMarker(obj)
+    local modData = getModData(obj)
+    return modData ~= nil
+        and modData.LWN_NpcId == nil
+        and (modData.LWN_LastNpcId ~= nil or modData.LWN_LastCleanupHour ~= nil)
+end
+
 local function isCleanupBlocked(npcId)
     if not npcId then return false end
     if LWN.EmbodimentManager and LWN.EmbodimentManager.isCleanupBlocked then
@@ -86,21 +103,45 @@ local function worldObjectKind(obj)
     return safeText(protectedCall(obj, "getObjectName"))
 end
 
+local function getRegisteredActor(record)
+    if not record then return nil end
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.getActor then
+        return LWN.EmbodimentManager.getActor(record)
+    end
+    return nil
+end
+
+local function npcMarkerState(obj)
+    local modData = getModData(obj)
+    if not modData then return "none" end
+    if modData.LWN_NpcId ~= nil then return "active" end
+    if modData.LWN_LastNpcId ~= nil or modData.LWN_LastCleanupHour ~= nil then
+        return "stale"
+    end
+    return "none"
+end
+
 local function traceContextCandidate(stage, actor, reason, worldObject)
     if not isDebugModeEnabled() then return end
 
     local obj = actor or worldObject
     local npcId = getNpcId(obj)
     local record = npcId and Store and Store.getNPC and Store.getNPC(npcId) or nil
+    local registeredActor = getRegisteredActor(record)
     local deathLike = actor and LWN.ActorFactory and LWN.ActorFactory.isDeathLikeActor and LWN.ActorFactory.isDeathLikeActor(actor) or false
     print(string.format(
-        "[LWN][ContextTrace] stage=%s | npcId=%s | reason=%s | candidateRef=%s | kind=%s | recordExists=%s | deathLike=%s | world=%s | square=%s",
+        "[LWN][ContextTrace] stage=%s | npcId=%s | reason=%s | candidateRef=%s | kind=%s | marker=%s | cleanupBlocked=%s | recordExists=%s | recordState=%s | registeredRef=%s | registeredMatch=%s | deathLike=%s | world=%s | square=%s",
         safeText(stage),
         safeText(npcId),
         safeText(reason),
         safeText(objectRef(obj)),
         safeText(worldObjectKind(obj)),
+        safeText(npcMarkerState(obj)),
+        safeText(isCleanupBlocked(npcId)),
         safeText(record ~= nil),
+        safeText(record and record.embodiment and record.embodiment.state or nil),
+        safeText(registeredActor and objectRef(registeredActor) or nil),
+        safeText(registeredActor ~= nil and registeredActor == actor or false),
         safeText(deathLike),
         safeText(obj and protectedCall(obj, "isExistInTheWorld") or nil),
         safeText(obj and protectedCall(obj, "getSquare") or protectedCall(obj, "getCurrentSquare") or nil)
@@ -108,7 +149,20 @@ local function traceContextCandidate(stage, actor, reason, worldObject)
 end
 
 local function isTargetableNpcActor(actor)
-    local npcId = getNpcId(actor)
+    if not actor then return false end
+
+    local kind = worldObjectKind(actor)
+    if kind == "corpse" or kind == "zombie" then
+        traceContextCandidate("candidate.rejected", actor, "leftover_death_object", nil)
+        return false
+    end
+
+    if hasStaleNpcMarker(actor) then
+        traceContextCandidate("candidate.rejected", actor, "stale_cleanup_marker", nil)
+        return false
+    end
+
+    local npcId = getActiveNpcId(actor) or getNpcId(actor)
     if not npcId then return false end
 
     if isCleanupBlocked(npcId) then
@@ -116,9 +170,13 @@ local function isTargetableNpcActor(actor)
         return false
     end
 
+    if protectedCall(actor, "isDestroyed") == true or protectedCall(actor, "isExistInTheWorld") == false then
+        traceContextCandidate("candidate.rejected", actor, "stale_world_actor", nil)
+        return false
+    end
+
     if not isManagedActor(actor) then
-        local kind = worldObjectKind(actor)
-        local reason = (kind == "corpse" or kind == "zombie") and "leftover_death_object" or "not_managed_actor"
+        local reason = kind == "player" and "stale_player_actor" or "not_managed_actor"
         traceContextCandidate("candidate.rejected", actor, reason, nil)
         return false
     end
@@ -131,6 +189,17 @@ local function isTargetableNpcActor(actor)
 
     if record.embodiment and record.embodiment.state ~= "embodied" then
         traceContextCandidate("candidate.rejected", actor, "record_not_embodied", nil)
+        return false
+    end
+
+    local registeredActor = getRegisteredActor(record)
+    if not registeredActor then
+        traceContextCandidate("candidate.rejected", actor, "record_not_registered", nil)
+        return false
+    end
+
+    if registeredActor ~= actor then
+        traceContextCandidate("candidate.rejected", actor, "stale_registered_actor", nil)
         return false
     end
 

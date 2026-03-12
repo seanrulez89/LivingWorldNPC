@@ -133,6 +133,47 @@ local function getPresentationState(actor)
     }
 end
 
+local function noteCreateHookSequence(modData, hookName)
+    if not modData or not hookName then return end
+
+    local current = modData.LWN_CreateHookSequence
+    if not current or current == "" then
+        modData.LWN_CreateHookSequence = hookName
+        return
+    end
+    modData.LWN_CreateHookSequence = current .. ">" .. hookName
+end
+
+local function createHookComparisonDetail(record, actor, hookName, modData, extraDetail)
+    local state = getPresentationState(actor)
+    local registeredActor = record
+        and LWN.EmbodimentManager
+        and LWN.EmbodimentManager.getActor
+        and LWN.EmbodimentManager.getActor(record)
+        or nil
+    local parts = {
+        string.format("hook=%s", tostring(hookName)),
+        string.format("observedOrder=%s", tostring(modData and modData.LWN_CreateHookSequence or nil)),
+        string.format("expected=%s", tostring(modData and modData.LWN_CreateHookExpected or nil)),
+        string.format("previousHook=%s", tostring(modData and modData.LWN_LastCreateHook or nil)),
+        string.format("appliedBy=%s", tostring(modData and modData.LWN_PostCreateAppliedBy or nil)),
+        string.format("hookPending=%s", tostring(modData and modData.LWN_CreateHookPending == true)),
+        string.format("postCreateApplied=%s", tostring(modData and modData.LWN_PostCreateApplied == true)),
+        string.format("recordState=%s", tostring(record and record.embodiment and record.embodiment.state or nil)),
+        string.format("registeredRef=%s", tostring(registeredActor and objectRef(registeredActor) or nil)),
+        string.format("registeredMatch=%s", tostring(registeredActor ~= nil and registeredActor == actor or false)),
+        string.format("presentationPending=%s", tostring(modData and modData.LWN_PresentationPending == true)),
+        string.format("presentationReason=%s", tostring(modData and modData.LWN_PresentationReason or nil)),
+        string.format("settledBy=%s", tostring(modData and modData.LWN_PresentationSettledBy or nil)),
+        string.format("alpha=%s", tostring(state and safeNumber(state.alpha) or "nil")),
+        string.format("targetAlpha=%s", tostring(state and safeNumber(state.targetAlpha) or "nil")),
+    }
+    if extraDetail and extraDetail ~= "" then
+        parts[#parts + 1] = extraDetail
+    end
+    return table.concat(parts, ",")
+end
+
 local function traceEmbodiedDeathLike(record, actor, source)
     if not record or not actor then return end
 
@@ -617,16 +658,17 @@ local function handleCreatedCharacter(actor, hookName)
     local record = pendingRecord or (npcId and LWN.PopulationStore and LWN.PopulationStore.getNPC and LWN.PopulationStore.getNPC(npcId) or nil)
     local previousHook = modData and modData.LWN_PostCreateAppliedBy or nil
     local hookPending = modData and modData.LWN_CreateHookPending == true or false
+    noteCreateHookSequence(modData, hookName)
     traceStage(stageBase .. ".observed", record or pendingRecord, actor, {
         source = hookName,
         npcId = npcId,
-        detail = string.format(
-            "recordExists=%s hookPending=%s previousHook=%s actorKind=%s",
+        detail = createHookComparisonDetail(record or pendingRecord, actor, hookName, modData, string.format(
+            "recordExists=%s,hookPendingObserved=%s,previousAppliedHook=%s,actorKind=%s",
             tostring(record ~= nil),
             tostring(hookPending),
             tostring(previousHook),
             tostring(protectedCall(actor, "getObjectName"))
-        ),
+        )),
     })
 
     if not npcId then
@@ -675,12 +717,7 @@ local function handleCreatedCharacter(actor, hookName)
     if modData and modData.LWN_PostCreateApplied == true then
         traceStage(stageBase .. ".compare_only", record, actor, {
             source = hookName,
-            detail = string.format(
-                "hookPending=%s appliedBy=%s expected=%s",
-                tostring(modData.LWN_CreateHookPending == true),
-                tostring(modData.LWN_PostCreateAppliedBy),
-                tostring(modData.LWN_CreateHookExpected)
-            ),
+            detail = createHookComparisonDetail(record, actor, hookName, modData, "compareOnly=true"),
         })
         return
     end
@@ -692,6 +729,7 @@ local function handleCreatedCharacter(actor, hookName)
     traceStage(stageBase .. ".world_ready", record, actor, {
         source = hookName,
         square = anchorSquare,
+        detail = createHookComparisonDetail(record, actor, hookName, modData, "phase=world_ready"),
     })
     if LWN.ActorFactory and LWN.ActorFactory.refreshEmbodiedPresentation then
         LWN.ActorFactory.refreshEmbodiedPresentation(record, actor, protectedCall(actor, "getDescriptor"))
@@ -699,17 +737,20 @@ local function handleCreatedCharacter(actor, hookName)
     traceStage(stageBase .. ".presentation_refreshed", record, actor, {
         source = hookName,
         square = anchorSquare,
+        detail = createHookComparisonDetail(record, actor, hookName, modData, "phase=presentation_refreshed"),
     })
     if LWN.ActorSync and LWN.ActorSync.pushRecordToActor then
         LWN.ActorSync.pushRecordToActor(record, actor)
     end
     traceStage(stageBase .. ".synced", record, actor, {
         source = hookName,
+        detail = createHookComparisonDetail(record, actor, hookName, modData, "phase=synced"),
     })
     if record.embodiment.state == "embodied" and LWN.EmbodimentManager and LWN.EmbodimentManager.registerActor then
         LWN.EmbodimentManager.registerActor(record, actor)
         traceStage(stageBase .. ".registered", record, actor, {
             source = hookName,
+            detail = createHookComparisonDetail(record, actor, hookName, modData, "phase=registered"),
         })
     end
 
@@ -718,6 +759,10 @@ local function handleCreatedCharacter(actor, hookName)
         modData.LWN_PostCreateApplied = true
         modData.LWN_PostCreateAppliedBy = hookName
         modData.LWN_PostCreateAppliedAt = getGameTime() and getGameTime():getWorldAgeHours() or nil
+        traceStage(stageBase .. ".applied", record, actor, {
+            source = hookName,
+            detail = createHookComparisonDetail(record, actor, hookName, modData, "phase=applied"),
+        })
     end
 end
 
