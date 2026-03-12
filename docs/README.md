@@ -4,6 +4,10 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Start here
 
+- `ARCHITECTURE_VERDICT_2026-03-13.md`
+  - final judgment on whether the current architecture is still worth pushing
+- `INGAME_TEST_CHECKLIST_2026-03-13.md`
+  - must-run scenarios for the next in-game verdict pass
 - `LWN_BUILD42_DECISION_MATRIX_2026-03-12.md`
   - condensed decision aid for what to trust, question, or test next
 - `STRUCTURE_REVIEW_EXPERIMENTS_2026-03-12.md`
@@ -33,11 +37,14 @@ These documents summarize what was learned from reference mods and how those les
   - git hygiene, validation workflow, snapshot-commit rule
 - `WORK_NOTES_2026-03-11.md`
   - chronological technical findings and experiment notes
+- `TEST_LOG_HISTORY.md`
+  - append-only in-game test history linking observation -> logs -> lesson -> fix -> next check
 - `CODEX_LOCAL_ENVIRONMENT_ACTIONS.md`
   - local environment setup/actions used during development
 
 ## Reading guidance
 
 - If you want the quickest overview, start with the decision matrix.
+- If you want the current go/no-go judgment after the large refactor pass, read the architecture verdict and in-game checklist next.
 - If you want the detailed reasoning behind it, read the structure review and official API audit next.
 - If you want raw ongoing findings, read the work notes.

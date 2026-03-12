@@ -122,6 +122,7 @@ Date: 2026-03-11
 - 메인 저장소에서는 `reference_mods/` 원본 스냅샷을 추적하지 않고, 분석 문서만 유지한다.
 - 의미 있는 코딩 턴이 끝날 때마다 `validate-wsl` 실행 → `git status` 확인 → 작은 스냅샷 커밋 생성을 기본 운영 규칙으로 사용한다.
 - 여러 가설 실험은 한 커밋에 섞지 않고, 롤백 가능한 작은 단위로 남긴다.
+- 인게임 테스트 이후에는 결과/로그/교훈/후속 수정/다음 검증 포인트를 `docs/TEST_LOG_HISTORY.md`에 시계열로 누적 기록한다.
 - 아직 남은 핵심 작업:
   - 인게임 재테스트 + `EmbodimentTrace` 로그 수집
   - Stage 3 최소 패치의 가설 판정
@@ -257,4 +258,24 @@ Date: 2026-03-11
 - 현재 LWN 사용 패턴과의 충돌/주의점:
   - 살아 있는 embodied actor 복구용으로 `setSceneCulled(false)`를 여러 lifecycle 지점에서 반복 호출하는 패턴은, 문서 의미상 "현재 씬 cull 상태"를 강제로 되돌리는 용도와 완전히 일치한다고 보기 어렵다.
   - corpse/dead-body는 alpha 계열은 비교 가능하지만, character 전용 `ghost/invisible/sceneCulled` 복구와 동일한 층으로 취급하면 해석이 흔들린다.
+
+## 2026-03-13 전면 구조 재정렬 메모
+- 이번 턴의 결론은 "방향 폐기"가 아니라 "계약 재정의 후 계속 진행 가능" 쪽이다.
+- 다만 유지 조건은 더 엄격해졌다.
+  - `ModData`가 유일한 canonical state
+  - `IsoPlayer`는 embodied carrier에 불과함
+  - presentation/death/cleanup/target은 모두 canonical state에 stage를 남겨야 함
+- 실제 코드 변경의 핵심:
+  - `Schema`와 `PopulationStore`에 `status`, `embodiment.stage`, `presentation`, `death`, `cleanup`, `target` 메타 추가
+  - `ActorFactory`에서 spawn/presentation stage 기록, 공식 `WornItems -> ItemVisuals` 브리지 우선 사용, world registration 최소 경로 우선 시도
+  - `EmbodimentManager`에서 death latch, corpse 관찰, cleanup ownership, preserved corpse/zombie leftover 처리 추가
+  - `EventAdapter`에서 death-like actor를 일반 embodied tick와 분리하고 `OnDeadBodySpawn` 관찰 연결
+  - UI target을 actor ref가 아니라 `npcId` 기반 재해석으로 전환
+  - `ActionRuntime`에서 melee target을 raw ref 고정 대신 좌표 기반 재해석 가능 형태로 보강
+- 이번 턴의 제한도 명확히 남긴다.
+  - Build 42에서 human death/corpse/reanimation을 LWN이 완전한 first-class simulation으로 소유한다고 주장하지 않는다.
+  - 현재 더 안전한 정의는 "canonical death state + corpse observation + ownership release"다.
+- 다음 판단은 문서가 아니라 인게임 결과로 내린다.
+  - 필수 체크리스트: `docs/INGAME_TEST_CHECKLIST_2026-03-13.md`
+  - 구조 판단 문서: `docs/ARCHITECTURE_VERDICT_2026-03-13.md`
   - 그래서 이번 턴 수정은 `setSceneCulled(false)`를 제거하는 것이 아니라, `world=true` + `squarePresent=true` + `deathLike=false`인 live actor에만 제한하고 corpse/reanimated는 별도 presentation block으로 추적하는 쪽으로 좁힌다.
