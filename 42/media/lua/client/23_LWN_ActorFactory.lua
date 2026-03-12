@@ -66,6 +66,10 @@ local function dist2(ax, ay, bx, by)
     return dx * dx + dy * dy
 end
 
+local function worldAgeHours()
+    return getGameTime() and getGameTime():getWorldAgeHours() or nil
+end
+
 local function coordSummary(x, y, z)
     return safeNumber(x) .. "," .. safeNumber(y) .. "," .. safeNumber(z)
 end
@@ -401,6 +405,75 @@ local function presentationTraceKey(record, actor)
     return (record and record.id) or getNpcIdFromActor(actor) or objectRef(actor)
 end
 
+local function isExplicitAlphaValueMethod(methodName)
+    return methodName == "setAlpha"
+        or methodName == "setTargetAlpha"
+        or methodName == "setAlphaAndTarget"
+end
+
+local function alphaObservationVerdict(modData)
+    if not modData then
+        return "no_mod_data"
+    end
+    if modData.LWN_LastAlphaZeroRequestMethod ~= nil then
+        return "lwn_explicit_zero_request_seen"
+    end
+    if modData.LWN_LastAlphaRequestMethod == nil then
+        return "no_lwn_alpha_request_recorded"
+    end
+    if isExplicitAlphaValueMethod(modData.LWN_LastAlphaRequestMethod) then
+        local requestedValue = tonumber(modData.LWN_LastAlphaRequestValue)
+        if requestedValue ~= nil and requestedValue > 0.01 then
+            return "last_lwn_alpha_value_request_was_nonzero"
+        end
+    end
+    return "last_lwn_alpha_request_non_value_method"
+end
+
+local function traceAlphaRequest(actor, methodName, value, reason)
+    if not actor then return nil end
+
+    local before = actorPresentationState(actor)
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_LastAlphaRequestMethod = methodName
+        modData.LWN_LastAlphaRequestValue = value
+        modData.LWN_LastAlphaRequestReason = reason
+        modData.LWN_LastAlphaRequestAt = worldAgeHours()
+        if isExplicitAlphaValueMethod(methodName) and type(value) == "number" and value <= 0.01 then
+            modData.LWN_LastAlphaZeroRequestMethod = methodName
+            modData.LWN_LastAlphaZeroRequestValue = value
+            modData.LWN_LastAlphaZeroRequestReason = reason
+            modData.LWN_LastAlphaZeroRequestAt = modData.LWN_LastAlphaRequestAt
+        end
+    end
+
+    local result = protectedCall(actor, methodName, value)
+    if not isDebugModeEnabled() then
+        return result
+    end
+
+    local after = actorPresentationState(actor)
+    print(string.format(
+        "[LWN][AlphaTrace] stage=request | npcId=%s | objectRef=%s | reason=%s | method=%s | value=%s | beforeAlpha=%s | beforeTargetAlpha=%s | afterAlpha=%s | afterTargetAlpha=%s | expectedHook=%s | lastCreateHook=%s | appliedBy=%s | presentationPending=%s | settledBy=%s",
+        safeText(getNpcIdFromActor(actor)),
+        safeText(objectRef(actor)),
+        safeText(reason),
+        safeText(methodName),
+        safeText(value),
+        safeNumber(before and before.alpha or nil),
+        safeNumber(before and before.targetAlpha or nil),
+        safeNumber(after and after.alpha or nil),
+        safeNumber(after and after.targetAlpha or nil),
+        safeText(modData and modData.LWN_CreateHookExpected or nil),
+        safeText(modData and modData.LWN_LastCreateHook or nil),
+        safeText(modData and modData.LWN_PostCreateAppliedBy or nil),
+        safeText(modData and modData.LWN_PresentationPending or nil),
+        safeText(modData and modData.LWN_PresentationSettledBy or nil)
+    ))
+    return result
+end
+
 local function presentationDiffSummary(previous, current)
     if not previous or not current then
         return nil
@@ -503,6 +576,30 @@ local function tracePresentationWatch(moduleName, stage, record, actor, extra)
                 safeText(current.deathLike),
                 safeText(current.humanVisual),
                 safeText(current.actorDescriptor)
+            ))
+            local modData = protectedCall(actor, "getModData")
+            print(string.format(
+                "[LWN][AlphaTrace] stage=alive_zero_observed | module=%s | stageRef=%s | npcId=%s | verdict=%s | objectRef=%s | alpha=%s | targetAlpha=%s | lastMethod=%s | lastValue=%s | lastReason=%s | lastAt=%s | lastZeroMethod=%s | lastZeroValue=%s | lastZeroReason=%s | lastZeroAt=%s | expectedHook=%s | lastCreateHook=%s | appliedBy=%s | presentationPending=%s | settledBy=%s",
+                safeText(moduleName),
+                safeText(stage),
+                safeText(key),
+                safeText(alphaObservationVerdict(modData)),
+                safeText(current.objectRef),
+                safeNumber(current.alpha),
+                safeNumber(current.targetAlpha),
+                safeText(modData and modData.LWN_LastAlphaRequestMethod or nil),
+                safeText(modData and modData.LWN_LastAlphaRequestValue or nil),
+                safeText(modData and modData.LWN_LastAlphaRequestReason or nil),
+                safeText(modData and modData.LWN_LastAlphaRequestAt or nil),
+                safeText(modData and modData.LWN_LastAlphaZeroRequestMethod or nil),
+                safeText(modData and modData.LWN_LastAlphaZeroRequestValue or nil),
+                safeText(modData and modData.LWN_LastAlphaZeroRequestReason or nil),
+                safeText(modData and modData.LWN_LastAlphaZeroRequestAt or nil),
+                safeText(modData and modData.LWN_CreateHookExpected or nil),
+                safeText(modData and modData.LWN_LastCreateHook or nil),
+                safeText(modData and modData.LWN_PostCreateAppliedBy or nil),
+                safeText(modData and modData.LWN_PresentationPending or nil),
+                safeText(modData and modData.LWN_PresentationSettledBy or nil)
             ))
         end
     else
@@ -705,8 +802,8 @@ local function repairVisibleAlpha(actor, reason)
         return false
     end
 
-    protectedCall(actor, "setAlphaAndTarget", 1.0)
-    protectedCall(actor, "setAlphaToTarget", 0)
+    traceAlphaRequest(actor, "setAlphaAndTarget", 1.0, reason .. ".setAlphaAndTarget")
+    traceAlphaRequest(actor, "setAlphaToTarget", 0, reason .. ".setAlphaToTarget")
 
     local after = actorPresentationState(actor)
     print(string.format(
@@ -1572,9 +1669,18 @@ function Factory.createActor(record, player)
         modData.LWN_CreateHookExpected = "OnCreateLivingCharacter"
         modData.LWN_LastCreateHook = nil
         modData.LWN_LastCreateHookAt = nil
+        modData.LWN_CreateHookSequence = nil
         modData.LWN_PostCreateApplied = false
         modData.LWN_PostCreateAppliedBy = nil
         modData.LWN_PostCreateAppliedAt = nil
+        modData.LWN_LastAlphaRequestMethod = nil
+        modData.LWN_LastAlphaRequestValue = nil
+        modData.LWN_LastAlphaRequestReason = nil
+        modData.LWN_LastAlphaRequestAt = nil
+        modData.LWN_LastAlphaZeroRequestMethod = nil
+        modData.LWN_LastAlphaZeroRequestValue = nil
+        modData.LWN_LastAlphaZeroRequestReason = nil
+        modData.LWN_LastAlphaZeroRequestAt = nil
     end
 
     if not ensureActorRegisteredInWorld(actor, square) then
