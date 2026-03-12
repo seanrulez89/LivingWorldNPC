@@ -164,12 +164,17 @@ local function enforceEmbodiedFlags(record, actor)
     protectedCall(actor, "setFemaleEtc", female)
     protectedCall(actor, "setNPC", true)
     protectedCall(actor, "setIsNPC", true)
-    protectedCall(actor, "setSceneCulled", false)
-    protectedCall(actor, "setGhostMode", false)
-    protectedCall(actor, "setInvisible", false)
     protectedCall(actor, "setVisibleToNPCs", true)
     protectedCall(actor, "setForname", record and record.identity and record.identity.firstName or nil)
     protectedCall(actor, "setSurname", record and record.identity and record.identity.lastName or nil)
+
+    if LWN.ActorFactory and LWN.ActorFactory.restoreEmbodiedPresentationFlags then
+        LWN.ActorFactory.restoreEmbodiedPresentationFlags(actor, "ActorSync.enforceEmbodiedFlags")
+    else
+        protectedCall(actor, "setSceneCulled", false)
+        protectedCall(actor, "setGhostMode", false)
+        protectedCall(actor, "setInvisible", false)
+    end
 
     if LWN.ActorFactory and LWN.ActorFactory.repairVisibleAlpha then
         LWN.ActorFactory.repairVisibleAlpha(actor, "ActorSync.enforceEmbodiedFlags")

@@ -84,6 +84,11 @@ local function getNpcIdFromActor(actor)
     return modData and modData.LWN_NpcId or nil
 end
 
+local function getKnownNpcIdFromActor(actor)
+    local modData = protectedCall(actor, "getModData")
+    return modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or nil
+end
+
 local function isManagedActor(obj)
     if not obj then return false end
     if getNpcIdFromActor(obj) == nil then return false end
@@ -289,6 +294,8 @@ local function actorPresentationState(actor)
         return nil
     end
 
+    local modData = protectedCall(actor, "getModData")
+    local square = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
     local bodyDamage = protectedCall(actor, "getBodyDamage")
     local health = protectedCall(actor, "getHealth")
     if health == nil then
@@ -307,10 +314,20 @@ local function actorPresentationState(actor)
         or isReanimated == true
         or isDeathFinished == true
         or (type(health) == "number" and health <= 0)
+    local presentationRole = "alive_npc"
+    if isZombie == true or isReanimated == true then
+        presentationRole = "reanimated_zombie"
+    elseif isDeathLike == true then
+        presentationRole = "death_like_actor"
+    end
 
     return {
         objectRef = objectRef(actor),
         object = protectedCall(actor, "getObjectName"),
+        activeNpcId = modData and modData.LWN_NpcId or nil,
+        knownNpcId = modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or nil,
+        lastNpcId = modData and modData.LWN_LastNpcId or nil,
+        actorKind = modData and modData.LWN_ActorKind or nil,
         npc = protectedCall(actor, "getIsNPC"),
         health = health,
         zombie = isZombie,
@@ -322,8 +339,11 @@ local function actorPresentationState(actor)
         knockedDown = isKnockedDown,
         deathFinished = isDeathFinished,
         deathLike = isDeathLike,
+        presentationRole = presentationRole,
         world = protectedCall(actor, "isExistInTheWorld"),
         destroyed = protectedCall(actor, "isDestroyed"),
+        square = squareCoords(square),
+        squarePresent = square ~= nil,
         ghost = protectedCall(actor, "isGhostMode"),
         invisible = protectedCall(actor, "isInvisible"),
         sceneCulled = protectedCall(actor, "isSceneCulled"),
@@ -345,6 +365,10 @@ local function presentationStateSummary(actor)
     local parts = {}
     appendPart(parts, "objectRef", state.objectRef)
     appendPart(parts, "object", state.object)
+    appendPart(parts, "activeNpcId", state.activeNpcId)
+    appendPart(parts, "knownNpcId", state.knownNpcId)
+    appendPart(parts, "lastNpcId", state.lastNpcId)
+    appendPart(parts, "actorKind", state.actorKind)
     appendPart(parts, "npc", state.npc)
     appendPart(parts, "health", safeNumber(state.health))
     appendPart(parts, "zombie", state.zombie)
@@ -356,8 +380,11 @@ local function presentationStateSummary(actor)
     appendPart(parts, "knockedDown", state.knockedDown)
     appendPart(parts, "deathFinished", state.deathFinished)
     appendPart(parts, "deathLike", state.deathLike)
+    appendPart(parts, "presentationRole", state.presentationRole)
     appendPart(parts, "world", state.world)
     appendPart(parts, "destroyed", state.destroyed)
+    appendPart(parts, "square", state.square)
+    appendPart(parts, "squarePresent", state.squarePresent)
     appendPart(parts, "ghost", state.ghost)
     appendPart(parts, "invisible", state.invisible)
     appendPart(parts, "sceneCulled", state.sceneCulled)
@@ -373,14 +400,21 @@ end
 local trackedPresentationFields = {
     "objectRef",
     "object",
+    "activeNpcId",
+    "knownNpcId",
+    "lastNpcId",
+    "actorKind",
     "npc",
     "world",
+    "square",
+    "squarePresent",
     "health",
     "dead",
     "downed",
     "deathLike",
     "zombie",
     "reanimated",
+    "presentationRole",
     "ghost",
     "invisible",
     "sceneCulled",
@@ -513,9 +547,98 @@ local function shouldWatchAlphaState(state)
     return state.deathLike ~= true
         and state.destroyed ~= true
         and state.world ~= false
+        and state.squarePresent == true
         and state.ghost ~= true
         and state.invisible ~= true
         and state.sceneCulled ~= true
+end
+
+local function presentationRestoreBlockedReason(actor, state)
+    if not actor then
+        return "actor_nil"
+    end
+    if not state then
+        return "state_nil"
+    end
+    if state.destroyed == true then
+        return "destroyed"
+    end
+    if state.world ~= true then
+        return "not_in_world"
+    end
+    if state.squarePresent ~= true then
+        return "square_missing"
+    end
+    if state.zombie == true or state.reanimated == true then
+        return "zombie_or_reanimated"
+    end
+    if state.deathLike == true or state.dead == true then
+        return "death_like"
+    end
+    return nil
+end
+
+local function tracePresentationGuard(actor, action, status, reason, source, before, after)
+    if not actor then return end
+
+    local modData = protectedCall(actor, "getModData")
+    local signature = table.concat({
+        safeText(action),
+        safeText(status),
+        safeText(reason),
+        safeText(source),
+        safeText(before and before.presentationRole or nil),
+        safeText(before and before.objectRef or nil),
+        safeText(before and before.world or nil),
+        safeText(before and before.squarePresent or nil),
+        safeText(before and before.dead or nil),
+        safeText(before and before.deathLike or nil),
+        safeText(before and before.reanimated or nil),
+        safeText(before and before.ghost or nil),
+        safeText(before and before.invisible or nil),
+        safeText(before and before.sceneCulled or nil),
+    }, "|")
+    if modData then
+        modData.LWN_LastPresentationGuardAction = action
+        modData.LWN_LastPresentationGuardStatus = status
+        modData.LWN_LastPresentationGuardReason = reason
+        modData.LWN_LastPresentationGuardSource = source
+        modData.LWN_LastPresentationGuardAt = worldAgeHours()
+        if modData.LWN_LastPresentationGuardSignature == signature then
+            return
+        end
+        modData.LWN_LastPresentationGuardSignature = signature
+    elseif not isDebugModeEnabled() then
+        return
+    end
+
+    if not isDebugModeEnabled() then
+        return
+    end
+
+    print(string.format(
+        "[LWN][PresentationGuard] action=%s | status=%s | reason=%s | source=%s | npcId=%s | objectRef=%s | role=%s | world=%s | squarePresent=%s | dead=%s | deathLike=%s | zombie=%s | reanimated=%s | ghost=%s | invisible=%s | sceneCulled=%s | beforeAlpha=%s | beforeTargetAlpha=%s | afterAlpha=%s | afterTargetAlpha=%s",
+        safeText(action),
+        safeText(status),
+        safeText(reason),
+        safeText(source),
+        safeText(getKnownNpcIdFromActor(actor)),
+        safeText(before and before.objectRef or objectRef(actor)),
+        safeText(before and before.presentationRole or nil),
+        safeText(before and before.world or nil),
+        safeText(before and before.squarePresent or nil),
+        safeText(before and before.dead or nil),
+        safeText(before and before.deathLike or nil),
+        safeText(before and before.zombie or nil),
+        safeText(before and before.reanimated or nil),
+        safeText(before and before.ghost or nil),
+        safeText(before and before.invisible or nil),
+        safeText(before and before.sceneCulled or nil),
+        safeNumber(before and before.alpha or nil),
+        safeNumber(before and before.targetAlpha or nil),
+        safeNumber(after and after.alpha or nil),
+        safeNumber(after and after.targetAlpha or nil)
+    ))
 end
 
 local function tracePresentationWatch(moduleName, stage, record, actor, extra)
@@ -643,6 +766,8 @@ local function stageTrace(moduleName, stage, record, actor, descriptor, extra)
     appendPart(parts, "npcId", record and record.id or getNpcIdFromActor(actor) or (extra and extra.npcId) or nil)
     appendPart(parts, "objectRef", actor and objectRef(actor) or nil)
     appendPart(parts, "object", presentation and presentation.object or nil)
+    appendPart(parts, "knownNpcId", presentation and presentation.knownNpcId or nil)
+    appendPart(parts, "actorKind", presentation and presentation.actorKind or nil)
     appendPart(parts, "npc", presentation and presentation.npc or nil)
     appendPart(parts, "health", presentation and safeNumber(presentation.health) or nil)
     appendPart(parts, "zombie", presentation and presentation.zombie or nil)
@@ -650,9 +775,11 @@ local function stageTrace(moduleName, stage, record, actor, descriptor, extra)
     appendPart(parts, "dead", presentation and presentation.dead or nil)
     appendPart(parts, "downed", presentation and presentation.downed or nil)
     appendPart(parts, "deathLike", presentation and presentation.deathLike or nil)
+    appendPart(parts, "presentationRole", presentation and presentation.presentationRole or nil)
     appendPart(parts, "world", actor and protectedCall(actor, "isExistInTheWorld") or nil)
     appendPart(parts, "currentSquare", squareCoords(currentSquare))
     appendPart(parts, "targetSquare", squareCoords(targetSquare))
+    appendPart(parts, "squarePresent", presentation and presentation.squarePresent or nil)
     appendPart(parts, "ghost", actor and protectedCall(actor, "isGhostMode") or nil)
     appendPart(parts, "invisible", actor and protectedCall(actor, "isInvisible") or nil)
     appendPart(parts, "sceneCulled", actor and protectedCall(actor, "isSceneCulled") or nil)
@@ -798,6 +925,11 @@ local function repairVisibleAlpha(actor, reason)
     if not actor then return false end
 
     local before = actorPresentationState(actor)
+    local blockedReason = presentationRestoreBlockedReason(actor, before)
+    if blockedReason ~= nil then
+        tracePresentationGuard(actor, "repair_alpha", "blocked", blockedReason, reason, before, nil)
+        return false
+    end
     if not shouldWatchAlphaState(before) then
         return false
     end
@@ -806,6 +938,18 @@ local function repairVisibleAlpha(actor, reason)
     traceAlphaRequest(actor, "setAlphaToTarget", 0, reason .. ".setAlphaToTarget")
 
     local after = actorPresentationState(actor)
+    local repaired = after
+        and ((type(after.alpha) ~= "number" or after.alpha > 0.01)
+            and (type(after.targetAlpha) ~= "number" or after.targetAlpha > 0.01))
+    tracePresentationGuard(
+        actor,
+        "repair_alpha",
+        repaired and "applied" or "partial",
+        repaired and nil or "post_check_zero_persisted",
+        reason,
+        before,
+        after
+    )
     print(string.format(
         "[LWN][PresentationWatch] action=alpha_repair | reason=%s | npcId=%s | objectRef=%s | beforeAlpha=%s | beforeTargetAlpha=%s | afterAlpha=%s | afterTargetAlpha=%s | dead=%s | downed=%s | deathLike=%s",
         safeText(reason),
@@ -820,6 +964,49 @@ local function repairVisibleAlpha(actor, reason)
         safeText(after and after.deathLike or nil)
     ))
     return true
+end
+
+local function restoreEmbodiedPresentationFlags(actor, reason)
+    if not actor then return false end
+
+    local before = actorPresentationState(actor)
+    local blockedReason = presentationRestoreBlockedReason(actor, before)
+    if blockedReason ~= nil then
+        tracePresentationGuard(actor, "restore_false_flags", "blocked", blockedReason, reason, before, nil)
+        return false
+    end
+
+    local changed = false
+    local steps = {
+        { getter = "isGhostMode", method = "setGhostMode", value = false },
+        { getter = "isInvisible", method = "setInvisible", value = false },
+        { getter = "isSceneCulled", method = "setSceneCulled", value = false },
+    }
+
+    for _, step in ipairs(steps) do
+        local currentValue = protectedCall(actor, step.getter)
+        if currentValue ~= step.value then
+            protectedCall(actor, step.method, step.value)
+            changed = true
+        end
+    end
+
+    local after = actorPresentationState(actor)
+    local restored = after
+        and after.ghost == false
+        and after.invisible == false
+        and after.sceneCulled == false
+    local status = changed and (restored and "applied" or "partial") or "already_set"
+    tracePresentationGuard(
+        actor,
+        "restore_false_flags",
+        status,
+        changed and not restored and "post_check_not_restored" or nil,
+        reason,
+        before,
+        after
+    )
+    return changed
 end
 
 local function markPresentationPending(actor, reason)
@@ -1238,9 +1425,7 @@ local function ensureActorRegisteredInWorld(actor, square)
         protectedCall(actor, "addToWorld")
     end
 
-    protectedCall(actor, "setSceneCulled", false)
-    protectedCall(actor, "setGhostMode", false)
-    protectedCall(actor, "setInvisible", false)
+    restoreEmbodiedPresentationFlags(actor, "ensureActorRegisteredInWorld")
     repairVisibleAlpha(actor, "ensureActorRegisteredInWorld")
     protectedCall(actor, "resetModel")
     protectedCall(actor, "resetModelNextFrame")
@@ -1466,6 +1651,10 @@ function Factory.repairVisibleAlpha(actor, reason)
     return repairVisibleAlpha(actor, reason)
 end
 
+function Factory.restoreEmbodiedPresentationFlags(actor, reason)
+    return restoreEmbodiedPresentationFlags(actor, reason)
+end
+
 function Factory.refreshEmbodiedPresentation(record, actor, descriptor)
     local activeDescriptor, baseline = materializeDescriptorVisual(record or {}, actor, descriptor, "refresh_pre_clothing", {
         dressup = true,
@@ -1520,9 +1709,7 @@ end
 refreshActorPresentation = function(actor)
     if not actor then return end
 
-    protectedCall(actor, "setGhostMode", false)
-    protectedCall(actor, "setInvisible", false)
-    protectedCall(actor, "setSceneCulled", false)
+    restoreEmbodiedPresentationFlags(actor, "refreshActorPresentation")
     protectedCall(actor, "setNPC", true)
     protectedCall(actor, "setIsNPC", true)
     protectedCall(actor, "setVisibleToNPCs", true)
@@ -1660,9 +1847,6 @@ function Factory.createActor(record, player)
     protectedCall(actor, "setDescriptor", desc)
     protectedCall(actor, "setNPC", true)
     protectedCall(actor, "setIsNPC", true)
-    protectedCall(actor, "setSceneCulled", false)
-    protectedCall(actor, "setGhostMode", false)
-    protectedCall(actor, "setInvisible", false)
     protectedCall(actor, "setVisibleToNPCs", true)
     protectedCall(actor, "setFemale", record.identity and record.identity.female == true)
     protectedCall(actor, "setFemaleEtc", record.identity and record.identity.female == true)

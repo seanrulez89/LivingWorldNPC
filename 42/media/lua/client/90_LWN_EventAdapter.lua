@@ -179,6 +179,7 @@ local function getPresentationState(actor)
     if LWN.ActorFactory and LWN.ActorFactory.getPresentationState then
         return LWN.ActorFactory.getPresentationState(actor)
     end
+
     local health = protectedCall(actor, "getHealth")
     local dead = protectedCall(actor, "isDead")
     local reanimated = protectedCall(actor, "isReanimatedPlayer")
@@ -186,16 +187,45 @@ local function getPresentationState(actor)
     local downed = protectedCall(actor, "isOnFloor") == true
         or protectedCall(actor, "isFallOnFront") == true
         or protectedCall(actor, "isKnockedDown") == true
+    local square = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
+    local squareText = square and coordSummary(
+        protectedCall(square, "getX"),
+        protectedCall(square, "getY"),
+        protectedCall(square, "getZ")
+    ) or "nil"
+    local deathFinished = protectedCall(actor, "isDeathFinished")
+    local deathLike = dead == true
+        or reanimated == true
+        or deathFinished == true
+        or (type(health) == "number" and health <= 0)
+    local presentationRole = "alive_npc"
+    if zombie == true or reanimated == true then
+        presentationRole = "reanimated_zombie"
+    elseif deathLike == true then
+        presentationRole = "death_like_actor"
+    end
     return {
         objectRef = objectRef(actor),
         object = protectedCall(actor, "getObjectName"),
         health = health,
         dead = dead,
         downed = downed,
-        deathLike = dead == true or reanimated == true or (type(health) == "number" and health <= 0),
+        deathLike = deathLike,
         zombie = zombie,
         reanimated = reanimated,
         world = protectedCall(actor, "isExistInTheWorld"),
+        presentationRole = presentationRole,
+        ghost = protectedCall(actor, "isGhostMode"),
+        invisible = protectedCall(actor, "isInvisible"),
+        sceneCulled = protectedCall(actor, "isSceneCulled"),
+        alpha = protectedCall(actor, "getAlpha", 0),
+        targetAlpha = protectedCall(actor, "getTargetAlpha", 0),
+        alphaZero = protectedCall(actor, "isAlphaZero"),
+        targetAlphaZero = protectedCall(actor, "isTargetAlphaZero", 0),
+        humanVisual = protectedCall(actor, "getHumanVisual") ~= nil,
+        actorDescriptor = protectedCall(actor, "getDescriptor") ~= nil,
+        square = squareText,
+        squarePresent = square ~= nil,
     }
 end
 
@@ -239,8 +269,13 @@ local function createHookComparisonDetail(record, actor, hookName, modData, extr
         string.format("presentationPending=%s", tostring(modData and modData.LWN_PresentationPending == true)),
         string.format("presentationReason=%s", tostring(modData and modData.LWN_PresentationReason or nil)),
         string.format("settledBy=%s", tostring(modData and modData.LWN_PresentationSettledBy or nil)),
+        string.format("role=%s", tostring(state and state.presentationRole or nil)),
+        string.format("ghost=%s", tostring(state and state.ghost or nil)),
+        string.format("invisible=%s", tostring(state and state.invisible or nil)),
+        string.format("sceneCulled=%s", tostring(state and state.sceneCulled or nil)),
         string.format("alpha=%s", tostring(state and safeNumber(state.alpha) or "nil")),
         string.format("targetAlpha=%s", tostring(state and safeNumber(state.targetAlpha) or "nil")),
+        string.format("humanVisual=%s", tostring(state and state.humanVisual or nil)),
     }
     if extraDetail and extraDetail ~= "" then
         parts[#parts + 1] = extraDetail
@@ -301,6 +336,18 @@ local trackedDeathFields = {
     "zombie",
     "reanimated",
     "world",
+    "presentationRole",
+    "ghost",
+    "invisible",
+    "sceneCulled",
+    "alpha",
+    "targetAlpha",
+    "alphaZero",
+    "targetAlphaZero",
+    "humanVisual",
+    "actorDescriptor",
+    "square",
+    "squarePresent",
 }
 
 local function deathStateDiff(previous, current)
@@ -361,28 +408,110 @@ local function appendObjectList(entries, seen, list)
     end
 end
 
+local function objectPresentationRole(kind, dead, deathLike, zombie, reanimated)
+    if kind == "corpse" then
+        return "corpse"
+    end
+    if zombie == true or reanimated == true then
+        return "reanimated_zombie"
+    end
+    if dead == true or deathLike == true then
+        return "death_like_actor"
+    end
+    return "alive_npc"
+end
+
 local function summarizeWorldObject(obj, record, actor)
     local modData = protectedCall(obj, "getModData")
+    local state = getPresentationState(obj)
     local square = protectedCall(obj, "getSquare") or protectedCall(obj, "getCurrentSquare")
     local ref = objectRef(obj)
     local actorRef = objectRef(actor)
+    local kind = worldObjectKind(obj)
+    local health = state and state.health or protectedCall(obj, "getHealth")
+    local dead = state and state.dead or protectedCall(obj, "isDead")
+    local reanimated = state and state.reanimated or protectedCall(obj, "isReanimatedPlayer")
+    local zombie = state and state.zombie or protectedCall(obj, "isZombie")
+    local deathLike = state and state.deathLike
+    if deathLike == nil then
+        deathLike = kind == "corpse"
+            or dead == true
+            or reanimated == true
+            or (type(health) == "number" and health <= 0)
+    end
+    local corpseVisual = protectedCall(obj, "getVisual") ~= nil
+    local humanVisual = state and state.humanVisual
+    if humanVisual == nil then
+        humanVisual = protectedCall(obj, "getHumanVisual") ~= nil
+    end
+
     return {
-        kind = worldObjectKind(obj),
+        kind = kind,
+        presentationRole = objectPresentationRole(kind, dead, deathLike, zombie, reanimated),
         object = protectedCall(obj, "getObjectName"),
         objectRef = ref,
         sameActorRef = actor and ref == actorRef or false,
-        sameNpcId = record and modData and modData.LWN_NpcId == record.id or false,
+        sameNpcId = record and modData and (modData.LWN_NpcId == record.id or modData.LWN_LastNpcId == record.id) or false,
         modNpcId = modData and modData.LWN_NpcId or nil,
-        zombie = protectedCall(obj, "isZombie"),
-        reanimated = protectedCall(obj, "isReanimatedPlayer"),
-        dead = protectedCall(obj, "isDead"),
+        lastNpcId = modData and modData.LWN_LastNpcId or nil,
+        knownNpcId = modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or nil,
+        health = health,
+        zombie = zombie,
+        reanimated = reanimated,
+        dead = dead,
+        deathLike = deathLike,
         fakeDead = protectedCall(obj, "isFakeDead"),
         crawling = protectedCall(obj, "isCrawling"),
-        world = protectedCall(obj, "isExistInTheWorld"),
-        humanVisual = protectedCall(obj, "getHumanVisual") ~= nil,
-        actorDescriptor = protectedCall(obj, "getDescriptor") ~= nil,
-        square = squareCoords(square),
+        world = state and state.world or protectedCall(obj, "isExistInTheWorld"),
+        ghost = state and state.ghost or protectedCall(obj, "isGhostMode"),
+        invisible = state and state.invisible or protectedCall(obj, "isInvisible"),
+        sceneCulled = state and state.sceneCulled or protectedCall(obj, "isSceneCulled"),
+        alpha = state and state.alpha or protectedCall(obj, "getAlpha", 0),
+        targetAlpha = state and state.targetAlpha or protectedCall(obj, "getTargetAlpha", 0),
+        alphaZero = state and state.alphaZero or protectedCall(obj, "isAlphaZero"),
+        targetAlphaZero = state and state.targetAlphaZero or protectedCall(obj, "isTargetAlphaZero", 0),
+        humanVisual = humanVisual,
+        corpseVisual = corpseVisual,
+        actorDescriptor = state and state.actorDescriptor or protectedCall(obj, "getDescriptor") ~= nil,
+        square = state and state.square or squareCoords(square),
+        squarePresent = state and state.squarePresent or square ~= nil,
     }
+end
+
+local function logPresentationBlock(source, stage, npcId, summary)
+    if not summary then return end
+
+    print(string.format(
+        "[LWN][PresentationBlock] source=%s | stage=%s | npcId=%s | role=%s | kind=%s | object=%s | objectRef=%s | knownNpcId=%s | modNpcId=%s | lastNpcId=%s | sameActorRef=%s | sameNpcId=%s | world=%s | dead=%s | deathLike=%s | zombie=%s | reanimated=%s | ghost=%s | invisible=%s | sceneCulled=%s | alpha=%s | targetAlpha=%s | alphaZero=%s | targetAlphaZero=%s | humanVisual=%s | corpseVisual=%s | actorDescriptor=%s | square=%s",
+        safeText(source),
+        safeText(stage),
+        safeText(npcId),
+        safeText(summary.presentationRole),
+        safeText(summary.kind),
+        safeText(summary.object),
+        safeText(summary.objectRef),
+        safeText(summary.knownNpcId),
+        safeText(summary.modNpcId),
+        safeText(summary.lastNpcId),
+        safeText(summary.sameActorRef),
+        safeText(summary.sameNpcId),
+        safeText(summary.world),
+        safeText(summary.dead),
+        safeText(summary.deathLike),
+        safeText(summary.zombie),
+        safeText(summary.reanimated),
+        safeText(summary.ghost),
+        safeText(summary.invisible),
+        safeText(summary.sceneCulled),
+        safeNumber(summary.alpha),
+        safeNumber(summary.targetAlpha),
+        safeText(summary.alphaZero),
+        safeText(summary.targetAlphaZero),
+        safeText(summary.humanVisual),
+        safeText(summary.corpseVisual),
+        safeText(summary.actorDescriptor),
+        safeText(summary.square)
+    ))
 end
 
 local function isInterestingDeathObject(summary)
@@ -398,45 +527,69 @@ end
 
 local function deathObjectSignature(summary)
     return table.concat({
+        safeText(summary.presentationRole),
         safeText(summary.kind),
         safeText(summary.object),
         safeText(summary.objectRef),
+        safeText(summary.knownNpcId),
         safeText(summary.sameActorRef),
         safeText(summary.sameNpcId),
         safeText(summary.modNpcId),
+        safeText(summary.lastNpcId),
         safeText(summary.zombie),
         safeText(summary.reanimated),
         safeText(summary.dead),
+        safeText(summary.deathLike),
         safeText(summary.fakeDead),
         safeText(summary.crawling),
+        safeText(summary.ghost),
+        safeText(summary.invisible),
+        safeText(summary.sceneCulled),
+        safeNumber(summary.alpha),
+        safeNumber(summary.targetAlpha),
+        safeText(summary.alphaZero),
+        safeText(summary.targetAlphaZero),
+        safeText(summary.humanVisual),
+        safeText(summary.corpseVisual),
         safeText(summary.square),
     }, "|")
 end
 
 local function logDeathObject(record, actor, source, stage, summary)
     print(string.format(
-        "[LWN][DeathTrace] source=%s | stage=%s | npcId=%s | actorRef=%s | actorObject=%s | relatedKind=%s | relatedObject=%s | relatedRef=%s | sameActorRef=%s | sameNpcId=%s | modNpcId=%s | zombie=%s | reanimated=%s | dead=%s | fakeDead=%s | crawling=%s | humanVisual=%s | actorDescriptor=%s | world=%s | square=%s",
+        "[LWN][DeathTrace] source=%s | stage=%s | npcId=%s | actorRef=%s | actorObject=%s | relatedRole=%s | relatedKind=%s | relatedObject=%s | relatedRef=%s | sameActorRef=%s | sameNpcId=%s | knownNpcId=%s | modNpcId=%s | lastNpcId=%s | dead=%s | deathLike=%s | zombie=%s | reanimated=%s | fakeDead=%s | crawling=%s | ghost=%s | invisible=%s | sceneCulled=%s | alpha=%s | targetAlpha=%s | humanVisual=%s | corpseVisual=%s | actorDescriptor=%s | world=%s | square=%s",
         safeText(source),
         safeText(stage),
         safeText(record and record.id or getNpcId(actor)),
         safeText(objectRef(actor)),
         safeText(actor and protectedCall(actor, "getObjectName") or nil),
+        safeText(summary.presentationRole),
         safeText(summary.kind),
         safeText(summary.object),
         safeText(summary.objectRef),
         safeText(summary.sameActorRef),
         safeText(summary.sameNpcId),
+        safeText(summary.knownNpcId),
         safeText(summary.modNpcId),
+        safeText(summary.lastNpcId),
+        safeText(summary.dead),
+        safeText(summary.deathLike),
         safeText(summary.zombie),
         safeText(summary.reanimated),
-        safeText(summary.dead),
         safeText(summary.fakeDead),
         safeText(summary.crawling),
+        safeText(summary.ghost),
+        safeText(summary.invisible),
+        safeText(summary.sceneCulled),
+        safeNumber(summary.alpha),
+        safeNumber(summary.targetAlpha),
         safeText(summary.humanVisual),
+        safeText(summary.corpseVisual),
         safeText(summary.actorDescriptor),
         safeText(summary.world),
         safeText(summary.square)
     ))
+    logPresentationBlock(source, stage, record and record.id or getNpcId(actor), summary)
 end
 
 local function probeDeathObjects(record, actor, source)
@@ -514,6 +667,9 @@ local function traceDeathState(record, actor, source)
     Adapter._deathStateCache = Adapter._deathStateCache or {}
     local previous = Adapter._deathStateCache[record.id]
     local detail = deathStateDiff(previous, current)
+    if detail or previous == nil then
+        logPresentationBlock(source, "actor_state", record.id, summarizeWorldObject(actor, record, actor))
+    end
     if detail then
         traceStage("deathState.changed", record, actor, {
             source = source,

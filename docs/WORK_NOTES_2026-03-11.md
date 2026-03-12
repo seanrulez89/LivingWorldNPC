@@ -248,3 +248,13 @@ Date: 2026-03-11
   - 이번 턴에는 actor class 교체 없이 `IsoPlayer`에 대한 현재 기대치, 공식 문서와의 충돌/회색지대, 대안 actor path(`IsoSurvivor`, zombie-based spike)를 비교 메모로 정리했다.
 - 아직 해결 선언은 하지 않는다.
   - 다음 인게임 테스트에서 우선 볼 것은 생성 훅 차이와 death-like leftover snapshot이다.
+
+## 2026-03-12 Build 42 presentation API 재검토 메모
+- 공식 Build 42 문서 대조 기준:
+  - `IsoObject` 문서에는 `getAlpha(int)`, `getTargetAlpha(int)`, `setAlphaAndTarget(float)`, `setAlphaToTarget(int)` 같은 alpha 계열 API가 object 공통 표현층으로 노출된다.
+  - `IsoGameCharacter` 문서에는 `setSceneCulled(boolean)`, `isSceneCulled()`, `onCullStateChanged(boolean)`가 보이며, `onCullStateChanged` 설명은 `ModelManager.Add/Remove` 쪽 cull callback 의미에 가깝다.
+  - `IsoDeadBody` 문서에는 corpse 쪽 visual 접근점이 `getHumanVisual()`보다 `getVisual()`에 가깝게 드러난다.
+- 현재 LWN 사용 패턴과의 충돌/주의점:
+  - 살아 있는 embodied actor 복구용으로 `setSceneCulled(false)`를 여러 lifecycle 지점에서 반복 호출하는 패턴은, 문서 의미상 "현재 씬 cull 상태"를 강제로 되돌리는 용도와 완전히 일치한다고 보기 어렵다.
+  - corpse/dead-body는 alpha 계열은 비교 가능하지만, character 전용 `ghost/invisible/sceneCulled` 복구와 동일한 층으로 취급하면 해석이 흔들린다.
+  - 그래서 이번 턴 수정은 `setSceneCulled(false)`를 제거하는 것이 아니라, `world=true` + `squarePresent=true` + `deathLike=false`인 live actor에만 제한하고 corpse/reanimated는 별도 presentation block으로 추적하는 쪽으로 좁힌다.
