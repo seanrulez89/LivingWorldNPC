@@ -6,6 +6,7 @@ local Store = LWN.PopulationStore
 
 Embody._actors = Embody._actors or {}
 Embody._cleanupBlocklist = Embody._cleanupBlocklist or {}
+Embody._cleanupInFlight = Embody._cleanupInFlight or {}
 
 local function protectedCall(obj, methodName, ...)
     if not obj then return nil end
@@ -55,9 +56,107 @@ local function getKnownNpcId(obj)
     return modData.LWN_NpcId or modData.LWN_LastNpcId or nil
 end
 
+local function worldAgeHours()
+    return getGameTime() and getGameTime():getWorldAgeHours() or nil
+end
+
+local function getCleanupState(npcId)
+    if not npcId then return nil end
+    return Embody._cleanupInFlight[npcId] or Embody._cleanupBlocklist[npcId] or nil
+end
+
+local function getActorCleanupState(actor)
+    if not actor then return nil end
+    local modData = protectedCall(actor, "getModData")
+    if not modData then return nil end
+    if modData.LWN_CleanupPending ~= true and modData.LWN_CleanupStage == nil and modData.LWN_LastCleanupStage == nil then
+        return nil
+    end
+    return {
+        pending = modData.LWN_CleanupPending == true,
+        stage = modData.LWN_CleanupStage or modData.LWN_LastCleanupStage,
+        reason = modData.LWN_CleanupReason or modData.LWN_LastCleanupReason,
+        npcId = modData.LWN_CleanupNpcId or modData.LWN_NpcId or modData.LWN_LastNpcId,
+    }
+end
+
+local function cleanupStateSummary(npcId)
+    local state = getCleanupState(npcId)
+    if not state then return "cleanupState=nil" end
+    return string.format(
+        "cleanupStage=%s cleanupReason=%s removeRecord=%s actorRef=%s",
+        tostring(state.stage),
+        tostring(state.reason),
+        tostring(state.removeRecord),
+        tostring(state.actorRef)
+    )
+end
+
+local function updateCleanupState(npcId, stage, reason, record, actor, extra)
+    if not npcId then return nil end
+
+    local state = getCleanupState(npcId) or {}
+    state.stage = stage or state.stage
+    state.reason = reason or state.reason
+    state.at = worldAgeHours()
+    state.recordState = record and record.embodiment and record.embodiment.state or state.recordState
+    state.actorRef = actor and objectRef(actor) or state.actorRef
+    if extra then
+        if extra.removeRecord ~= nil then
+            state.removeRecord = extra.removeRecord
+        end
+        if extra.detail ~= nil then
+            state.detail = extra.detail
+        end
+        if extra.actorSource ~= nil then
+            state.actorSource = extra.actorSource
+        end
+        if extra.registeredMatch ~= nil then
+            state.registeredMatch = extra.registeredMatch
+        end
+    end
+
+    if Embody._cleanupInFlight[npcId] or not Embody._cleanupBlocklist[npcId] then
+        Embody._cleanupInFlight[npcId] = state
+    end
+    if Embody._cleanupBlocklist[npcId] then
+        Embody._cleanupBlocklist[npcId] = state
+    end
+    return state
+end
+
+local function getLifecycleBlock(record, actor)
+    if not record then
+        return "record_missing", "record=nil"
+    end
+
+    if Embody._cleanupInFlight[record.id] then
+        return "cleanup_in_progress", cleanupStateSummary(record.id)
+    end
+    if Embody._cleanupBlocklist[record.id] then
+        return "cleanup_blocked", cleanupStateSummary(record.id)
+    end
+    if record.embodiment and record.embodiment.state == "removed" then
+        return "record_removed", "recordState=removed"
+    end
+
+    local actorCleanup = getActorCleanupState(actor)
+    if actorCleanup and actorCleanup.pending == true then
+        return "actor_cleanup_pending", string.format(
+            "actorCleanupStage=%s actorCleanupReason=%s actorCleanupNpcId=%s",
+            tostring(actorCleanup.stage),
+            tostring(actorCleanup.reason),
+            tostring(actorCleanup.npcId)
+        )
+    end
+
+    return nil, nil
+end
+
 local function traceCleanup(stage, npcId, record, actor, extra)
+    local cleanupState = getCleanupState(npcId)
     print(string.format(
-        "[LWN][CleanupTrace] stage=%s | npcId=%s | recordExists=%s | recordState=%s | actorRef=%s | actorKind=%s | actorWorld=%s | blocked=%s | reason=%s | detail=%s",
+        "[LWN][CleanupTrace] stage=%s | npcId=%s | recordExists=%s | recordState=%s | actorRef=%s | actorKind=%s | actorWorld=%s | blocked=%s | cleanupStage=%s | cleanupReason=%s | reason=%s | detail=%s",
         safeText(stage),
         safeText(npcId),
         safeText(record ~= nil),
@@ -66,6 +165,8 @@ local function traceCleanup(stage, npcId, record, actor, extra)
         safeText(worldObjectKind(actor)),
         safeText(actor and protectedCall(actor, "isExistInTheWorld") or nil),
         safeText(Embody._cleanupBlocklist and Embody._cleanupBlocklist[npcId] ~= nil or false),
+        safeText(cleanupState and cleanupState.stage or nil),
+        safeText(cleanupState and cleanupState.reason or nil),
         safeText(extra and extra.reason or nil),
         safeText(extra and extra.detail or nil)
     ))
@@ -163,7 +264,7 @@ local function detachWorldObject(obj, npcId, reason)
     })
 
     if LWN.ActorFactory and LWN.ActorFactory.hasRuntimeCore and LWN.ActorFactory.hasRuntimeCore(obj) and LWN.ActorFactory.cleanupActor then
-        LWN.ActorFactory.cleanupActor(obj)
+        LWN.ActorFactory.cleanupActor(obj, reason)
     else
         protectedCall(obj, "removeFromSquare")
         protectedCall(obj, "removeFromWorld")
@@ -190,7 +291,7 @@ local function releaseActor(record, actor, nextState, cooldownHours, reason)
 
     if actor then
         if LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
-            LWN.ActorFactory.cleanupActor(actor)
+            LWN.ActorFactory.cleanupActor(actor, reason)
         else
             protectedCall(actor, "StopAllActionQueue")
             protectedCall(actor, "removeFromSquare")
@@ -238,6 +339,7 @@ end
 
 local function registrySignature(record, actor)
     local meta = record and Store.getEmbodiedMeta and Store.getEmbodiedMeta(record.id) or nil
+    local cleanup = getCleanupState(record and record.id or nil)
     local deathLike = actor and LWN.ActorFactory and LWN.ActorFactory.isDeathLikeActor and LWN.ActorFactory.isDeathLikeActor(actor) or false
     return table.concat({
         tostring(record and record.id or "nil"),
@@ -249,6 +351,8 @@ local function registrySignature(record, actor)
         tostring(meta and meta.x or "nil"),
         tostring(meta and meta.y or "nil"),
         tostring(meta and meta.z or "nil"),
+        tostring(cleanup and cleanup.stage or "nil"),
+        tostring(cleanup and cleanup.reason or "nil"),
     }, "|")
 end
 
@@ -263,10 +367,11 @@ local function traceRegistryState(stage, record, actor, extra, force)
     Embody._registryTraceCache[record.id] = signature
 
     local meta = Store.getEmbodiedMeta and Store.getEmbodiedMeta(record.id) or nil
+    local cleanup = getCleanupState(record.id)
     traceStage(stage, record, actor, {
         source = extra and extra.source or stage,
         detail = string.format(
-            "recordState=%s actorRef=%s actorWorld=%s deathLike=%s metaState=%s metaPos=%s,%s,%s reason=%s",
+            "recordState=%s actorRef=%s actorWorld=%s deathLike=%s metaState=%s metaPos=%s,%s,%s cleanupStage=%s cleanupReason=%s reason=%s",
             tostring(record.embodiment and record.embodiment.state or nil),
             tostring(actor),
             tostring(actor and protectedCall(actor, "isExistInTheWorld") or nil),
@@ -275,6 +380,8 @@ local function traceRegistryState(stage, record, actor, extra, force)
             tostring(meta and meta.x or nil),
             tostring(meta and meta.y or nil),
             tostring(meta and meta.z or nil),
+            tostring(cleanup and cleanup.stage or nil),
+            tostring(cleanup and cleanup.reason or nil),
             tostring(extra and extra.reason or nil)
         ),
     })
@@ -303,6 +410,15 @@ function Embody.tryRearmHidden(record, player)
 end
 
 function Embody.tryEmbody(record, player)
+    local lifecycleReason, lifecycleDetail = getLifecycleBlock(record, nil)
+    if lifecycleReason then
+        setLastFailure(record, lifecycleReason, lifecycleDetail)
+        traceStage("tryEmbody.lifecycle_blocked", record, nil, {
+            source = "tryEmbody",
+            detail = string.format("reason=%s %s", tostring(lifecycleReason), tostring(lifecycleDetail)),
+        })
+        return nil
+    end
     if record.embodiment.state ~= "eligible" then
         setLastFailure(record, "not_eligible", tostring(record.embodiment.state))
         traceStage("tryEmbody.not_eligible", record, nil, {
@@ -377,7 +493,26 @@ function Embody.tryEmbody(record, player)
         record.embodiment.lastFailureReason = nil
         record.embodiment.lastFailureDetail = nil
         Embody.touchGrace(record)
-        Embody.registerActor(record, actor)
+        if Embody.registerActor(record, actor) == false then
+            if LWN.ActorFactory and LWN.ActorFactory.rejectActor then
+                LWN.ActorFactory.rejectActor(actor, "tryEmbody rejected lifecycle-blocked actor after create", record.id, record, nil, nil, {
+                    source = "tryEmbody",
+                    stage = "tryEmbody.register_rejected",
+                })
+            elseif LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
+                LWN.ActorFactory.cleanupActor(actor, "tryEmbody.register_rejected")
+            end
+            record.embodiment.state = "hidden"
+            record.embodiment.actorId = nil
+            record.embodiment.missingTicks = 0
+            record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
+            setLastFailure(record, "register_rejected", "registerActor returned false")
+            traceStage("tryEmbody.register_rejected", record, actor, {
+                source = "tryEmbody",
+                detail = "registerActor returned false",
+            })
+            return nil
+        end
         traceStage("tryEmbody.embodied", record, actor, {
             source = "tryEmbody",
             detail = string.format("graceUntil=%.2f", tonumber(record.embodiment.graceUntilHour or 0) or 0),
@@ -453,7 +588,22 @@ function Embody.touchGrace(record)
 end
 
 function Embody.registerActor(record, actor)
-    if not record or not actor then return end
+    if not record or not actor then return false end
+    local lifecycleReason, lifecycleDetail = getLifecycleBlock(record, actor)
+    if lifecycleReason then
+        traceStage("registerActor.rejected_lifecycle", record, actor, {
+            source = "registerActor",
+            detail = string.format("reason=%s %s", tostring(lifecycleReason), tostring(lifecycleDetail)),
+        })
+        return false
+    end
+    if record.embodiment.state ~= "embodied" then
+        traceStage("registerActor.rejected_state", record, actor, {
+            source = "registerActor",
+            detail = string.format("recordState=%s", tostring(record.embodiment.state)),
+        })
+        return false
+    end
     Embody._actors[record.id] = actor
     Store.setEmbodiedMeta(record.id, {
         state = record.embodiment.state,
@@ -465,11 +615,20 @@ function Embody.registerActor(record, actor)
     traceRegistryState("registerActor.bound", record, actor, {
         source = "registerActor",
     }, false)
+    return true
 end
 
 function Embody.getActor(record)
     if not record then return nil end
     return Embody._actors[record.id]
+end
+
+function Embody.getCleanupState(npcId)
+    return getCleanupState(npcId)
+end
+
+function Embody.getActorCleanupState(actor)
+    return getActorCleanupState(actor)
 end
 
 function Embody.unregisterActor(record, reason)
@@ -560,19 +719,50 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
     if not actor and record then
         actor = Embody.getActor(record)
     end
+    local registeredActor = record and Embody.getActor(record) or nil
+    local actorSource = options and options.actor and "options.actor" or (actor and "registry" or "none")
+    local actorCleanup = getActorCleanupState(actor)
+
+    if Embody._cleanupInFlight[npcId] then
+        traceCleanup("request.duplicate", npcId, record, actor, {
+            reason = reason,
+            detail = cleanupStateSummary(npcId),
+        })
+        return false
+    end
+
+    local cleanupState = {
+        at = worldAgeHours(),
+        stage = "request",
+        reason = reason,
+        removeRecord = removeRecord,
+        actorRef = objectRef(actor),
+        actorSource = actorSource,
+        registeredMatch = registeredActor ~= nil and actor ~= nil and registeredActor == actor or false,
+    }
+    Embody._cleanupInFlight[npcId] = cleanupState
 
     if blockNpcId then
-        Embody._cleanupBlocklist[npcId] = {
-            at = getGameTime() and getGameTime():getWorldAgeHours() or nil,
-            reason = reason,
-        }
+        Embody._cleanupBlocklist[npcId] = cleanupState
     end
     traceCleanup("request", npcId, record, actor, {
         reason = reason,
-        detail = string.format("removeRecord=%s blockNpcId=%s %s", tostring(removeRecord), tostring(blockNpcId), tostring(detail)),
+        detail = string.format(
+            "removeRecord=%s blockNpcId=%s actorSource=%s registeredRef=%s registeredMatch=%s actorCleanupStage=%s %s",
+            tostring(removeRecord),
+            tostring(blockNpcId),
+            tostring(actorSource),
+            tostring(objectRef(registeredActor)),
+            tostring(registeredActor ~= nil and actor ~= nil and registeredActor == actor or false),
+            tostring(actorCleanup and actorCleanup.stage or nil),
+            tostring(detail)
+        ),
     })
 
     clearUiTargets(npcId)
+    updateCleanupState(npcId, "ui_targets.cleared", reason, record, actor, {
+        removeRecord = removeRecord,
+    })
     traceCleanup("ui_targets.cleared", npcId, record, actor, {
         reason = reason,
     })
@@ -587,6 +777,9 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
         else
             record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
         end
+        updateCleanupState(npcId, "record.deactivated", reason, record, actor, {
+            removeRecord = removeRecord,
+        })
         traceCleanup("record.deactivated", npcId, record, actor, {
             reason = reason,
             detail = string.format("removeRecord=%s", tostring(removeRecord)),
@@ -594,20 +787,29 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
     end
 
     if actor then
+        updateCleanupState(npcId, "actor.cleanup.start", reason, record, actor, {
+            removeRecord = removeRecord,
+        })
         traceCleanup("actor.cleanup.start", npcId, record, actor, {
             reason = reason,
         })
         if LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
-            LWN.ActorFactory.cleanupActor(actor)
+            LWN.ActorFactory.cleanupActor(actor, reason)
         else
             protectedCall(actor, "StopAllActionQueue")
             protectedCall(actor, "removeFromSquare")
             protectedCall(actor, "removeFromWorld")
         end
+        updateCleanupState(npcId, "actor.cleanup.complete", reason, record, actor, {
+            removeRecord = removeRecord,
+        })
         traceCleanup("actor.cleanup.complete", npcId, record, actor, {
             reason = reason,
         })
     else
+        updateCleanupState(npcId, "actor.cleanup.skipped", reason, record, actor, {
+            removeRecord = removeRecord,
+        })
         traceCleanup("actor.cleanup.skipped", npcId, record, actor, {
             reason = reason,
             detail = "actor=nil",
@@ -632,7 +834,13 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
     end
 
     if record then
+        updateCleanupState(npcId, "registry.clearing", reason, record, actor, {
+            removeRecord = removeRecord,
+        })
         Embody.unregisterActor(record, reason)
+        updateCleanupState(npcId, "registry.cleared", reason, record, actor, {
+            removeRecord = removeRecord,
+        })
         traceCleanup("registry.cleared", npcId, record, actor, {
             reason = reason,
         })
@@ -640,10 +848,15 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
 
     if removeRecord and Store and Store.removeNPC then
         Store.removeNPC(npcId)
+        updateCleanupState(npcId, "record.removed", reason, nil, actor, {
+            removeRecord = removeRecord,
+        })
         traceCleanup("record.removed", npcId, nil, actor, {
             reason = reason,
         })
     end
+
+    Embody._cleanupInFlight[npcId] = nil
 
     return true
 end

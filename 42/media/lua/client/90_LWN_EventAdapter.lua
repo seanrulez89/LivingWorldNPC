@@ -79,7 +79,7 @@ local function isManagedActor(obj)
     return false
 end
 
-local function getNpcId(actor)
+local function getKnownNpcId(actor)
     if not actor then return nil end
     if LWN.ActorFactory and LWN.ActorFactory.getNpcIdFromActor then
         local npcId = LWN.ActorFactory.getNpcIdFromActor(actor)
@@ -91,12 +91,78 @@ local function getNpcId(actor)
     return modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or nil
 end
 
+local function getActiveNpcId(actor)
+    if not actor then return nil end
+    if LWN.ActorFactory and LWN.ActorFactory.getNpcIdFromActor then
+        local npcId = LWN.ActorFactory.getNpcIdFromActor(actor)
+        if npcId then
+            return npcId
+        end
+    end
+    local modData = actor.getModData and actor:getModData() or nil
+    return modData and modData.LWN_NpcId or nil
+end
+
+local function getNpcId(actor)
+    return getKnownNpcId(actor)
+end
+
 local function isCleanupBlocked(npcId)
     if not npcId then return false end
     if LWN.EmbodimentManager and LWN.EmbodimentManager.isCleanupBlocked then
         return LWN.EmbodimentManager.isCleanupBlocked(npcId)
     end
     return false
+end
+
+local function getCleanupState(npcId)
+    if not npcId then return nil end
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.getCleanupState then
+        return LWN.EmbodimentManager.getCleanupState(npcId)
+    end
+    return nil
+end
+
+local function getActorCleanupState(actor)
+    if not actor then return nil end
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.getActorCleanupState then
+        return LWN.EmbodimentManager.getActorCleanupState(actor)
+    end
+    local modData = protectedCall(actor, "getModData")
+    if not modData then return nil end
+    if modData.LWN_CleanupPending ~= true and modData.LWN_CleanupStage == nil and modData.LWN_LastCleanupStage == nil then
+        return nil
+    end
+    return {
+        pending = modData.LWN_CleanupPending == true,
+        stage = modData.LWN_CleanupStage or modData.LWN_LastCleanupStage,
+        reason = modData.LWN_CleanupReason or modData.LWN_LastCleanupReason,
+        npcId = modData.LWN_CleanupNpcId or modData.LWN_NpcId or modData.LWN_LastNpcId,
+    }
+end
+
+local function cleanupStateDetail(npcId)
+    local state = getCleanupState(npcId)
+    if not state then return "cleanupState=nil" end
+    return string.format(
+        "cleanupStage=%s cleanupReason=%s removeRecord=%s actorRef=%s",
+        tostring(state.stage),
+        tostring(state.reason),
+        tostring(state.removeRecord),
+        tostring(state.actorRef)
+    )
+end
+
+local function actorCleanupDetail(actor)
+    local state = getActorCleanupState(actor)
+    if not state then return "actorCleanup=nil" end
+    return string.format(
+        "actorCleanupStage=%s actorCleanupReason=%s actorCleanupNpcId=%s pending=%s",
+        tostring(state.stage),
+        tostring(state.reason),
+        tostring(state.npcId),
+        tostring(state.pending)
+    )
 end
 
 local function copyTable(source)
@@ -146,6 +212,9 @@ end
 
 local function createHookComparisonDetail(record, actor, hookName, modData, extraDetail)
     local state = getPresentationState(actor)
+    local npcId = record and record.id or (modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or nil)
+    local cleanupState = getCleanupState(npcId)
+    local actorCleanup = getActorCleanupState(actor)
     local registeredActor = record
         and LWN.EmbodimentManager
         and LWN.EmbodimentManager.getActor
@@ -162,6 +231,11 @@ local function createHookComparisonDetail(record, actor, hookName, modData, extr
         string.format("recordState=%s", tostring(record and record.embodiment and record.embodiment.state or nil)),
         string.format("registeredRef=%s", tostring(registeredActor and objectRef(registeredActor) or nil)),
         string.format("registeredMatch=%s", tostring(registeredActor ~= nil and registeredActor == actor or false)),
+        string.format("cleanupBlocked=%s", tostring(npcId ~= nil and isCleanupBlocked(npcId) or false)),
+        string.format("cleanupStage=%s", tostring(cleanupState and cleanupState.stage or nil)),
+        string.format("cleanupReason=%s", tostring(cleanupState and cleanupState.reason or nil)),
+        string.format("actorCleanupStage=%s", tostring(actorCleanup and actorCleanup.stage or nil)),
+        string.format("actorCleanupReason=%s", tostring(actorCleanup and actorCleanup.reason or nil)),
         string.format("presentationPending=%s", tostring(modData and modData.LWN_PresentationPending == true)),
         string.format("presentationReason=%s", tostring(modData and modData.LWN_PresentationReason or nil)),
         string.format("settledBy=%s", tostring(modData and modData.LWN_PresentationSettledBy or nil)),
@@ -492,7 +566,8 @@ local function findActorNearAnchor(record)
             if square and square:getMovingObjects() then
                 for i = 0, square:getMovingObjects():size() - 1 do
                     local obj = square:getMovingObjects():get(i)
-                    if isManagedActor(obj) and getNpcId(obj) == record.id then
+                    local actorCleanup = getActorCleanupState(obj)
+                    if isManagedActor(obj) and getActiveNpcId(obj) == record.id and not (actorCleanup and actorCleanup.pending == true) then
                         return obj
                     end
                 end
@@ -515,15 +590,44 @@ getAnchorSquare = function(record)
 end
 
 local function resolveEmbodiedActor(record)
-    if not record or isCleanupBlocked(record.id) then
-        traceStage("resolveEmbodiedActor.cleanup_blocked", record, nil, {
+    if not record then
+        traceStage("resolveEmbodiedActor.lifecycle_blocked", record, nil, {
             source = "resolveEmbodiedActor",
-            detail = string.format("blocked=%s", tostring(record and isCleanupBlocked(record.id) or false)),
+            detail = "reason=record_missing",
+        })
+        return nil
+    end
+    if record.embodiment.state ~= "embodied" then
+        traceStage("resolveEmbodiedActor.lifecycle_blocked", record, nil, {
+            source = "resolveEmbodiedActor",
+            detail = string.format("reason=record_not_embodied recordState=%s", tostring(record.embodiment.state)),
+        })
+        return nil
+    end
+    if isCleanupBlocked(record.id) then
+        traceStage("resolveEmbodiedActor.lifecycle_blocked", record, nil, {
+            source = "resolveEmbodiedActor",
+            detail = string.format("reason=cleanup_blocked %s", cleanupStateDetail(record.id)),
+        })
+        return nil
+    end
+    if getCleanupState(record.id) then
+        traceStage("resolveEmbodiedActor.lifecycle_blocked", record, nil, {
+            source = "resolveEmbodiedActor",
+            detail = string.format("reason=cleanup_in_progress %s", cleanupStateDetail(record.id)),
         })
         return nil
     end
 
     local actor = LWN.EmbodimentManager.getActor(record)
+    local actorCleanup = getActorCleanupState(actor)
+    if actorCleanup and actorCleanup.pending == true then
+        traceStage("resolveEmbodiedActor.cached_rejected", record, actor, {
+            source = "resolveEmbodiedActor",
+            detail = string.format("reason=actor_cleanup_pending %s", actorCleanupDetail(actor)),
+        })
+        actor = nil
+    end
     if actor and LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
         local anchorSquare = getAnchorSquare(record)
         local hadWorld = protectedCall(actor, "isExistInTheWorld")
@@ -552,7 +656,7 @@ local function resolveEmbodiedActor(record)
         end
     end
     if actor
-        and getNpcId(actor) == record.id
+        and getActiveNpcId(actor) == record.id
         and (not actor.isExistInTheWorld or actor:isExistInTheWorld() ~= false)
         and (not LWN.ActorFactory or not LWN.ActorFactory.hasRuntimeCore or LWN.ActorFactory.hasRuntimeCore(actor))
     then
@@ -561,12 +665,21 @@ local function resolveEmbodiedActor(record)
 
     actor = findActorNearAnchor(record)
     if actor then
-        LWN.EmbodimentManager.registerActor(record, actor)
-        traceEmbodiedDeathLike(record, actor, "resolveEmbodiedActor.relinked")
-        traceStage("resolveEmbodiedActor.relinked_near_anchor", record, actor, {
-            source = "resolveEmbodiedActor",
-            square = getAnchorSquare(record),
-        })
+        local registered = LWN.EmbodimentManager.registerActor(record, actor)
+        if registered ~= false then
+            traceEmbodiedDeathLike(record, actor, "resolveEmbodiedActor.relinked")
+            traceStage("resolveEmbodiedActor.relinked_near_anchor", record, actor, {
+                source = "resolveEmbodiedActor",
+                square = getAnchorSquare(record),
+            })
+        else
+            traceStage("resolveEmbodiedActor.relink_rejected", record, actor, {
+                source = "resolveEmbodiedActor",
+                square = getAnchorSquare(record),
+                detail = createHookComparisonDetail(record, actor, "resolveEmbodiedActor", protectedCall(actor, "getModData"), "phase=relink_rejected"),
+            })
+            actor = nil
+        end
     end
     return actor
 end
@@ -592,6 +705,20 @@ local function hideEmbodiedRecord(record, actor, reason, detail)
 end
 
 local function tickEmbodiedRecord(record, actor, player)
+    local actorCleanup = getActorCleanupState(actor)
+    if record.embodiment.state ~= "embodied" or isCleanupBlocked(record.id) or getCleanupState(record.id) or (actorCleanup and actorCleanup.pending == true) then
+        traceStage("tickEmbodiedRecord.lifecycle_skipped", record, actor, {
+            source = "tickEmbodiedRecord",
+            detail = string.format(
+                "recordState=%s blocked=%s %s %s",
+                tostring(record.embodiment.state),
+                tostring(isCleanupBlocked(record.id)),
+                cleanupStateDetail(record.id),
+                actorCleanupDetail(actor)
+            ),
+        })
+        return
+    end
     record.embodiment.missingTicks = 0
     traceStage("tickEmbodiedRecord.start", record, actor, {
         source = "tickEmbodiedRecord",
@@ -693,17 +820,41 @@ local function handleCreatedCharacter(actor, hookName)
         return
     end
 
-    if isCleanupBlocked(npcId) or not record then
-        traceStage(stageBase .. ".cleanup_rejected", pendingRecord or record, actor, {
+    local actorCleanup = getActorCleanupState(actor)
+    local recordState = record and record.embodiment and record.embodiment.state or nil
+    local rejectReason = nil
+    if not record then
+        rejectReason = "record_missing"
+    elseif isCleanupBlocked(npcId) then
+        rejectReason = "cleanup_blocked"
+    elseif recordState == "removed" then
+        rejectReason = "record_removed"
+    elseif actorCleanup and actorCleanup.pending == true then
+        rejectReason = "actor_cleanup_pending"
+    elseif not pendingRecord and recordState ~= "embodied" then
+        rejectReason = "record_not_embodied"
+    end
+
+    if rejectReason then
+        local rejectStage = rejectReason == "cleanup_blocked" and ".cleanup_rejected" or ".lifecycle_rejected"
+        traceStage(stageBase .. rejectStage, pendingRecord or record, actor, {
             source = hookName,
             npcId = npcId,
-            detail = string.format("blocked=%s recordExists=%s", tostring(isCleanupBlocked(npcId)), tostring(record ~= nil)),
+            detail = string.format(
+                "reason=%s recordExists=%s recordState=%s %s %s",
+                tostring(rejectReason),
+                tostring(record ~= nil),
+                tostring(recordState),
+                cleanupStateDetail(npcId),
+                actorCleanupDetail(actor)
+            ),
         })
         if LWN.ActorFactory and LWN.ActorFactory.rejectActor then
-            LWN.ActorFactory.rejectActor(actor, hookName .. " rejected cleanup-blocked actor", npcId, pendingRecord or record, nil, nil, {
+            LWN.ActorFactory.rejectActor(actor, hookName .. " rejected lifecycle-blocked actor", npcId, pendingRecord or record, nil, nil, {
                 source = hookName,
-                stage = stageBase .. ".cleanup_rejected",
+                stage = stageBase .. rejectStage,
                 blocked = isCleanupBlocked(npcId),
+                rejectReason = rejectReason,
             })
         end
         return
