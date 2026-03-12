@@ -190,26 +190,53 @@ Date: 2026-03-11
   - `sameNpcId=true`면 새 object에도 `ModData.LWN_NpcId`가 남았다는 뜻이고, `sameNpcId=false`면 단순 근접 object일 가능성이 높다.
 
 ## 2026-03-12 delete/remove/despawn lifecycle 메모
-- 이번 턴은 delete가 완전 제거로 이어지지 않는 경로만 좁게 추적했다.
-- 현재 가설:
-  - `EventAdapter`는 death-like embodied actor를 자동으로 `embodied -> hidden/removed`로 내리지 않아서, 같은 `npcId`가 죽은 뒤에도 canonical record 상 `embodied`로 남을 수 있다.
-  - `cleanupActor`가 끝난 뒤에도 engine 쪽 object가 월드에 남으면 `ModData.LWN_NpcId`가 살아 있고, 우클릭 context scan이 그 stale actor를 다시 타깃으로 잡을 수 있다.
-  - corpse / reanimated zombie는 기존 embodied `IsoPlayer`와 별도 object일 수 있으며, 이때는 `DeathTrace.sameActorRef=false`와 `relatedKind=corpse|zombie`로 구분한다.
-- 이번 패치에서 추가한 판정 로그:
+- 이번 턴은 delete/remove를 canonical cleanup으로 다시 묶고, despawn은 "record 유지 + runtime만 해제"로 분리했다.
+- canonical cleanup contract:
+  - `delete/remove`는 같은 `npcId`에 대해 `record`를 먼저 비활성화하고, embodied actor와 registration/cache(`EmbodimentManager._actors`, `root.embodied`)를 끊고, UI target을 닫고, 주변 corpse/zombie/player leftover를 best-effort로 제거한 뒤 `Store.removeNPC()`까지 끝내야 한다.
+  - `despawn/hide`는 canonical record를 지우지 않되, embodied actor/UI target/registration-cache는 같은 순서로 정리하고 `record.embodiment.state=hidden`만 남긴다.
+  - context menu 후보 판정은 "world object에 `npcId`가 남았는가"가 아니라 "canonical record가 아직 `embodied`이고 cleanup blocklist에도 없는가"를 기준으로 한다.
+- 이번 패치에서 추가/강화한 판정 로그:
+  - `[LWN][CleanupTrace] stage=request|record.deactivated|actor.cleanup.*|leftover.*|registry.cleared|record.removed`
   - `[LWN][ContextTrace] stage=debug.delete.request`
   - `[LWN][ContextTrace] stage=worldObject.inspect`
   - `[LWN][ContextTrace] stage=candidate.accepted|candidate.rejected`
   - `stage=registerActor.bound`
   - `stage=unregisterActor.start`
   - `stage=unregisterActor.complete`
-  - `stage=embodiedActor.death_like`
+  - `stage=onCreateSurvivor.cleanup_rejected`
 - 다음 테스트에서는 같은 `npcId`로 아래 순서를 본다:
   - `ContextTrace stage=debug.delete.request`
+  - `CleanupTrace stage=request`
+  - `CleanupTrace stage=record.deactivated`
   - `cleanupActor.start`
   - `cleanupActor.complete`
   - `unregisterActor.start`
   - `unregisterActor.complete`
-  - 삭제 후 다시 우클릭했을 때 `ContextTrace stage=candidate.rejected | reason=record_missing` 또는 `reason=death_like_actor`
+  - `CleanupTrace stage=record.removed`
+  - 삭제 후 다시 우클릭했을 때 `ContextTrace stage=candidate.rejected | reason=cleanup_blocked` 또는 `reason=record_not_embodied`
 - 삭제 후에도 corpse / zombie가 남아 있으면:
+  - `CleanupTrace stage=leftover.cleanup.start|complete`가 같은 `npcId`로 찍히는지 본다.
   - `ContextTrace`는 메뉴 타깃에서 제외되는지 확인한다.
   - 같은 시점의 `[LWN][DeathTrace]`로 `relatedKind`, `relatedRef`, `sameActorRef`, `sameNpcId`를 본다.
+
+## 2026-03-12 구조 재검토 실험 분리 메모
+- 이번 턴은 세 실험을 하나의 "구조 재검토"로 묶되, 판정 기준은 서로 섞지 않도록 나눴다.
+- 실험별 상세 정리 문서:
+  - `docs/STRUCTURE_REVIEW_EXPERIMENTS_2026-03-12.md`
+- 실험 1:
+  - `OnCreateLivingCharacter`를 기존 `OnCreateSurvivor`와 병행 바인딩해, `IsoPlayer` 생성 후 어느 훅이 실제 post-create anchor인지 비교 가능한 trace를 추가했다.
+  - 핵심 stage:
+    - `onCreateLivingCharacter.observed`
+    - `onCreateLivingCharacter.world_ready`
+    - `onCreateLivingCharacter.presentation_refreshed`
+    - `onCreateLivingCharacter.synced`
+    - `onCreateLivingCharacter.registered`
+    - `onCreateLivingCharacter.compare_only`
+    - 동일 패턴의 `onCreateSurvivor.*`
+- 실험 2:
+  - death-like actor가 cleanup 전에 embodied로 남아 있는지 `CleanupTrace stage=death_like.embodied_observed`로 확인 가능하게 했다.
+  - canonical cleanup 직전 leftover representation 전체를 `CleanupTrace stage=leftover.snapshot`으로 묶어, `player/corpse/zombie` 동시 잔류를 한 블록에서 비교 가능하게 했다.
+- 실험 3:
+  - 이번 턴에는 actor class 교체 없이 `IsoPlayer`에 대한 현재 기대치, 공식 문서와의 충돌/회색지대, 대안 actor path(`IsoSurvivor`, zombie-based spike)를 비교 메모로 정리했다.
+- 아직 해결 선언은 하지 않는다.
+  - 다음 인게임 테스트에서 우선 볼 것은 생성 훅 차이와 death-like leftover snapshot이다.

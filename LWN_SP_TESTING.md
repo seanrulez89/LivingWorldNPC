@@ -45,6 +45,14 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
 - Stage 3 최소 패치에서는 `stage=refreshEmbodiedPresentation.item_visual_bridge`를 추가로 본다.
 - 2026-03-12 최소 패치에서는 `stage=refreshEmbodiedPresentation.descriptor_bound`, `stage=refreshEmbodiedPresentation.materialized`, `stage=applyLoadout.materialized`, `stage=settleEmbodiedPresentation.ready`도 함께 본다.
 - alive vs death/downed presentation 판정용으로는 아래 stage를 같은 `npcId`로 이어서 본다.
+  - `stage=onCreateLivingCharacter.observed`
+  - `stage=onCreateLivingCharacter.world_ready`
+  - `stage=onCreateLivingCharacter.presentation_refreshed`
+  - `stage=onCreateLivingCharacter.synced`
+  - `stage=onCreateLivingCharacter.registered`
+  - `stage=onCreateLivingCharacter.compare_only`
+  - `stage=onCreateSurvivor.observed`
+  - `stage=onCreateSurvivor.compare_only`
   - `stage=pushRecordToActor.presentation_changed`
   - `stage=ensureEmbodiedActorState.presentation_changed`
   - `stage=pullActorToRecord.presentation_changed`
@@ -53,10 +61,14 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
   - `stage=embodiedActor.death_like`
   - `stage=cleanupActor.start`
   - `stage=cleanupActor.complete`
+  - `[LWN][CleanupTrace]`
   - `stage=registerActor.bound`
   - `stage=unregisterActor.start`
   - `stage=unregisterActor.complete`
+  - `[LWN][CleanupTrace] stage=death_like.embodied_observed`
+  - `[LWN][CleanupTrace] stage=leftover.snapshot`
   - `stage=resolveEmbodiedActor.repair_blocked_death_like`
+  - `stage=onCreateSurvivor.cleanup_rejected`
 - alpha zero / object identity 추적용으로는 아래 로그 블록을 같은 `npcId`로 이어서 본다.
   - `[LWN][PresentationWatch]`
   - `stage=deathState.changed`
@@ -68,6 +80,7 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
   - `itemVisualsBefore=0` / `itemVisualsAfter>0`면 이번 가설이 맞을 가능성이 올라감
   - `mode=item_visuals_present`면 이번 패치는 실질적으로 개입하지 않은 것
 - descriptor/materialization 가설용 추가 detail:
+  - `expected=OnCreateLivingCharacter`, `previousHook=`, `appliedBy=`로 어느 생성 훅이 실제 post-create anchor였는지 본다
   - `phase=refresh_pre_clothing`에서 `dressup=true`, `initSpriteParts=true`가 찍히는지
   - `phase=refresh_post_clothing` 또는 `phase=apply_loadout`에서 `initSpriteParts=true`가 다시 찍히는지
   - `pushRecordToActor.presentation_settled` 또는 `ensureEmbodiedActorState.presentation_settled`가 1회만 찍히는지
@@ -83,13 +96,15 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
   - `[LWN][DeathTrace] relatedKind=corpse|zombie|player`
   - `relatedRef=`, `sameActorRef=`, `sameNpcId=`, `modNpcId=`
   - `[LWN][ContextTrace] recordExists=`, `deathLike=`, `reason=`
+  - `[LWN][CleanupTrace] stage=leftover.snapshot`의 `objects=player[...] ; corpse[...] ; zombie[...]`
 - 빠른 판정법:
   - 같은 `npcId`에서 `pullActorToRecord.presentation_changed`가 `downed=true` 또는 `deathLike=true`로 바뀐 뒤 `cleanupActor.*`가 이어지면, 사용자가 본 "누워 있는 좀비 같은 것"은 기존 embodied actor일 가능성이 높다.
   - 같은 시점에 화면에는 누운 개체가 보였는데 해당 `npcId`에서 위 전환 로그가 전혀 없으면, 별도 visible object를 의심한다.
   - `resolveEmbodiedActor.repair_blocked_death_like`가 찍히면 death-like actor를 repair 대상으로 다시 붙잡던 흐름이 있었는지 확인한다.
   - `[LWN][DeathTrace]`에서 `sameActorRef=true`면 기존 embodied actor, `sameActorRef=false`면 별도 corpse/reanimated object로 본다.
-  - delete 직후 우클릭에 `ContextTrace stage=candidate.rejected | reason=record_missing`가 찍히면 stale object가 남아 있어도 canonical target은 끊긴 것이다.
-  - delete 직후 우클릭에 `ContextTrace stage=candidate.rejected | reason=death_like_actor`가 찍히면 record는 남아 있지만 death-like actor를 메뉴에서 배제한 것이다.
+  - delete 직후에는 `CleanupTrace stage=request -> record.deactivated -> actor.cleanup.* -> registry.cleared -> record.removed`가 같은 `npcId`로 이어져야 한다.
+  - delete 직후 우클릭에 `ContextTrace stage=candidate.rejected | reason=cleanup_blocked`가 찍히면 corpse/zombie/player leftover가 남아 있어도 canonical target은 끊긴 것이다.
+  - despawn/hide 뒤 우클릭에 `ContextTrace stage=candidate.rejected | reason=record_not_embodied`가 찍히면 canonical record가 hidden으로 내려간 뒤 leftover actor를 메뉴에서 배제한 것이다.
 
 ## 6. 반드시 넣어야 할 디버그 훅
 ### 6.1 강제 인카운터

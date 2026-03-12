@@ -58,10 +58,21 @@ end
 local function getNpcId(actor)
     if not actor then return nil end
     if LWN.ActorFactory and LWN.ActorFactory.getNpcIdFromActor then
-        return LWN.ActorFactory.getNpcIdFromActor(actor)
+        local npcId = LWN.ActorFactory.getNpcIdFromActor(actor)
+        if npcId then
+            return npcId
+        end
     end
     local modData = actor.getModData and actor:getModData() or nil
-    return modData and modData.LWN_NpcId or nil
+    return modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or nil
+end
+
+local function isCleanupBlocked(npcId)
+    if not npcId then return false end
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.isCleanupBlocked then
+        return LWN.EmbodimentManager.isCleanupBlocked(npcId)
+    end
+    return false
 end
 
 local function worldObjectKind(obj)
@@ -97,15 +108,29 @@ local function traceContextCandidate(stage, actor, reason, worldObject)
 end
 
 local function isTargetableNpcActor(actor)
-    if not isManagedActor(actor) then
-        return false
-    end
-
     local npcId = getNpcId(actor)
     if not npcId then return false end
 
-    if not (Store and Store.getNPC and Store.getNPC(npcId)) then
+    if isCleanupBlocked(npcId) then
+        traceContextCandidate("candidate.rejected", actor, "cleanup_blocked", nil)
+        return false
+    end
+
+    if not isManagedActor(actor) then
+        local kind = worldObjectKind(actor)
+        local reason = (kind == "corpse" or kind == "zombie") and "leftover_death_object" or "not_managed_actor"
+        traceContextCandidate("candidate.rejected", actor, reason, nil)
+        return false
+    end
+
+    local record = Store and Store.getNPC and Store.getNPC(npcId) or nil
+    if not record then
         traceContextCandidate("candidate.rejected", actor, "record_missing", nil)
+        return false
+    end
+
+    if record.embodiment and record.embodiment.state ~= "embodied" then
+        traceContextCandidate("candidate.rejected", actor, "record_not_embodied", nil)
         return false
     end
 

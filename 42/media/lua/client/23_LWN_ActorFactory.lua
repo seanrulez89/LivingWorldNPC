@@ -760,6 +760,7 @@ local function safeCleanupActor(actor)
     end
 
     if modData then
+        modData.LWN_CreateHookPending = false
         modData.LWN_LastCleanupHour = getGameTime() and getGameTime():getWorldAgeHours() or nil
         modData.LWN_LastCleanupWorld = stillWorld
         modData.LWN_NpcId = nil
@@ -1567,6 +1568,13 @@ function Factory.createActor(record, player)
         modData.LWN_NpcId = record.id
         modData.LWN_ActorKind = "IsoPlayer"
         modData.LWN_SpawnSource = spawnSource
+        modData.LWN_CreateHookPending = true
+        modData.LWN_CreateHookExpected = "OnCreateLivingCharacter"
+        modData.LWN_LastCreateHook = nil
+        modData.LWN_LastCreateHookAt = nil
+        modData.LWN_PostCreateApplied = false
+        modData.LWN_PostCreateAppliedBy = nil
+        modData.LWN_PostCreateAppliedAt = nil
     end
 
     if not ensureActorRegisteredInWorld(actor, square) then

@@ -52,6 +52,17 @@ local function getPlayerSafe()
     return getPlayer and getPlayer() or nil
 end
 
+local function hookStageName(hookName, suffix)
+    local stage = tostring(hookName or "onCreateHook")
+    if string.sub(stage, 1, 2) == "On" then
+        stage = "on" .. string.sub(stage, 3)
+    end
+    if suffix and suffix ~= "" then
+        stage = stage .. "." .. tostring(suffix)
+    end
+    return stage
+end
+
 local function isPlayerAsleep(player)
     if not player then return false end
     if player.isAsleep then
@@ -71,10 +82,21 @@ end
 local function getNpcId(actor)
     if not actor then return nil end
     if LWN.ActorFactory and LWN.ActorFactory.getNpcIdFromActor then
-        return LWN.ActorFactory.getNpcIdFromActor(actor)
+        local npcId = LWN.ActorFactory.getNpcIdFromActor(actor)
+        if npcId then
+            return npcId
+        end
     end
     local modData = actor.getModData and actor:getModData() or nil
-    return modData and modData.LWN_NpcId or nil
+    return modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or nil
+end
+
+local function isCleanupBlocked(npcId)
+    if not npcId then return false end
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.isCleanupBlocked then
+        return LWN.EmbodimentManager.isCleanupBlocked(npcId)
+    end
+    return false
 end
 
 local function copyTable(source)
@@ -135,6 +157,10 @@ local function traceEmbodiedDeathLike(record, actor, source)
         return
     end
     Adapter._embodiedDeathLikeCache[record.id] = signature
+
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.noteDeathLikeActor then
+        LWN.EmbodimentManager.noteDeathLikeActor(record, actor, source)
+    end
 
     traceStage("embodiedActor.death_like", record, actor, {
         source = source,
@@ -407,6 +433,10 @@ local function updateTravelledDistance(player)
 end
 
 local function findActorNearAnchor(record)
+    if not record or isCleanupBlocked(record.id) then
+        return nil
+    end
+
     local cell = getCell and getCell() or nil
     if not cell then return nil end
 
@@ -444,6 +474,14 @@ getAnchorSquare = function(record)
 end
 
 local function resolveEmbodiedActor(record)
+    if not record or isCleanupBlocked(record.id) then
+        traceStage("resolveEmbodiedActor.cleanup_blocked", record, nil, {
+            source = "resolveEmbodiedActor",
+            detail = string.format("blocked=%s", tostring(record and isCleanupBlocked(record.id) or false)),
+        })
+        return nil
+    end
+
     local actor = LWN.EmbodimentManager.getActor(record)
     if actor and LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
         local anchorSquare = getAnchorSquare(record)
@@ -498,21 +536,14 @@ local function hideEmbodiedRecord(record, actor, reason, detail)
         detail = tostring(reason) .. ":" .. tostring(detail),
     })
     print(string.format("[LWN][Embodiment] hiding %s because %s :: %s", tostring(record.id), tostring(reason), tostring(detail)))
-
-    if actor and LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
-        LWN.ActorFactory.cleanupActor(actor)
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.canonicalCleanup then
+        LWN.EmbodimentManager.canonicalCleanup(record, {
+            actor = actor,
+            removeRecord = false,
+            reason = reason,
+            detail = detail,
+        })
     end
-
-    local cooldownHours = ((LWN.Config.Population and LWN.Config.Population.EncounterCooldownHours) or 2.0)
-    if (record.companion and record.companion.recruited) or record.debugSpawnOnly then
-        cooldownHours = math.max((LWN.Config.Embodiment and LWN.Config.Embodiment.GraceHours) or 0.05, 0.05)
-    end
-
-    record.embodiment.state = "hidden"
-    record.embodiment.actorId = nil
-    record.embodiment.missingTicks = 0
-    record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + cooldownHours
-    LWN.EmbodimentManager.unregisterActor(record)
     traceStage("hideEmbodiedRecord.hidden", record, actor, {
         source = "hideEmbodiedRecord",
         detail = string.format("reason=%s cooldownUntil=%.2f", tostring(reason), tonumber(record.embodiment.cooldownUntilHour or 0) or 0),
@@ -562,64 +593,140 @@ function Adapter.onCreateUI()
     -- Pre-create windows lazily if you prefer. We keep them lazy in the skeleton.
 end
 
-function Adapter.onCreateSurvivor(survivor)
-    if not survivor then return end
+local function handleCreatedCharacter(actor, hookName)
+    if not actor then return end
 
+    local stageBase = hookStageName(hookName)
     local pendingRecord = nil
     if LWN.ActorFactory and LWN.ActorFactory.attachPendingRecord then
-        pendingRecord = LWN.ActorFactory.attachPendingRecord(survivor)
+        pendingRecord = LWN.ActorFactory.attachPendingRecord(actor)
     end
 
-    local modData = survivor:getModData()
+    local modData = protectedCall(actor, "getModData")
     local npcId = (modData and modData.LWN_NpcId) or (pendingRecord and pendingRecord.id) or nil
-    if not npcId then return end
+    local hasLwnMarkers = modData and (
+        modData.LWN_NpcId ~= nil
+        or modData.LWN_LastNpcId ~= nil
+        or modData.LWN_CreateHookPending == true
+        or modData.LWN_SpawnSource ~= nil
+    ) or false
+    if not npcId and not pendingRecord and not hasLwnMarkers then
+        return
+    end
 
-    traceStage("onCreateSurvivor.attached", pendingRecord, survivor, {
-        source = "onCreateSurvivor",
+    local record = pendingRecord or (npcId and LWN.PopulationStore and LWN.PopulationStore.getNPC and LWN.PopulationStore.getNPC(npcId) or nil)
+    local previousHook = modData and modData.LWN_PostCreateAppliedBy or nil
+    local hookPending = modData and modData.LWN_CreateHookPending == true or false
+    traceStage(stageBase .. ".observed", record or pendingRecord, actor, {
+        source = hookName,
         npcId = npcId,
+        detail = string.format(
+            "recordExists=%s hookPending=%s previousHook=%s actorKind=%s",
+            tostring(record ~= nil),
+            tostring(hookPending),
+            tostring(previousHook),
+            tostring(protectedCall(actor, "getObjectName"))
+        ),
     })
 
-    if LWN.ActorFactory and LWN.ActorFactory.hasRuntimeCore and not LWN.ActorFactory.hasRuntimeCore(survivor) then
-        traceStage("onCreateSurvivor.invalid_runtime", pendingRecord, survivor, {
-            source = "onCreateSurvivor",
+    if not npcId then
+        traceStage(stageBase .. ".ignored", pendingRecord, actor, {
+            source = hookName,
+            detail = "npcId=nil",
+        })
+        return
+    end
+
+    if LWN.ActorFactory and LWN.ActorFactory.hasRuntimeCore and not LWN.ActorFactory.hasRuntimeCore(actor) then
+        traceStage(stageBase .. ".invalid_runtime", record, actor, {
+            source = hookName,
             npcId = npcId,
         })
         if LWN.ActorFactory.rejectActor then
-            LWN.ActorFactory.rejectActor(survivor, "onCreateSurvivor rejected invalid runtime actor", npcId, pendingRecord, nil, nil, {
-                source = "onCreateSurvivor",
-                stage = "onCreateSurvivor.invalid_runtime",
+            LWN.ActorFactory.rejectActor(actor, hookName .. " rejected invalid runtime actor", npcId, record, nil, nil, {
+                source = hookName,
+                stage = stageBase .. ".invalid_runtime",
             })
         end
         return
     end
 
-    local record = pendingRecord or LWN.PopulationStore.getNPC(npcId)
-    if record then
-        if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
-            LWN.ActorFactory.ensureActorInWorld(survivor, getAnchorSquare(record))
-        end
-        traceStage("onCreateSurvivor.world_ready", record, survivor, {
-            source = "onCreateSurvivor",
-            square = getAnchorSquare(record),
+    if isCleanupBlocked(npcId) or not record then
+        traceStage(stageBase .. ".cleanup_rejected", pendingRecord or record, actor, {
+            source = hookName,
+            npcId = npcId,
+            detail = string.format("blocked=%s recordExists=%s", tostring(isCleanupBlocked(npcId)), tostring(record ~= nil)),
         })
-        if LWN.ActorFactory and LWN.ActorFactory.refreshEmbodiedPresentation then
-            LWN.ActorFactory.refreshEmbodiedPresentation(record, survivor, survivor:getDescriptor())
-        end
-        traceStage("onCreateSurvivor.presentation_refreshed", record, survivor, {
-            source = "onCreateSurvivor",
-            square = getAnchorSquare(record),
-        })
-        LWN.ActorSync.pushRecordToActor(record, survivor)
-        traceStage("onCreateSurvivor.synced", record, survivor, {
-            source = "onCreateSurvivor",
-        })
-        if record.embodiment.state == "embodied" then
-            LWN.EmbodimentManager.registerActor(record, survivor)
-            traceStage("onCreateSurvivor.registered", record, survivor, {
-                source = "onCreateSurvivor",
+        if LWN.ActorFactory and LWN.ActorFactory.rejectActor then
+            LWN.ActorFactory.rejectActor(actor, hookName .. " rejected cleanup-blocked actor", npcId, pendingRecord or record, nil, nil, {
+                source = hookName,
+                stage = stageBase .. ".cleanup_rejected",
+                blocked = isCleanupBlocked(npcId),
             })
         end
+        return
     end
+
+    if modData then
+        modData.LWN_LastCreateHook = hookName
+        modData.LWN_LastCreateHookAt = getGameTime() and getGameTime():getWorldAgeHours() or nil
+    end
+
+    if modData and modData.LWN_PostCreateApplied == true then
+        traceStage(stageBase .. ".compare_only", record, actor, {
+            source = hookName,
+            detail = string.format(
+                "hookPending=%s appliedBy=%s expected=%s",
+                tostring(modData.LWN_CreateHookPending == true),
+                tostring(modData.LWN_PostCreateAppliedBy),
+                tostring(modData.LWN_CreateHookExpected)
+            ),
+        })
+        return
+    end
+
+    local anchorSquare = getAnchorSquare(record)
+    if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
+        LWN.ActorFactory.ensureActorInWorld(actor, anchorSquare)
+    end
+    traceStage(stageBase .. ".world_ready", record, actor, {
+        source = hookName,
+        square = anchorSquare,
+    })
+    if LWN.ActorFactory and LWN.ActorFactory.refreshEmbodiedPresentation then
+        LWN.ActorFactory.refreshEmbodiedPresentation(record, actor, protectedCall(actor, "getDescriptor"))
+    end
+    traceStage(stageBase .. ".presentation_refreshed", record, actor, {
+        source = hookName,
+        square = anchorSquare,
+    })
+    if LWN.ActorSync and LWN.ActorSync.pushRecordToActor then
+        LWN.ActorSync.pushRecordToActor(record, actor)
+    end
+    traceStage(stageBase .. ".synced", record, actor, {
+        source = hookName,
+    })
+    if record.embodiment.state == "embodied" and LWN.EmbodimentManager and LWN.EmbodimentManager.registerActor then
+        LWN.EmbodimentManager.registerActor(record, actor)
+        traceStage(stageBase .. ".registered", record, actor, {
+            source = hookName,
+        })
+    end
+
+    if modData then
+        modData.LWN_CreateHookPending = false
+        modData.LWN_PostCreateApplied = true
+        modData.LWN_PostCreateAppliedBy = hookName
+        modData.LWN_PostCreateAppliedAt = getGameTime() and getGameTime():getWorldAgeHours() or nil
+    end
+end
+
+function Adapter.onCreateSurvivor(survivor)
+    handleCreatedCharacter(survivor, "OnCreateSurvivor")
+end
+
+function Adapter.onCreateLivingCharacter(character)
+    handleCreatedCharacter(character, "OnCreateLivingCharacter")
 end
 
 function Adapter.onPlayerDeath(player)
@@ -727,6 +834,9 @@ function Adapter.bind()
     -- These hooks come from the shipped/community Lua event layer, not the Java Javadocs.
     Events.OnNewGame.Add(Adapter.onNewGame)
     Events.OnCreateUI.Add(Adapter.onCreateUI)
+    if Events.OnCreateLivingCharacter then
+        Events.OnCreateLivingCharacter.Add(Adapter.onCreateLivingCharacter)
+    end
     Events.OnCreateSurvivor.Add(Adapter.onCreateSurvivor)
     Events.OnPlayerDeath.Add(Adapter.onPlayerDeath)
     Events.OnFillWorldObjectContextMenu.Add(LWN.UIContextMenu.onFillWorldObjectContextMenu)

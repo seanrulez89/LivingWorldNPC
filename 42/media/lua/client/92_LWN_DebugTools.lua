@@ -247,12 +247,12 @@ local function makeRoomForDebugSpawn(player)
         return false, "max_embodied_no_debug_victim"
     end
 
-    local actor = findActorForRecord(victim)
-    if actor and LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
-        LWN.ActorFactory.cleanupActor(actor)
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.canonicalCleanup then
+        LWN.EmbodimentManager.canonicalCleanup(victim, {
+            reason = "debug_make_room",
+            detail = "max_embodied_debug_spawn",
+        })
     end
-    LWN.EmbodimentManager.unregisterActor(victim)
-    Store.removeNPC(victim.id)
     print("[LWN][Debug] Freed embodied slot by removing debug NPC " .. tostring(victim.id))
     return true, victim.id
 end
@@ -473,25 +473,14 @@ function DebugTools.deleteNpcById(npcId, player)
     local record = Store.getNPC(npcId)
     if not record then return false end
 
-    local actor = findActorForRecord(record)
-    if actor then
-        if LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
-            LWN.ActorFactory.cleanupActor(actor)
-        end
-        LWN.EmbodimentManager.unregisterActor(record)
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.canonicalCleanup then
+        LWN.EmbodimentManager.canonicalCleanup(record, {
+            reason = "debug_delete",
+            detail = "deleteNpcById",
+        })
+    else
+        Store.removeNPC(npcId)
     end
-
-    if LWN.UICommandPanel and LWN.UICommandPanel.target and getNpcId(LWN.UICommandPanel.target) == npcId then
-        LWN.UICommandPanel.hide()
-    end
-    if LWN.UIDialogueWindow and LWN.UIDialogueWindow.target and getNpcId(LWN.UIDialogueWindow.target) == npcId then
-        LWN.UIDialogueWindow.hide()
-    end
-    if LWN.UIRadialMenu and LWN.UIRadialMenu.target and getNpcId(LWN.UIRadialMenu.target) == npcId then
-        LWN.UIRadialMenu.hide()
-    end
-
-    Store.removeNPC(npcId)
     sayInfo(player, string.format("Deleted NPC %s", npcId))
     return true
 end
