@@ -4,6 +4,41 @@ LWN.UIContextMenu = LWN.UIContextMenu or {}
 -- World-object context entry point. We intentionally scan nearby squares because
 -- a clicked tile often isn't the actor's exact moving-object square.
 local UIContext = LWN.UIContextMenu
+local Store = LWN.PopulationStore
+
+local function protectedCall(obj, methodName, ...)
+    if not obj then return nil end
+    local fn = obj[methodName]
+    if not fn then return nil end
+
+    local ok, result = pcall(fn, obj, ...)
+    if ok then
+        return result
+    end
+    return nil
+end
+
+local function safeText(value)
+    if value == nil then return "nil" end
+    local text = tostring(value)
+    text = text:gsub("[\r\n|]", " ")
+    return text
+end
+
+local function objectRef(value)
+    if value == nil then return "nil" end
+    return safeText(tostring(value))
+end
+
+local function isDebugModeEnabled()
+    if LWN and LWN.Config and LWN.Config.Debug and LWN.Config.Debug.Enabled == true then
+        return true
+    end
+    if LWN.DebugTools and LWN.DebugTools.isEnabled then
+        return LWN.DebugTools.isEnabled() == true
+    end
+    return false
+end
 
 local function getPlayerByNum(playerNum)
     if getSpecificPlayer then
@@ -29,6 +64,60 @@ local function getNpcId(actor)
     return modData and modData.LWN_NpcId or nil
 end
 
+local function worldObjectKind(obj)
+    if not obj then return "nil" end
+    if instanceof then
+        if instanceof(obj, "IsoDeadBody") then return "corpse" end
+        if instanceof(obj, "IsoZombie") then return "zombie" end
+        if instanceof(obj, "IsoPlayer") then return "player" end
+        if instanceof(obj, "IsoSurvivor") then return "survivor" end
+    end
+    return safeText(protectedCall(obj, "getObjectName"))
+end
+
+local function traceContextCandidate(stage, actor, reason, worldObject)
+    if not isDebugModeEnabled() then return end
+
+    local obj = actor or worldObject
+    local npcId = getNpcId(obj)
+    local record = npcId and Store and Store.getNPC and Store.getNPC(npcId) or nil
+    local deathLike = actor and LWN.ActorFactory and LWN.ActorFactory.isDeathLikeActor and LWN.ActorFactory.isDeathLikeActor(actor) or false
+    print(string.format(
+        "[LWN][ContextTrace] stage=%s | npcId=%s | reason=%s | candidateRef=%s | kind=%s | recordExists=%s | deathLike=%s | world=%s | square=%s",
+        safeText(stage),
+        safeText(npcId),
+        safeText(reason),
+        safeText(objectRef(obj)),
+        safeText(worldObjectKind(obj)),
+        safeText(record ~= nil),
+        safeText(deathLike),
+        safeText(obj and protectedCall(obj, "isExistInTheWorld") or nil),
+        safeText(obj and protectedCall(obj, "getSquare") or protectedCall(obj, "getCurrentSquare") or nil)
+    ))
+end
+
+local function isTargetableNpcActor(actor)
+    if not isManagedActor(actor) then
+        return false
+    end
+
+    local npcId = getNpcId(actor)
+    if not npcId then return false end
+
+    if not (Store and Store.getNPC and Store.getNPC(npcId)) then
+        traceContextCandidate("candidate.rejected", actor, "record_missing", nil)
+        return false
+    end
+
+    if LWN.ActorFactory and LWN.ActorFactory.isDeathLikeActor and LWN.ActorFactory.isDeathLikeActor(actor) then
+        traceContextCandidate("candidate.rejected", actor, "death_like_actor", nil)
+        return false
+    end
+
+    traceContextCandidate("candidate.accepted", actor, "targetable", nil)
+    return true
+end
+
 function UIContext.findNpcActorInWorldObjects(worldObjects)
     if not worldObjects or #worldObjects == 0 then return nil end
     local cell = getCell and getCell() or nil
@@ -40,7 +129,11 @@ function UIContext.findNpcActorInWorldObjects(worldObjects)
 
     for i = 1, #worldObjects do
         local obj = worldObjects[i]
-        if isManagedActor(obj) and getNpcId(obj) then
+        if getNpcId(obj) then
+            traceContextCandidate("worldObject.inspect", nil, "clicked_object", obj)
+        end
+
+        if isTargetableNpcActor(obj) then
             return obj
         end
 
@@ -71,7 +164,7 @@ function UIContext.findNpcActorInWorldObjects(worldObjects)
 
         for i = 0, movingObjects:size() - 1 do
             local obj = movingObjects:get(i)
-            if isManagedActor(obj) and getNpcId(obj) then
+            if isTargetableNpcActor(obj) then
                 local dx = (obj:getX() or square:getX()) - ox
                 local dy = (obj:getY() or square:getY()) - oy
                 local d2 = dx * dx + dy * dy
@@ -137,6 +230,7 @@ local function addDebugSubmenu(context, player, actor)
     end)
 
     settingsSub:addOption("Debug: Delete Nearest NPC", player, function(p)
+        traceContextCandidate("debug.delete.request", nil, "delete_nearest_npc", nil)
         if LWN.DebugTools and LWN.DebugTools.deleteNearestNpc then
             LWN.DebugTools.deleteNearestNpc(p)
         end
@@ -181,11 +275,13 @@ local function addDebugSubmenu(context, player, actor)
     local npcId = getNpcId(actor)
     if npcId then
         settingsSub:addOption("Debug: Dump This NPC (" .. tostring(npcId) .. ")", player, function(p)
+            traceContextCandidate("debug.dump.request", actor, "dump_this_npc", nil)
             if LWN.DebugTools and LWN.DebugTools.dumpNpcById then
                 LWN.DebugTools.dumpNpcById(npcId, p)
             end
         end)
         settingsSub:addOption("Debug: Delete This NPC (" .. tostring(npcId) .. ")", player, function(p)
+            traceContextCandidate("debug.delete.request", actor, "delete_this_npc", nil)
             if LWN.DebugTools and LWN.DebugTools.deleteNpcById then
                 LWN.DebugTools.deleteNpcById(npcId, p)
             end

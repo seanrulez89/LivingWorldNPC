@@ -41,6 +41,38 @@ local function protectedCall(obj, methodName, ...)
     return nil
 end
 
+local traceStage
+
+local function tracePresentationTransition(record, actor, source)
+    if not actor then return end
+
+    local modData = protectedCall(actor, "getModData")
+    if not modData then return end
+    if not (LWN.ActorFactory and LWN.ActorFactory.presentationStateSummary) then
+        return
+    end
+
+    local current = LWN.ActorFactory.presentationStateSummary(actor)
+    if not current then return end
+
+    local previous = modData.LWN_LastPresentationState
+    if previous == current then
+        return
+    end
+
+    modData.LWN_LastPresentationState = current
+    modData.LWN_LastPresentationStateSource = source
+    modData.LWN_LastPresentationStateAt = getGameTime() and getGameTime():getWorldAgeHours() or nil
+
+    if type(traceStage) ~= "function" then return end
+
+    local stageSource = tostring(source or "unknown")
+    traceStage(stageSource .. ".presentation_changed", record, actor, {
+        source = source,
+        detail = string.format("previous={%s} current={%s}", tostring(previous), tostring(current)),
+    })
+end
+
 local function clamp(value, minValue, maxValue)
     if type(value) ~= "number" then return nil end
     if type(minValue) == "number" and value < minValue then
@@ -113,6 +145,12 @@ local function getNpcId(actor)
     return modData and modData.LWN_NpcId or nil
 end
 
+traceStage = function(stage, record, actor, extra)
+    if LWN.ActorFactory and LWN.ActorFactory.debugStage then
+        LWN.ActorFactory.debugStage("ActorSync", stage, record, actor, protectedCall(actor, "getDescriptor"), extra)
+    end
+end
+
 local function enforceEmbodiedFlags(record, actor)
     if not actor then return end
 
@@ -132,6 +170,38 @@ local function enforceEmbodiedFlags(record, actor)
     protectedCall(actor, "setVisibleToNPCs", true)
     protectedCall(actor, "setForname", record and record.identity and record.identity.firstName or nil)
     protectedCall(actor, "setSurname", record and record.identity and record.identity.lastName or nil)
+
+    if LWN.ActorFactory and LWN.ActorFactory.repairVisibleAlpha then
+        LWN.ActorFactory.repairVisibleAlpha(actor, "ActorSync.enforceEmbodiedFlags")
+    end
+end
+
+local function settlePendingPresentation(record, actor, source)
+    if not actor then return end
+
+    local modData = protectedCall(actor, "getModData")
+    if not modData or modData.LWN_PresentationPending ~= true then
+        return
+    end
+
+    local reason = modData.LWN_PresentationReason
+    if LWN.ActorFactory and LWN.ActorFactory.settleEmbodiedPresentation then
+        LWN.ActorFactory.settleEmbodiedPresentation(record, actor, protectedCall(actor, "getDescriptor"), source)
+    else
+        protectedCall(actor, "onWornItemsChanged")
+        protectedCall(actor, "resetModel")
+        protectedCall(actor, "resetModelNextFrame")
+        modData.LWN_PresentationPending = false
+    end
+
+    traceStage(source .. ".presentation_settled", record, actor, {
+        source = source,
+        detail = string.format("pendingReason=%s", tostring(reason)),
+    })
+
+    if LWN.ActorFactory and LWN.ActorFactory.repairVisibleAlpha then
+        LWN.ActorFactory.repairVisibleAlpha(actor, source .. ".presentation_settled")
+    end
 end
 
 local function applyTrackedStats(record, stats)
@@ -167,14 +237,18 @@ function Sync.pushRecordToActor(record, actor)
     if not actor then return end
     ensureRecordShape(record)
     enforceEmbodiedFlags(record, actor)
+    settlePendingPresentation(record, actor, "pushRecordToActor")
 
     applyTrackedStats(record, protectedCall(actor, "getStats"))
     protectedCall(actor, "setHealth", record.stats.health or protectedCall(actor, "getHealth"))
+    tracePresentationTransition(record, actor, "pushRecordToActor")
 end
 
 function Sync.ensureEmbodiedActorState(record, actor)
     ensureRecordShape(record)
     enforceEmbodiedFlags(record, actor)
+    settlePendingPresentation(record, actor, "ensureEmbodiedActorState")
+    tracePresentationTransition(record, actor, "ensureEmbodiedActorState")
 end
 
 function Sync.pullActorToRecord(record, actor)
@@ -211,4 +285,6 @@ function Sync.pullActorToRecord(record, actor)
             modData.LWN_NpcId = record.id
         end
     end
+
+    tracePresentationTransition(record, actor, "pullActorToRecord")
 end

@@ -70,6 +70,11 @@ local function coordSummary(x, y, z)
     return safeNumber(x) .. "," .. safeNumber(y) .. "," .. safeNumber(z)
 end
 
+local function objectRef(value)
+    if value == nil then return "nil" end
+    return safeText(tostring(value))
+end
+
 local function getNpcIdFromActor(actor)
     local modData = protectedCall(actor, "getModData")
     return modData and modData.LWN_NpcId or nil
@@ -190,18 +195,50 @@ local function actorSummary(actor)
     end
 
     local square = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
+    local bodyDamage = protectedCall(actor, "getBodyDamage")
+    local health = protectedCall(actor, "getHealth")
+    if health == nil then
+        health = protectedCall(bodyDamage, "getHealth")
+    end
+    local isZombie = protectedCall(actor, "isZombie")
+    local isReanimated = protectedCall(actor, "isReanimatedPlayer")
+    local isDead = protectedCall(actor, "isDead")
+    local isOnFloor = protectedCall(actor, "isOnFloor")
+    local isFallOnFront = protectedCall(actor, "isFallOnFront")
+    local isKnockedDown = protectedCall(actor, "isKnockedDown")
+    local isDeathFinished = protectedCall(actor, "isDeathFinished")
+    local isDowned = isOnFloor == true or isFallOnFront == true or isKnockedDown == true
+    local isDeathLike = isDead == true
+        or isReanimated == true
+        or isDeathFinished == true
+        or (type(health) == "number" and health <= 0)
     local parts = {}
     appendPart(parts, "object", protectedCall(actor, "getObjectName"))
     appendPart(parts, "npcId", getNpcIdFromActor(actor))
+    appendPart(parts, "objectRef", objectRef(actor))
     appendPart(parts, "body", protectedCall(actor, "getBodyDamage") ~= nil)
     appendPart(parts, "stats", protectedCall(actor, "getStats") ~= nil)
     appendPart(parts, "inventory", protectedCall(actor, "getInventory") ~= nil)
     appendPart(parts, "npc", protectedCall(actor, "getIsNPC"))
+    appendPart(parts, "health", safeNumber(health))
+    appendPart(parts, "zombie", isZombie)
+    appendPart(parts, "reanimated", isReanimated)
+    appendPart(parts, "dead", isDead)
+    appendPart(parts, "downed", isDowned)
+    appendPart(parts, "onFloor", isOnFloor)
+    appendPart(parts, "fallOnFront", isFallOnFront)
+    appendPart(parts, "knockedDown", isKnockedDown)
+    appendPart(parts, "deathFinished", isDeathFinished)
+    appendPart(parts, "deathLike", isDeathLike)
     appendPart(parts, "ghost", protectedCall(actor, "isGhostMode"))
     appendPart(parts, "invisible", protectedCall(actor, "isInvisible"))
     appendPart(parts, "sceneCulled", protectedCall(actor, "isSceneCulled"))
     appendPart(parts, "alpha", safeNumber(protectedCall(actor, "getAlpha", 0)))
     appendPart(parts, "targetAlpha", safeNumber(protectedCall(actor, "getTargetAlpha", 0)))
+    appendPart(parts, "alphaZero", protectedCall(actor, "isAlphaZero"))
+    appendPart(parts, "targetAlphaZero", protectedCall(actor, "isTargetAlphaZero", 0))
+    appendPart(parts, "humanVisual", protectedCall(actor, "getHumanVisual") ~= nil)
+    appendPart(parts, "actorDescriptor", protectedCall(actor, "getDescriptor") ~= nil)
     appendPart(parts, "pos", coordSummary(protectedCall(actor, "getX"), protectedCall(actor, "getY"), protectedCall(actor, "getZ")))
     appendPart(parts, "destroyed", protectedCall(actor, "isDestroyed"))
     appendPart(parts, "world", protectedCall(actor, "isExistInTheWorld"))
@@ -243,6 +280,238 @@ local function visualSummary(actor, descriptor)
     return table.concat(parts, " | ")
 end
 
+local function actorPresentationState(actor)
+    if not actor then
+        return nil
+    end
+
+    local bodyDamage = protectedCall(actor, "getBodyDamage")
+    local health = protectedCall(actor, "getHealth")
+    if health == nil then
+        health = protectedCall(bodyDamage, "getHealth")
+    end
+
+    local isZombie = protectedCall(actor, "isZombie")
+    local isReanimated = protectedCall(actor, "isReanimatedPlayer")
+    local isDead = protectedCall(actor, "isDead")
+    local isOnFloor = protectedCall(actor, "isOnFloor")
+    local isFallOnFront = protectedCall(actor, "isFallOnFront")
+    local isKnockedDown = protectedCall(actor, "isKnockedDown")
+    local isDeathFinished = protectedCall(actor, "isDeathFinished")
+    local isDowned = isOnFloor == true or isFallOnFront == true or isKnockedDown == true
+    local isDeathLike = isDead == true
+        or isReanimated == true
+        or isDeathFinished == true
+        or (type(health) == "number" and health <= 0)
+
+    return {
+        objectRef = objectRef(actor),
+        object = protectedCall(actor, "getObjectName"),
+        npc = protectedCall(actor, "getIsNPC"),
+        health = health,
+        zombie = isZombie,
+        reanimated = isReanimated,
+        dead = isDead,
+        downed = isDowned,
+        onFloor = isOnFloor,
+        fallOnFront = isFallOnFront,
+        knockedDown = isKnockedDown,
+        deathFinished = isDeathFinished,
+        deathLike = isDeathLike,
+        world = protectedCall(actor, "isExistInTheWorld"),
+        destroyed = protectedCall(actor, "isDestroyed"),
+        ghost = protectedCall(actor, "isGhostMode"),
+        invisible = protectedCall(actor, "isInvisible"),
+        sceneCulled = protectedCall(actor, "isSceneCulled"),
+        alpha = protectedCall(actor, "getAlpha", 0),
+        targetAlpha = protectedCall(actor, "getTargetAlpha", 0),
+        alphaZero = protectedCall(actor, "isAlphaZero"),
+        targetAlphaZero = protectedCall(actor, "isTargetAlphaZero", 0),
+        humanVisual = protectedCall(actor, "getHumanVisual") ~= nil,
+        actorDescriptor = protectedCall(actor, "getDescriptor") ~= nil,
+    }
+end
+
+local function presentationStateSummary(actor)
+    local state = actorPresentationState(actor)
+    if not state then
+        return "presentation=nil"
+    end
+
+    local parts = {}
+    appendPart(parts, "objectRef", state.objectRef)
+    appendPart(parts, "object", state.object)
+    appendPart(parts, "npc", state.npc)
+    appendPart(parts, "health", safeNumber(state.health))
+    appendPart(parts, "zombie", state.zombie)
+    appendPart(parts, "reanimated", state.reanimated)
+    appendPart(parts, "dead", state.dead)
+    appendPart(parts, "downed", state.downed)
+    appendPart(parts, "onFloor", state.onFloor)
+    appendPart(parts, "fallOnFront", state.fallOnFront)
+    appendPart(parts, "knockedDown", state.knockedDown)
+    appendPart(parts, "deathFinished", state.deathFinished)
+    appendPart(parts, "deathLike", state.deathLike)
+    appendPart(parts, "world", state.world)
+    appendPart(parts, "destroyed", state.destroyed)
+    appendPart(parts, "ghost", state.ghost)
+    appendPart(parts, "invisible", state.invisible)
+    appendPart(parts, "sceneCulled", state.sceneCulled)
+    appendPart(parts, "alpha", safeNumber(state.alpha))
+    appendPart(parts, "targetAlpha", safeNumber(state.targetAlpha))
+    appendPart(parts, "alphaZero", state.alphaZero)
+    appendPart(parts, "targetAlphaZero", state.targetAlphaZero)
+    appendPart(parts, "humanVisual", state.humanVisual)
+    appendPart(parts, "actorDescriptor", state.actorDescriptor)
+    return table.concat(parts, ",")
+end
+
+local trackedPresentationFields = {
+    "objectRef",
+    "object",
+    "npc",
+    "world",
+    "health",
+    "dead",
+    "downed",
+    "deathLike",
+    "zombie",
+    "reanimated",
+    "ghost",
+    "invisible",
+    "sceneCulled",
+    "alpha",
+    "targetAlpha",
+    "alphaZero",
+    "targetAlphaZero",
+    "humanVisual",
+    "actorDescriptor",
+}
+
+local function copyTable(source)
+    if not source then return nil end
+    local copy = {}
+    for key, value in pairs(source) do
+        copy[key] = value
+    end
+    return copy
+end
+
+local function presentationTraceKey(record, actor)
+    return (record and record.id) or getNpcIdFromActor(actor) or objectRef(actor)
+end
+
+local function presentationDiffSummary(previous, current)
+    if not previous or not current then
+        return nil
+    end
+
+    local changes = {}
+    for _, field in ipairs(trackedPresentationFields) do
+        local before = previous[field]
+        local after = current[field]
+        if type(before) == "number" and type(after) == "number" then
+            if math.abs(before - after) > 0.001 then
+                changes[#changes + 1] = string.format("%s:%s->%s", field, safeNumber(before), safeNumber(after))
+            end
+        elseif before ~= after then
+            changes[#changes + 1] = string.format("%s:%s->%s", field, safeText(before), safeText(after))
+        end
+    end
+
+    if #changes == 0 then
+        return nil
+    end
+    return table.concat(changes, ",")
+end
+
+local function shouldWatchAlphaState(state)
+    if not state then return false end
+
+    local alphaZero = state.alphaZero == true
+        or (type(state.alpha) == "number" and state.alpha <= 0.01)
+    local targetZero = state.targetAlphaZero == true
+        or (type(state.targetAlpha) == "number" and state.targetAlpha <= 0.01)
+
+    if not alphaZero and not targetZero then
+        return false
+    end
+
+    return state.deathLike ~= true
+        and state.destroyed ~= true
+        and state.world ~= false
+        and state.ghost ~= true
+        and state.invisible ~= true
+        and state.sceneCulled ~= true
+end
+
+local function tracePresentationWatch(moduleName, stage, record, actor, extra)
+    if not isDebugModeEnabled() or not actor then return end
+
+    local key = presentationTraceKey(record, actor)
+    Factory._presentationTraceCache = Factory._presentationTraceCache or {}
+    Factory._presentationAlphaWatch = Factory._presentationAlphaWatch or {}
+
+    local current = actorPresentationState(actor)
+    local previous = Factory._presentationTraceCache[key]
+    local changed = presentationDiffSummary(previous, current)
+
+    if changed then
+        print(string.format(
+            "[LWN][PresentationWatch] module=%s | stage=%s | npcId=%s | source=%s | detail=%s",
+            safeText(moduleName),
+            safeText(stage),
+            safeText(key),
+            safeText(extra and extra.source or nil),
+            safeText(changed)
+        ))
+    end
+
+    if shouldWatchAlphaState(current) then
+        local signature = string.format(
+            "objectRef=%s|alpha=%s|targetAlpha=%s|dead=%s|downed=%s|deathLike=%s|humanVisual=%s|actorDescriptor=%s",
+            safeText(current.objectRef),
+            safeNumber(current.alpha),
+            safeNumber(current.targetAlpha),
+            safeText(current.dead),
+            safeText(current.downed),
+            safeText(current.deathLike),
+            safeText(current.humanVisual),
+            safeText(current.actorDescriptor)
+        )
+        local lastSignature = Factory._presentationAlphaWatch[key]
+        if lastSignature ~= signature then
+            Factory._presentationAlphaWatch[key] = signature
+            print(string.format(
+                "[LWN][PresentationWatch] module=%s | stage=%s | npcId=%s | alphaWatch=true | objectRef=%s | object=%s | world=%s | ghost=%s | invisible=%s | sceneCulled=%s | alpha=%s | targetAlpha=%s | alphaZero=%s | targetAlphaZero=%s | health=%s | dead=%s | downed=%s | deathLike=%s | humanVisual=%s | actorDescriptor=%s",
+                safeText(moduleName),
+                safeText(stage),
+                safeText(key),
+                safeText(current.objectRef),
+                safeText(current.object),
+                safeText(current.world),
+                safeText(current.ghost),
+                safeText(current.invisible),
+                safeText(current.sceneCulled),
+                safeNumber(current.alpha),
+                safeNumber(current.targetAlpha),
+                safeText(current.alphaZero),
+                safeText(current.targetAlphaZero),
+                safeNumber(current.health),
+                safeText(current.dead),
+                safeText(current.downed),
+                safeText(current.deathLike),
+                safeText(current.humanVisual),
+                safeText(current.actorDescriptor)
+            ))
+        end
+    else
+        Factory._presentationAlphaWatch[key] = nil
+    end
+
+    Factory._presentationTraceCache[key] = copyTable(current)
+end
+
 local function extraSummary(extra)
     if not extra then return "extra=nil" end
 
@@ -263,6 +532,7 @@ local function stageTrace(moduleName, stage, record, actor, descriptor, extra)
     local currentSquare = actor and (protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")) or nil
     local targetSquare = extra and extra.square or nil
     local actorDescriptor = actor and protectedCall(actor, "getDescriptor") or nil
+    local presentation = actor and actorPresentationState(actor) or nil
     local visual = actor and protectedCall(actor, "getHumanVisual") or nil
     local itemVisuals = actor and protectedCall(actor, "getItemVisuals") or nil
     local wornItems = actor and protectedCall(actor, "getWornItems") or nil
@@ -274,12 +544,25 @@ local function stageTrace(moduleName, stage, record, actor, descriptor, extra)
     appendPart(parts, "module", moduleName)
     appendPart(parts, "stage", stage)
     appendPart(parts, "npcId", record and record.id or getNpcIdFromActor(actor) or (extra and extra.npcId) or nil)
+    appendPart(parts, "objectRef", actor and objectRef(actor) or nil)
+    appendPart(parts, "object", presentation and presentation.object or nil)
+    appendPart(parts, "npc", presentation and presentation.npc or nil)
+    appendPart(parts, "health", presentation and safeNumber(presentation.health) or nil)
+    appendPart(parts, "zombie", presentation and presentation.zombie or nil)
+    appendPart(parts, "reanimated", presentation and presentation.reanimated or nil)
+    appendPart(parts, "dead", presentation and presentation.dead or nil)
+    appendPart(parts, "downed", presentation and presentation.downed or nil)
+    appendPart(parts, "deathLike", presentation and presentation.deathLike or nil)
     appendPart(parts, "world", actor and protectedCall(actor, "isExistInTheWorld") or nil)
     appendPart(parts, "currentSquare", squareCoords(currentSquare))
     appendPart(parts, "targetSquare", squareCoords(targetSquare))
     appendPart(parts, "ghost", actor and protectedCall(actor, "isGhostMode") or nil)
     appendPart(parts, "invisible", actor and protectedCall(actor, "isInvisible") or nil)
     appendPart(parts, "sceneCulled", actor and protectedCall(actor, "isSceneCulled") or nil)
+    appendPart(parts, "alpha", presentation and safeNumber(presentation.alpha) or nil)
+    appendPart(parts, "targetAlpha", presentation and safeNumber(presentation.targetAlpha) or nil)
+    appendPart(parts, "alphaZero", presentation and presentation.alphaZero or nil)
+    appendPart(parts, "targetAlphaZero", presentation and presentation.targetAlphaZero or nil)
     appendPart(parts, "descriptor", descriptor ~= nil)
     appendPart(parts, "actorDescriptor", actorDescriptor ~= nil)
     appendPart(parts, "humanVisual", visual ~= nil)
@@ -304,6 +587,7 @@ local function stageTrace(moduleName, stage, record, actor, descriptor, extra)
     end
 
     print(table.concat(parts, " | "))
+    tracePresentationWatch(moduleName, stage, record, actor, extra)
 
     if isVisualProbeEnabled(record) then
         if record then
@@ -413,8 +697,50 @@ local function refreshModelManager(actor, reason)
     return after
 end
 
+local function repairVisibleAlpha(actor, reason)
+    if not actor then return false end
+
+    local before = actorPresentationState(actor)
+    if not shouldWatchAlphaState(before) then
+        return false
+    end
+
+    protectedCall(actor, "setAlphaAndTarget", 1.0)
+    protectedCall(actor, "setAlphaToTarget", 0)
+
+    local after = actorPresentationState(actor)
+    print(string.format(
+        "[LWN][PresentationWatch] action=alpha_repair | reason=%s | npcId=%s | objectRef=%s | beforeAlpha=%s | beforeTargetAlpha=%s | afterAlpha=%s | afterTargetAlpha=%s | dead=%s | downed=%s | deathLike=%s",
+        safeText(reason),
+        safeText(getNpcIdFromActor(actor)),
+        safeText(objectRef(actor)),
+        safeNumber(before and before.alpha or nil),
+        safeNumber(before and before.targetAlpha or nil),
+        safeNumber(after and after.alpha or nil),
+        safeNumber(after and after.targetAlpha or nil),
+        safeText(after and after.dead or nil),
+        safeText(after and after.downed or nil),
+        safeText(after and after.deathLike or nil)
+    ))
+    return true
+end
+
+local function markPresentationPending(actor, reason)
+    local modData = protectedCall(actor, "getModData")
+    if not modData then return end
+
+    modData.LWN_PresentationPending = true
+    modData.LWN_PresentationReason = reason
+    modData.LWN_PresentationPendingAt = getGameTime() and getGameTime():getWorldAgeHours() or nil
+end
+
 local function safeCleanupActor(actor)
     if not actor then return end
+    local modData = protectedCall(actor, "getModData")
+    if modData and modData.LWN_NpcId ~= nil then
+        modData.LWN_LastNpcId = modData.LWN_NpcId
+    end
+
     protectedCall(actor, "StopAllActionQueue")
     protectedCall(actor, "setGhostMode", true)
     protectedCall(actor, "setInvisible", true)
@@ -425,8 +751,18 @@ local function safeCleanupActor(actor)
     -- Prefer the engine-managed despawn path. Clearing square/current references
     -- here can leave a scheduled update with a nil currentSquare in the same frame.
     local despawned = protectedCall(actor, "Despawn")
-    if despawned == nil then
+    local stillWorld = protectedCall(actor, "isExistInTheWorld")
+    if despawned == nil or stillWorld == true then
+        -- If the engine despawn leaves the actor registered in-world, force a
+        -- direct world removal so stale actor refs stop shadowing delete/remove.
+        protectedCall(actor, "removeFromSquare")
         protectedCall(actor, "removeFromWorld")
+    end
+
+    if modData then
+        modData.LWN_LastCleanupHour = getGameTime() and getGameTime():getWorldAgeHours() or nil
+        modData.LWN_LastCleanupWorld = stillWorld
+        modData.LWN_NpcId = nil
     end
 end
 
@@ -556,11 +892,6 @@ local function setBaselineHumanVisual(record, actor, desc)
     local female = record.identity and record.identity.female == true
     protectedCall(actor, "setFemale", female)
     protectedCall(actor, "setFemaleEtc", female)
-    if desc then
-        protectedCall(actor, "setDescriptor", desc)
-        protectedCall(actor, "Dressup", desc)
-        protectedCall(actor, "InitSpriteParts", desc)
-    end
 
     local visual = protectedCall(actor, "getHumanVisual")
     if visual then
@@ -584,6 +915,63 @@ local function setBaselineHumanVisual(record, actor, desc)
     protectedCall(actor, "resetModel")
     protectedCall(actor, "resetModelNextFrame")
     refreshModelManager(actor, "baseline_visual")
+end
+
+local function materializeDescriptorVisual(record, actor, descriptor, phase, options)
+    if not actor then
+        return nil, {
+            phase = phase,
+            descriptorApplied = false,
+            dressup = false,
+            initSpriteParts = false,
+            female = false,
+        }
+    end
+
+    local desc = descriptor or protectedCall(actor, "getDescriptor")
+    local female = record
+        and record.identity
+        and record.identity.female == true
+        or (desc and protectedCall(desc, "isFemale") == true)
+        or false
+    local detail = {
+        phase = phase,
+        descriptorApplied = desc ~= nil,
+        dressup = false,
+        initSpriteParts = false,
+        female = female,
+    }
+
+    protectedCall(actor, "setFemale", female)
+    protectedCall(actor, "setFemaleEtc", female)
+
+    if desc then
+        callIf(desc, "setFemale", female)
+        if record and record.identity then
+            callIf(desc, "setForename", record.identity.firstName)
+            callIf(desc, "setSurname", record.identity.lastName)
+            callIf(desc, "setProfession", record.identity.profession)
+        end
+
+        protectedCall(actor, "setDescriptor", desc)
+
+        if not options or options.dressup ~= false then
+            protectedCall(actor, "Dressup", desc)
+            detail.dressup = true
+        end
+
+        if not options or options.initSpriteParts ~= false then
+            protectedCall(actor, "InitSpriteParts", desc)
+            detail.initSpriteParts = true
+        end
+    end
+
+    protectedCall(actor, "onWornItemsChanged")
+    protectedCall(actor, "resetModel")
+    protectedCall(actor, "resetModelNextFrame")
+    refreshModelManager(actor, "descriptor_" .. safeText(phase))
+    markPresentationPending(actor, phase)
+    return desc, detail
 end
 
 local function resolveWearLocation(item)
@@ -746,6 +1134,7 @@ local function ensureActorRegisteredInWorld(actor, square)
     protectedCall(actor, "setSceneCulled", false)
     protectedCall(actor, "setGhostMode", false)
     protectedCall(actor, "setInvisible", false)
+    repairVisibleAlpha(actor, "ensureActorRegisteredInWorld")
     protectedCall(actor, "resetModel")
     protectedCall(actor, "resetModelNextFrame")
     refreshModelManager(actor, "world_registration")
@@ -865,6 +1254,19 @@ function Factory.getLastFailure()
     return Factory._lastFailure
 end
 
+function Factory.isDeathLikeActor(actor)
+    local state = actorPresentationState(actor)
+    return state and state.deathLike == true or false
+end
+
+function Factory.getPresentationState(actor)
+    return actorPresentationState(actor)
+end
+
+function Factory.presentationStateSummary(actor)
+    return presentationStateSummary(actor)
+end
+
 function Factory.debugStage(moduleName, stage, record, actor, descriptor, extra)
     stageTrace(moduleName, stage, record, actor, descriptor, extra)
 end
@@ -908,24 +1310,90 @@ function Factory.rejectActor(actor, reason, npcId, record, descriptor, descripto
 end
 
 function Factory.cleanupActor(actor)
+    local npcId = getNpcIdFromActor(actor)
     stageTrace("ActorFactory", "cleanupActor.start", nil, actor, nil, {
         source = "cleanupActor",
-        npcId = getNpcIdFromActor(actor),
+        npcId = npcId,
+        detail = presentationStateSummary(actor),
     })
     safeCleanupActor(actor)
+    stageTrace("ActorFactory", "cleanupActor.complete", nil, actor, nil, {
+        source = "cleanupActor",
+        npcId = npcId,
+        detail = presentationStateSummary(actor),
+    })
 end
 
 local refreshActorPresentation
+
+function Factory.settleEmbodiedPresentation(record, actor, descriptor, source)
+    local desc, detail = materializeDescriptorVisual(record, actor, descriptor, source or "settle", {
+        dressup = false,
+        initSpriteParts = true,
+    })
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_PresentationPending = false
+        modData.LWN_PresentationSettledBy = source
+        modData.LWN_PresentationSettledAt = getGameTime() and getGameTime():getWorldAgeHours() or nil
+    end
+
+    stageTrace("ActorFactory", "settleEmbodiedPresentation.ready", record, actor, desc, {
+        source = source or "settleEmbodiedPresentation",
+        detail = string.format(
+            "phase=%s descriptorApplied=%s dressup=%s initSpriteParts=%s female=%s",
+            safeText(detail.phase),
+            safeText(detail.descriptorApplied),
+            safeText(detail.dressup),
+            safeText(detail.initSpriteParts),
+            safeText(detail.female)
+        ),
+    })
+end
 
 function Factory.ensureActorInWorld(actor, square)
     return ensureActorRegisteredInWorld(actor, square)
 end
 
+function Factory.repairVisibleAlpha(actor, reason)
+    return repairVisibleAlpha(actor, reason)
+end
+
 function Factory.refreshEmbodiedPresentation(record, actor, descriptor)
-    setBaselineHumanVisual(record or {}, actor, descriptor)
+    local activeDescriptor, baseline = materializeDescriptorVisual(record or {}, actor, descriptor, "refresh_pre_clothing", {
+        dressup = true,
+        initSpriteParts = true,
+    })
+    stageTrace("ActorFactory", "refreshEmbodiedPresentation.descriptor_bound", record, actor, activeDescriptor, {
+        source = "refreshEmbodiedPresentation",
+        detail = string.format(
+            "phase=%s descriptorApplied=%s dressup=%s initSpriteParts=%s female=%s",
+            safeText(baseline.phase),
+            safeText(baseline.descriptorApplied),
+            safeText(baseline.dressup),
+            safeText(baseline.initSpriteParts),
+            safeText(baseline.female)
+        ),
+    })
+    setBaselineHumanVisual(record or {}, actor, activeDescriptor)
     ensureVisibleClothing(actor)
+    local finalizedDescriptor, finalized = materializeDescriptorVisual(record or {}, actor, activeDescriptor, "refresh_post_clothing", {
+        dressup = false,
+        initSpriteParts = true,
+    })
+    stageTrace("ActorFactory", "refreshEmbodiedPresentation.materialized", record, actor, finalizedDescriptor, {
+        source = "refreshEmbodiedPresentation",
+        detail = string.format(
+            "phase=%s descriptorApplied=%s dressup=%s initSpriteParts=%s female=%s",
+            safeText(finalized.phase),
+            safeText(finalized.descriptorApplied),
+            safeText(finalized.dressup),
+            safeText(finalized.initSpriteParts),
+            safeText(finalized.female)
+        ),
+    })
     local bridge = bridgeWornItemsToItemVisuals(actor)
-    stageTrace("ActorFactory", "refreshEmbodiedPresentation.item_visual_bridge", record, actor, descriptor, {
+    stageTrace("ActorFactory", "refreshEmbodiedPresentation.item_visual_bridge", record, actor, finalizedDescriptor, {
         source = "refreshEmbodiedPresentation",
         detail = string.format(
             "mode=%s wornItems=%d itemVisualsBefore=%d itemVisualsAfter=%d added=%d",
@@ -937,7 +1405,7 @@ function Factory.refreshEmbodiedPresentation(record, actor, descriptor)
         ),
     })
     refreshActorPresentation(actor)
-    stageTrace("ActorFactory", "refreshEmbodiedPresentation.ready", record, actor, descriptor, {
+    stageTrace("ActorFactory", "refreshEmbodiedPresentation.ready", record, actor, finalizedDescriptor, {
         source = "refreshEmbodiedPresentation",
     })
 end
@@ -951,6 +1419,7 @@ refreshActorPresentation = function(actor)
     protectedCall(actor, "setNPC", true)
     protectedCall(actor, "setIsNPC", true)
     protectedCall(actor, "setVisibleToNPCs", true)
+    repairVisibleAlpha(actor, "refreshActorPresentation")
 
     local inv = protectedCall(actor, "getInventory")
     if inv then
@@ -974,7 +1443,7 @@ function Factory.applyTraits(record, actor)
     end
 end
 
-function Factory.applyLoadout(record, actor)
+function Factory.applyLoadout(record, actor, descriptor)
     ensureVisibleClothing(actor)
 
     local primaryWeapon = record.inventory
@@ -983,6 +1452,21 @@ function Factory.applyLoadout(record, actor)
         or nil
 
     ensurePrimaryWeapon(actor, primaryWeapon)
+    local desc, detail = materializeDescriptorVisual(record or {}, actor, descriptor, "apply_loadout", {
+        dressup = false,
+        initSpriteParts = true,
+    })
+    stageTrace("ActorFactory", "applyLoadout.materialized", record, actor, desc, {
+        source = "applyLoadout",
+        detail = string.format(
+            "phase=%s descriptorApplied=%s dressup=%s initSpriteParts=%s female=%s",
+            safeText(detail.phase),
+            safeText(detail.descriptorApplied),
+            safeText(detail.dressup),
+            safeText(detail.initSpriteParts),
+            safeText(detail.female)
+        ),
+    })
     refreshActorPresentation(actor)
 end
 
@@ -1074,6 +1558,7 @@ function Factory.createActor(record, player)
     protectedCall(actor, "setInvisible", false)
     protectedCall(actor, "setVisibleToNPCs", true)
     protectedCall(actor, "setFemale", record.identity and record.identity.female == true)
+    protectedCall(actor, "setFemaleEtc", record.identity and record.identity.female == true)
     protectedCall(actor, "setForname", record.identity.firstName)
     protectedCall(actor, "setSurname", record.identity.lastName)
 
@@ -1113,7 +1598,7 @@ function Factory.createActor(record, player)
 
     Factory.applyTraits(record, actor)
     Factory.refreshEmbodiedPresentation(record, actor, desc)
-    Factory.applyLoadout(record, actor)
+    Factory.applyLoadout(record, actor, desc)
     protectedCall(actor, "setHealth", record.stats and record.stats.health or 100)
     refreshActorPresentation(actor)
     stageTrace("ActorFactory", "createActor.presentation_ready", record, actor, desc, {

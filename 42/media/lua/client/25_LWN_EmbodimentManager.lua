@@ -54,6 +54,50 @@ local function traceStage(stage, record, actor, extra)
     end
 end
 
+local function registrySignature(record, actor)
+    local meta = record and Store.getEmbodiedMeta and Store.getEmbodiedMeta(record.id) or nil
+    local deathLike = actor and LWN.ActorFactory and LWN.ActorFactory.isDeathLikeActor and LWN.ActorFactory.isDeathLikeActor(actor) or false
+    return table.concat({
+        tostring(record and record.id or "nil"),
+        tostring(record and record.embodiment and record.embodiment.state or "nil"),
+        tostring(actor),
+        tostring(actor and protectedCall(actor, "isExistInTheWorld") or nil),
+        tostring(deathLike),
+        tostring(meta and meta.state or "nil"),
+        tostring(meta and meta.x or "nil"),
+        tostring(meta and meta.y or "nil"),
+        tostring(meta and meta.z or "nil"),
+    }, "|")
+end
+
+local function traceRegistryState(stage, record, actor, extra, force)
+    if not record then return end
+
+    Embody._registryTraceCache = Embody._registryTraceCache or {}
+    local signature = registrySignature(record, actor)
+    if not force and Embody._registryTraceCache[record.id] == signature then
+        return
+    end
+    Embody._registryTraceCache[record.id] = signature
+
+    local meta = Store.getEmbodiedMeta and Store.getEmbodiedMeta(record.id) or nil
+    traceStage(stage, record, actor, {
+        source = extra and extra.source or stage,
+        detail = string.format(
+            "recordState=%s actorRef=%s actorWorld=%s deathLike=%s metaState=%s metaPos=%s,%s,%s reason=%s",
+            tostring(record.embodiment and record.embodiment.state or nil),
+            tostring(actor),
+            tostring(actor and protectedCall(actor, "isExistInTheWorld") or nil),
+            tostring(actor and LWN.ActorFactory and LWN.ActorFactory.isDeathLikeActor and LWN.ActorFactory.isDeathLikeActor(actor) or false),
+            tostring(meta and meta.state or nil),
+            tostring(meta and meta.x or nil),
+            tostring(meta and meta.y or nil),
+            tostring(meta and meta.z or nil),
+            tostring(extra and extra.reason or nil)
+        ),
+    })
+end
+
 function Embody.tryRearmHidden(record, player)
     if not record or not player then return false end
     if record.embodiment.state ~= "hidden" then return false end
@@ -242,6 +286,9 @@ function Embody.registerActor(record, actor)
         z = math.floor(protectedCall(actor, "getZ") or record.anchor.z or 0),
         lastSeenHour = getGameTime() and getGameTime():getWorldAgeHours() or 0,
     })
+    traceRegistryState("registerActor.bound", record, actor, {
+        source = "registerActor",
+    }, false)
 end
 
 function Embody.getActor(record)
@@ -249,8 +296,25 @@ function Embody.getActor(record)
     return Embody._actors[record.id]
 end
 
-function Embody.unregisterActor(record)
+function Embody.unregisterActor(record, reason)
     if not record then return end
+    local actor = Embody._actors[record.id]
+    traceRegistryState("unregisterActor.start", record, actor, {
+        source = "unregisterActor",
+        reason = reason,
+    }, true)
     Embody._actors[record.id] = nil
     Store.setEmbodiedMeta(record.id, nil)
+    Embody._registryTraceCache = Embody._registryTraceCache or {}
+    Embody._registryTraceCache[record.id] = nil
+    traceStage("unregisterActor.complete", record, actor, {
+        source = "unregisterActor",
+        detail = string.format(
+            "recordState=%s actorRef=%s actorWorld=%s reason=%s metaCleared=true",
+            tostring(record.embodiment and record.embodiment.state or nil),
+            tostring(actor),
+            tostring(actor and protectedCall(actor, "isExistInTheWorld") or nil),
+            tostring(reason)
+        ),
+    })
 end

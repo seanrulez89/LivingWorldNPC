@@ -43,10 +43,53 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
 - 생성 경로는 `module=ActorFactory`, 상태 전이는 `module=EmbodimentManager`, 엔진 이벤트 재연결/유실은 `module=EventAdapter`를 우선 본다.
 - 외형 문제는 `humanVisual=`, `skin=`, `hair=`, `beard=`, `itemVisuals=`, `wornItems=`, `persistentOutfitId=` 값을 stage 사이에서 비교한다.
 - Stage 3 최소 패치에서는 `stage=refreshEmbodiedPresentation.item_visual_bridge`를 추가로 본다.
+- 2026-03-12 최소 패치에서는 `stage=refreshEmbodiedPresentation.descriptor_bound`, `stage=refreshEmbodiedPresentation.materialized`, `stage=applyLoadout.materialized`, `stage=settleEmbodiedPresentation.ready`도 함께 본다.
+- alive vs death/downed presentation 판정용으로는 아래 stage를 같은 `npcId`로 이어서 본다.
+  - `stage=pushRecordToActor.presentation_changed`
+  - `stage=ensureEmbodiedActorState.presentation_changed`
+  - `stage=pullActorToRecord.presentation_changed`
+  - `stage=tickEmbodiedRecord.start`
+  - `stage=tickEmbodiedRecord.pre_despawn`
+  - `stage=embodiedActor.death_like`
+  - `stage=cleanupActor.start`
+  - `stage=cleanupActor.complete`
+  - `stage=registerActor.bound`
+  - `stage=unregisterActor.start`
+  - `stage=unregisterActor.complete`
+  - `stage=resolveEmbodiedActor.repair_blocked_death_like`
+- alpha zero / object identity 추적용으로는 아래 로그 블록을 같은 `npcId`로 이어서 본다.
+  - `[LWN][PresentationWatch]`
+  - `stage=deathState.changed`
+  - `stage=deathProbe.objects_changed`
+  - `[LWN][DeathTrace]`
+  - `[LWN][ContextTrace]`
 - 이 stage의 핵심 detail 필드:
   - `mode=rebuilt_from_worn_items`면 worn clothing에서 item visual 재구성을 시도한 것
   - `itemVisualsBefore=0` / `itemVisualsAfter>0`면 이번 가설이 맞을 가능성이 올라감
   - `mode=item_visuals_present`면 이번 패치는 실질적으로 개입하지 않은 것
+- descriptor/materialization 가설용 추가 detail:
+  - `phase=refresh_pre_clothing`에서 `dressup=true`, `initSpriteParts=true`가 찍히는지
+  - `phase=refresh_post_clothing` 또는 `phase=apply_loadout`에서 `initSpriteParts=true`가 다시 찍히는지
+  - `pushRecordToActor.presentation_settled` 또는 `ensureEmbodiedActorState.presentation_settled`가 1회만 찍히는지
+- alive/downed/death 판정용 추가 필드:
+  - `object=`, `npc=`, `health=`
+  - `objectRef=`
+  - `zombie=`, `reanimated=`, `dead=`, `downed=`, `deathLike=`
+  - 기존 `world=`, `currentSquare=`, `ghost=`, `invisible=`, `sceneCulled=`, `alpha=`, `targetAlpha=`
+- alpha zero 의심 시 추가로 볼 필드:
+  - `alphaZero=`, `targetAlphaZero=`
+  - `[LWN][PresentationWatch] action=alpha_repair`의 `beforeAlpha`, `afterAlpha`, `beforeTargetAlpha`, `afterTargetAlpha`
+- corpse/reanimated object 판정 시 추가로 볼 필드:
+  - `[LWN][DeathTrace] relatedKind=corpse|zombie|player`
+  - `relatedRef=`, `sameActorRef=`, `sameNpcId=`, `modNpcId=`
+  - `[LWN][ContextTrace] recordExists=`, `deathLike=`, `reason=`
+- 빠른 판정법:
+  - 같은 `npcId`에서 `pullActorToRecord.presentation_changed`가 `downed=true` 또는 `deathLike=true`로 바뀐 뒤 `cleanupActor.*`가 이어지면, 사용자가 본 "누워 있는 좀비 같은 것"은 기존 embodied actor일 가능성이 높다.
+  - 같은 시점에 화면에는 누운 개체가 보였는데 해당 `npcId`에서 위 전환 로그가 전혀 없으면, 별도 visible object를 의심한다.
+  - `resolveEmbodiedActor.repair_blocked_death_like`가 찍히면 death-like actor를 repair 대상으로 다시 붙잡던 흐름이 있었는지 확인한다.
+  - `[LWN][DeathTrace]`에서 `sameActorRef=true`면 기존 embodied actor, `sameActorRef=false`면 별도 corpse/reanimated object로 본다.
+  - delete 직후 우클릭에 `ContextTrace stage=candidate.rejected | reason=record_missing`가 찍히면 stale object가 남아 있어도 canonical target은 끊긴 것이다.
+  - delete 직후 우클릭에 `ContextTrace stage=candidate.rejected | reason=death_like_actor`가 찍히면 record는 남아 있지만 death-like actor를 메뉴에서 배제한 것이다.
 
 ## 6. 반드시 넣어야 할 디버그 훅
 ### 6.1 강제 인카운터
@@ -122,7 +165,13 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
 - [ ] 실체화 위치가 플레이어 시야에 자연스러운가
 - [ ] 실제 월드에 보이는 인간형 actor(`IsoPlayer` 기반)가 생성되는가
 - [ ] `actor visuals` 로그에 `skin`, `itemVisuals`, `wornItems`가 합리적으로 채워지는가
+- [ ] `descriptor_bound -> materialized -> applyLoadout.materialized -> presentation_settled` 순서가 같은 `npcId`로 이어지는가
 - [ ] `refreshEmbodiedPresentation.item_visual_bridge`에서 `wornItems`와 `itemVisualsBefore/After` 변화가 가설과 맞는가
+- [ ] 살아 있는 동안 안 보이더라도, 같은 `npcId`의 `presentation_changed` 블록에서 `health`, `downed`, `deathLike`, `object`가 어떻게 변하는지 추적 가능한가
+- [ ] 같은 `npcId`의 `PresentationWatch`에서 `objectRef`, `alpha`, `targetAlpha`, `alphaZero`, `targetAlphaZero`가 어떻게 바뀌는지 추적 가능한가
+- [ ] `action=alpha_repair`가 찍혔다면 이후 stage에서 `alpha=1.00`으로 회복되는가
+- [ ] "누워 있는 좀비 같은 것"이 보인 순간 직전/직후에 같은 `npcId`의 `cleanupActor.*` 또는 `repair_blocked_death_like`가 찍히는가
+- [ ] 같은 순간 `[LWN][DeathTrace]`의 `relatedKind`, `relatedRef`, `sameActorRef`, `sameNpcId`로 actor/corpse/zombie를 구분할 수 있는가
 - [ ] 대사 1줄과 관계 초기화가 정상인가
 
 ### D. 화면 밖 비실체화
