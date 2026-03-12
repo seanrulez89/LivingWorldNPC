@@ -36,7 +36,13 @@ function Intents.talk(record, topic)
 end
 
 function Intents.attackMelee(record, target)
-    return LWN.Schema.newIntent("attack_melee", { target = target })
+    return LWN.Schema.newIntent("attack_melee", {
+        target = target,
+        targetX = target and target.getX and target:getX() or nil,
+        targetY = target and target.getY and target:getY() or nil,
+        targetZ = target and target.getZ and target:getZ() or nil,
+        targetKind = target and target.getObjectName and target:getObjectName() or nil,
+    })
 end
 
 function Intents.idleObserve(record)

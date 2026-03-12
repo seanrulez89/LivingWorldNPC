@@ -13,7 +13,7 @@ function Debug.dumpSummary()
 
     LWN.PopulationStore.eachNPC(function(record)
         total = total + 1
-        if record.embodiment.state == "eligible" then
+        if LWN.PopulationStore.isAlive(record) and record.embodiment.state == "eligible" then
             eligible = eligible + 1
         end
 

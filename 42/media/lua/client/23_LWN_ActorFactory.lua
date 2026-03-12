@@ -89,6 +89,106 @@ local function getKnownNpcIdFromActor(actor)
     return modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or nil
 end
 
+local function ensureRecordShape(record)
+    if Store and Store.ensureRecordShape then
+        return Store.ensureRecordShape(record)
+    end
+    return record
+end
+
+local function touchRecordStage(record, stage, reason)
+    record = ensureRecordShape(record)
+    if not record then return end
+
+    record.embodiment.stage = stage
+    record.embodiment.lastStageAt = worldAgeHours()
+    record.embodiment.lastStageReason = reason
+end
+
+local function touchPresentationStage(record, stage, reason, ready)
+    record = ensureRecordShape(record)
+    if not record then return end
+
+    local presentation = record.embodiment.presentation or {}
+    record.embodiment.presentation = presentation
+    presentation.stage = stage
+    presentation.pending = ready ~= true
+    presentation.ready = ready == true
+    presentation.lastReason = reason
+    if ready == true then
+        presentation.lastReadyHour = worldAgeHours()
+    end
+end
+
+local function clearRecordTarget(record, reason)
+    record = ensureRecordShape(record)
+    if not record then return end
+
+    record.embodiment.target = record.embodiment.target or {}
+    record.embodiment.target.kind = nil
+    record.embodiment.target.npcId = nil
+    record.embodiment.target.lastKnownX = nil
+    record.embodiment.target.lastKnownY = nil
+    record.embodiment.target.lastKnownZ = nil
+    record.embodiment.target.lastResolvedHour = worldAgeHours()
+    if reason then
+        record.embodiment.target.lastReason = reason
+    end
+end
+
+local function touchDeathState(record, state, source, reason)
+    record = ensureRecordShape(record)
+    if not record then return end
+
+    local death = record.embodiment.death or {}
+    record.embodiment.death = death
+    death.state = state
+    death.source = source or death.source
+    death.reason = reason or death.reason
+    if state == "alive" then
+        death.latched = false
+        death.latchedAt = nil
+        death.corpseSeen = false
+        death.corpseSeenAt = nil
+        death.corpseVisual = false
+        death.cleanupRequested = false
+        return
+    end
+
+    death.latched = true
+    death.latchedAt = death.latchedAt or worldAgeHours()
+end
+
+local function touchCleanupState(record, state, reason, removeRecord)
+    record = ensureRecordShape(record)
+    if not record then return end
+
+    local cleanup = record.embodiment.cleanup or {}
+    record.embodiment.cleanup = cleanup
+    cleanup.state = state
+    cleanup.reason = reason or cleanup.reason
+    if removeRecord ~= nil then
+        cleanup.removeRecord = removeRecord == true
+    end
+    if state == "pending" then
+        cleanup.requestedAt = cleanup.requestedAt or worldAgeHours()
+    elseif state == "complete" then
+        cleanup.completedAt = worldAgeHours()
+    end
+end
+
+local function applyFemaleFlags(actor, female)
+    protectedCall(actor, "setFemale", female)
+    if protectedCall(actor, "isFemale") ~= female then
+        protectedCall(actor, "setFemaleEtc", female)
+    end
+end
+
+local function getSkinTexture(visual)
+    if not visual then return nil end
+    return protectedCall(visual, "getSkinTexture")
+end
+
 local function isManagedActor(obj)
     if not obj then return false end
     if getNpcIdFromActor(obj) == nil then return false end
@@ -280,7 +380,7 @@ local function visualSummary(actor, descriptor)
     appendPart(parts, "actorDescriptor", actorDescriptor ~= nil)
     appendPart(parts, "humanVisual", visual ~= nil)
     appendPart(parts, "female", protectedCall(actor, "isFemale") or (desc and protectedCall(desc, "isFemale")) or nil)
-    appendPart(parts, "skin", visual and (protectedCall(visual, "getSkinTexture") or protectedCall(visual, "getSkinTextureName")) or nil)
+    appendPart(parts, "skin", getSkinTexture(visual))
     appendPart(parts, "hair", visual and protectedCall(visual, "getHairModel") or nil)
     appendPart(parts, "beard", visual and protectedCall(visual, "getBeardModel") or nil)
     appendPart(parts, "itemVisuals", safeSize(itemVisuals))
@@ -790,7 +890,7 @@ local function stageTrace(moduleName, stage, record, actor, descriptor, extra)
     appendPart(parts, "descriptor", descriptor ~= nil)
     appendPart(parts, "actorDescriptor", actorDescriptor ~= nil)
     appendPart(parts, "humanVisual", visual ~= nil)
-    appendPart(parts, "skin", visual and (protectedCall(visual, "getSkinTexture") or protectedCall(visual, "getSkinTextureName")) or nil)
+    appendPart(parts, "skin", getSkinTexture(visual))
     appendPart(parts, "hair", visual and protectedCall(visual, "getHairModel") or nil)
     appendPart(parts, "beard", visual and protectedCall(visual, "getBeardModel") or nil)
     appendPart(parts, "itemVisuals", safeSize(itemVisuals))
@@ -1020,6 +1120,8 @@ end
 
 local function safeCleanupActor(actor, cleanupReason)
     if not actor then return end
+    local deathLike = actorPresentationState(actor)
+    deathLike = deathLike and deathLike.deathLike == true or false
     local modData = protectedCall(actor, "getModData")
     if modData and modData.LWN_NpcId ~= nil then
         modData.LWN_LastNpcId = modData.LWN_NpcId
@@ -1032,9 +1134,11 @@ local function safeCleanupActor(actor, cleanupReason)
     end
 
     protectedCall(actor, "StopAllActionQueue")
-    protectedCall(actor, "setGhostMode", true)
-    protectedCall(actor, "setInvisible", true)
-    protectedCall(actor, "setSceneCulled", true)
+    if deathLike ~= true then
+        protectedCall(actor, "setGhostMode", true)
+        protectedCall(actor, "setInvisible", true)
+        protectedCall(actor, "setSceneCulled", true)
+    end
     protectedCall(actor, "setNPC", false)
     protectedCall(actor, "setIsNPC", false)
 
@@ -1051,6 +1155,7 @@ local function safeCleanupActor(actor, cleanupReason)
 
     if modData then
         modData.LWN_CreateHookPending = false
+        modData.LWN_PresentationPending = false
         modData.LWN_LastCleanupHour = getGameTime() and getGameTime():getWorldAgeHours() or nil
         modData.LWN_LastCleanupWorld = stillWorld
         modData.LWN_LastCleanupReason = modData.LWN_CleanupReason
@@ -1184,12 +1289,11 @@ local function setBaselineHumanVisual(record, actor, desc)
     if not actor then return end
 
     local female = record.identity and record.identity.female == true
-    protectedCall(actor, "setFemale", female)
-    protectedCall(actor, "setFemaleEtc", female)
+    applyFemaleFlags(actor, female)
 
     local visual = protectedCall(actor, "getHumanVisual")
     if visual then
-        local skin = protectedCall(visual, "getSkinTexture") or protectedCall(visual, "getSkinTextureName")
+        local skin = getSkinTexture(visual)
         if not skin or tostring(skin) == "" then
             protectedCall(visual, "setSkinTextureIndex", 0)
         end
@@ -1236,8 +1340,7 @@ local function materializeDescriptorVisual(record, actor, descriptor, phase, opt
         female = female,
     }
 
-    protectedCall(actor, "setFemale", female)
-    protectedCall(actor, "setFemaleEtc", female)
+    applyFemaleFlags(actor, female)
 
     if desc then
         callIf(desc, "setFemale", female)
@@ -1350,34 +1453,31 @@ local function bridgeWornItemsToItemVisuals(actor)
         return result
     end
 
+    protectedCall(itemVisuals, "clear")
+    protectedCall(wornItems, "getItemVisuals", itemVisuals)
+    result.itemVisualsAfter = safeSize(itemVisuals)
+    result.added = math.max(0, result.itemVisualsAfter - result.itemVisualsBefore)
+    if result.itemVisualsAfter > 0 then
+        result.mode = "official_worn_items_bridge"
+        protectedCall(actor, "onWornItemsChanged")
+        protectedCall(actor, "resetModel")
+        protectedCall(actor, "resetModelNextFrame")
+        refreshModelManager(actor, "item_visual_bridge")
+        return result
+    end
+
     for i = 0, wornItems:size() - 1 do
         local wornEntry = protectedCall(wornItems, "get", i)
         local item = protectedCall(wornEntry, "getItem") or wornEntry
         local clothingItem = protectedCall(item, "getClothingItem")
-        local itemVisual = nil
-
-        if clothingItem then
-            itemVisual = protectedCall(visual, "addClothingItem", itemVisuals, clothingItem)
-        end
-
-        if not itemVisual and ItemVisual and ItemVisual.new then
-            local fullType = protectedCall(item, "getFullType")
-            if fullType then
-                itemVisual = ItemVisual.new()
-                protectedCall(itemVisual, "setItemType", fullType)
-                protectedCall(itemVisual, "setClothingItemName", fullType)
-                protectedCall(itemVisuals, "add", itemVisual)
-            end
-        end
-
-        if itemVisual then
+        if clothingItem and protectedCall(visual, "addClothingItem", itemVisuals, clothingItem) then
             result.added = result.added + 1
         end
     end
 
     result.itemVisualsAfter = safeSize(itemVisuals)
-    if result.itemVisualsAfter > result.itemVisualsBefore then
-        result.mode = "rebuilt_from_worn_items"
+    if result.itemVisualsAfter > 0 then
+        result.mode = "fallback_add_clothing_item"
         protectedCall(actor, "onWornItemsChanged")
         protectedCall(actor, "resetModel")
         protectedCall(actor, "resetModelNextFrame")
@@ -1416,13 +1516,21 @@ local function ensureActorRegisteredInWorld(actor, square)
     protectedCall(actor, "setY", sy + 0.5)
     protectedCall(actor, "setZ", sz)
     protectedCall(actor, "setCurrent", square)
-    protectedCall(actor, "setMovingSquare", square)
-    protectedCall(actor, "setCurrentSquare", square)
-    protectedCall(actor, "setSquare", square)
+    protectedCall(actor, "setMovingSquareNow")
 
     if protectedCall(actor, "isExistInTheWorld") ~= true then
-        protectedCall(square, "AddMovingObject", actor)
         protectedCall(actor, "addToWorld")
+    end
+
+    local currentSquare = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
+    if currentSquare == nil or protectedCall(actor, "isExistInTheWorld") ~= true then
+        protectedCall(actor, "setMovingSquare", square)
+        protectedCall(actor, "setCurrentSquare", square)
+        protectedCall(actor, "setSquare", square)
+        if protectedCall(actor, "isExistInTheWorld") ~= true then
+            protectedCall(square, "AddMovingObject", actor)
+            protectedCall(actor, "addToWorld")
+        end
     end
 
     restoreEmbodiedPresentationFlags(actor, "ensureActorRegisteredInWorld")
@@ -1431,7 +1539,7 @@ local function ensureActorRegisteredInWorld(actor, square)
     protectedCall(actor, "resetModelNextFrame")
     refreshModelManager(actor, "world_registration")
 
-    local currentSquare = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
+    currentSquare = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
     local inWorld = protectedCall(actor, "isExistInTheWorld")
     return currentSquare ~= nil and inWorld ~= false
 end
@@ -1594,6 +1702,11 @@ function Factory.rejectActor(actor, reason, npcId, record, descriptor, descripto
     if not failureRecord and Store and Store.getNPC and npcId then
         failureRecord = Store.getNPC(npcId)
     end
+    if failureRecord then
+        touchRecordStage(failureRecord, "spawn_failed", reason)
+        touchPresentationStage(failureRecord, "failed", reason, false)
+        touchCleanupState(failureRecord, "pending", reason, false)
+    end
 
     local failureExtra = extra or {}
     failureExtra.npcId = npcId
@@ -1603,12 +1716,21 @@ end
 
 function Factory.cleanupActor(actor, reason)
     local npcId = getNpcIdFromActor(actor)
+    local record = npcId and Store and Store.getNPC and Store.getNPC(npcId) or nil
+    if record then
+        touchCleanupState(record, "pending", reason or "cleanupActor", false)
+        touchRecordStage(record, "cleanup", reason or "cleanupActor")
+        clearRecordTarget(record, reason or "cleanupActor")
+    end
     stageTrace("ActorFactory", "cleanupActor.start", nil, actor, nil, {
         source = "cleanupActor",
         npcId = npcId,
         detail = string.format("reason=%s %s", tostring(reason), tostring(presentationStateSummary(actor))),
     })
     safeCleanupActor(actor, reason or "cleanupActor")
+    if record then
+        touchCleanupState(record, "complete", reason or "cleanupActor", false)
+    end
     stageTrace("ActorFactory", "cleanupActor.complete", nil, actor, nil, {
         source = "cleanupActor",
         npcId = npcId,
@@ -1619,6 +1741,8 @@ end
 local refreshActorPresentation
 
 function Factory.settleEmbodiedPresentation(record, actor, descriptor, source)
+    touchRecordStage(record, "presenting", source or "settleEmbodiedPresentation")
+    touchPresentationStage(record, "settling", source or "settleEmbodiedPresentation", false)
     local desc, detail = materializeDescriptorVisual(record, actor, descriptor, source or "settle", {
         dressup = false,
         initSpriteParts = true,
@@ -1641,6 +1765,7 @@ function Factory.settleEmbodiedPresentation(record, actor, descriptor, source)
             safeText(detail.female)
         ),
     })
+    touchPresentationStage(record, "ready", source or "settleEmbodiedPresentation", true)
 end
 
 function Factory.ensureActorInWorld(actor, square)
@@ -1656,6 +1781,8 @@ function Factory.restoreEmbodiedPresentationFlags(actor, reason)
 end
 
 function Factory.refreshEmbodiedPresentation(record, actor, descriptor)
+    touchRecordStage(record, "presenting", "refreshEmbodiedPresentation")
+    touchPresentationStage(record, "refreshing", "refreshEmbodiedPresentation", false)
     local activeDescriptor, baseline = materializeDescriptorVisual(record or {}, actor, descriptor, "refresh_pre_clothing", {
         dressup = true,
         initSpriteParts = true,
@@ -1701,6 +1828,7 @@ function Factory.refreshEmbodiedPresentation(record, actor, descriptor)
         ),
     })
     refreshActorPresentation(actor)
+    touchPresentationStage(record, "ready", "refreshEmbodiedPresentation", true)
     stageTrace("ActorFactory", "refreshEmbodiedPresentation.ready", record, actor, finalizedDescriptor, {
         source = "refreshEmbodiedPresentation",
     })
@@ -1762,9 +1890,21 @@ function Factory.applyLoadout(record, actor, descriptor)
         ),
     })
     refreshActorPresentation(actor)
+    touchPresentationStage(record, "ready", "applyLoadout", true)
 end
 
 function Factory.createActor(record, player)
+    record = ensureRecordShape(record)
+    clearRecordTarget(record, "createActor.start")
+    touchCleanupState(record, "idle", "createActor.start", false)
+    touchDeathState(record, "alive", "createActor.start", nil)
+    record.status.life = "alive"
+    record.status.removed = false
+    record.status.lastChangedHour = worldAgeHours() or 0
+    record.status.reason = nil
+    record.embodiment.sessionId = (record.embodiment.sessionId or 0) + 1
+    touchRecordStage(record, "spawning", "createActor.start")
+    touchPresentationStage(record, "pending", "createActor.start", false)
     local desc, descriptorMode = Factory.buildDescriptor(record)
     if not desc then
         return nil
@@ -1848,8 +1988,7 @@ function Factory.createActor(record, player)
     protectedCall(actor, "setNPC", true)
     protectedCall(actor, "setIsNPC", true)
     protectedCall(actor, "setVisibleToNPCs", true)
-    protectedCall(actor, "setFemale", record.identity and record.identity.female == true)
-    protectedCall(actor, "setFemaleEtc", record.identity and record.identity.female == true)
+    applyFemaleFlags(actor, record.identity and record.identity.female == true)
     protectedCall(actor, "setForname", record.identity.firstName)
     protectedCall(actor, "setSurname", record.identity.lastName)
 
@@ -1858,6 +1997,7 @@ function Factory.createActor(record, player)
         modData.LWN_NpcId = record.id
         modData.LWN_ActorKind = "IsoPlayer"
         modData.LWN_SpawnSource = spawnSource
+        modData.LWN_SessionId = record.embodiment.sessionId
         modData.LWN_CreateHookPending = true
         modData.LWN_CreateHookExpected = "OnCreateLivingCharacter"
         modData.LWN_LastCreateHook = nil
@@ -1908,6 +2048,8 @@ function Factory.createActor(record, player)
     Factory.applyLoadout(record, actor, desc)
     protectedCall(actor, "setHealth", record.stats and record.stats.health or 100)
     refreshActorPresentation(actor)
+    touchRecordStage(record, "active", "createActor.presentation_ready")
+    touchPresentationStage(record, "ready", "createActor.presentation_ready", true)
     stageTrace("ActorFactory", "createActor.presentation_ready", record, actor, desc, {
         source = "createActor",
         square = square,

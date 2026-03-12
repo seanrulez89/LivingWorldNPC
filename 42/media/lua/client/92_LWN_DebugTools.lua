@@ -60,6 +60,10 @@ local function randomizeIdentity(record)
 end
 
 local function findActorForRecord(record)
+    if not record or (Store.isAlive and not Store.isAlive(record)) then
+        return nil
+    end
+
     local actor = LWN.EmbodimentManager.getActor(record)
     if actor and getNpcId(actor) == record.id then
         return actor
@@ -99,7 +103,7 @@ local function chooseEmbodiedDebugVictim(player)
     local bestD2 = -1
 
     Store.eachNPC(function(record)
-        if record.embodiment and record.embodiment.state == "embodied" and record.debugSpawnOnly then
+        if Store.isAlive(record) and record.embodiment and record.embodiment.state == "embodied" and record.debugSpawnOnly then
             local dx = (record.anchor.x or 0) - px
             local dy = (record.anchor.y or 0) - py
             local d2 = dx * dx + dy * dy
@@ -121,6 +125,9 @@ local function findNearestRecord(player)
     local bestD2 = math.huge
 
     Store.eachNPC(function(record)
+        if Store.isAlive(record) ~= true then
+            return
+        end
         local ax = record.anchor and record.anchor.x or 0
         local ay = record.anchor and record.anchor.y or 0
         local dx = ax - px
@@ -431,12 +438,20 @@ end
 function DebugTools.wipeAndReseed(player)
     local records = {}
     Store.eachNPC(function(record)
-        records[#records + 1] = record
+        if Store.isAlive(record) then
+            records[#records + 1] = record
+        end
     end)
 
     for _, record in ipairs(records) do
         local actor = findActorForRecord(record)
-        if actor and LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
+        if LWN.EmbodimentManager and LWN.EmbodimentManager.canonicalCleanup then
+            LWN.EmbodimentManager.canonicalCleanup(record, {
+                actor = actor,
+                reason = "debug_wipe",
+                detail = "wipeAndReseed",
+            })
+        elseif actor and LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
             LWN.ActorFactory.cleanupActor(actor)
         end
     end
@@ -446,6 +461,10 @@ function DebugTools.wipeAndReseed(player)
     end
     if LWN.EmbodimentManager then
         LWN.EmbodimentManager._actors = {}
+        LWN.EmbodimentManager._cleanupBlocklist = {}
+        LWN.EmbodimentManager._cleanupInFlight = {}
+        LWN.EmbodimentManager._registryTraceCache = {}
+        LWN.EmbodimentManager._deathLikeTraceCache = {}
     end
 
     if ModData and ModData.remove then
@@ -493,6 +512,9 @@ function DebugTools.deleteNearestNpc(player)
     local bestD2 = math.huge
 
     Store.eachNPC(function(record)
+        if Store.isAlive(record) ~= true then
+            return
+        end
         local dx = (record.anchor.x or 0) - px
         local dy = (record.anchor.y or 0) - py
         local d2 = dx * dx + dy * dy

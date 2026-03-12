@@ -5,7 +5,7 @@ LWN.UIRadialMenu = LWN.UIRadialMenu or {}
 
 local UIRadial = LWN.UIRadialMenu
 UIRadial.instance = nil
-UIRadial.target = nil
+UIRadial.targetNpcId = nil
 
 local function protectedCall(obj, methodName, ...)
     if not obj then return nil end
@@ -36,12 +36,32 @@ local function getNpcId(actor)
 end
 
 local function resolveRecord(actor)
-    if not isUsableActor(actor) then return nil, nil end
+    if not isUsableActor(actor) then return nil, nil, nil end
 
     local npcId = getNpcId(actor)
+    if not npcId then return nil, nil, nil end
+
+    return LWN.PopulationStore.getNPC(npcId), npcId, actor
+end
+
+local function resolveTarget()
+    local npcId = UIRadial.targetNpcId
     if not npcId then return nil, nil end
 
-    return LWN.PopulationStore.getNPC(npcId), npcId
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.getUsableActorByNpcId then
+        local actor, record = LWN.EmbodimentManager.getUsableActorByNpcId(npcId)
+        if actor and record then
+            return record, actor
+        end
+    end
+
+    local record = LWN.PopulationStore.getNPC(npcId)
+    if not record then return nil, nil end
+    local actor = LWN.EmbodimentManager and LWN.EmbodimentManager.getActor and LWN.EmbodimentManager.getActor(record) or nil
+    if not isUsableActor(actor) then
+        return record, nil
+    end
+    return record, actor
 end
 
 local function say(actor, text)
@@ -66,7 +86,7 @@ local function queueIntent(record, actor, intent, label)
     return true
 end
 
-local function commandAccepted(record, command)
+local function commandAccepted(record, actor, command)
     if record.companion and record.companion.recruited then
         return { kind = "accept", reason = "trusted" }
     end
@@ -75,7 +95,7 @@ local function commandAccepted(record, command)
     if response then
         local line = LWN.DialogueRealizer and LWN.DialogueRealizer.realize and LWN.DialogueRealizer.realize(record, response) or nil
         if line and LWN.DialogueRealizer and LWN.DialogueRealizer.emit then
-            LWN.DialogueRealizer.emit(UIRadial.target, line)
+            LWN.DialogueRealizer.emit(actor, line)
         end
         return response
     end
@@ -92,7 +112,7 @@ function UIRadial._ensure(playerNum)
     menu:initialise()
     local onMouseDownOutside = menu.onMouseDownOutside
     menu.onMouseDownOutside = function(self, x, y)
-        UIRadial.target = nil
+        UIRadial.targetNpcId = nil
         onMouseDownOutside(self, x, y)
     end
 
@@ -104,20 +124,19 @@ function UIRadial.hide()
     if UIRadial.instance and UIRadial.instance:getIsVisible() then
         UIRadial.instance:undisplay()
     end
-    UIRadial.target = nil
+    UIRadial.targetNpcId = nil
 end
 
 function UIRadial.onCommand(command)
-    local actor = UIRadial.target
-    local record = resolveRecord(actor)
-    UIRadial.target = nil
+    local record, actor = resolveTarget()
+    UIRadial.targetNpcId = nil
     if not record or not actor then
         UIRadial.hide()
         return
     end
     record.companion = record.companion or {}
 
-    local response = commandAccepted(record, command)
+    local response = commandAccepted(record, actor, command)
     if response and response.kind ~= "accept" then
         return
     end
@@ -154,7 +173,7 @@ function UIRadial.showFor(actor)
     if not isUsableActor(actor) then return end
 
     local menu = UIRadial._ensure(0)
-    UIRadial.target = actor
+    UIRadial.targetNpcId = getNpcId(actor)
 
     menu:clear()
     menu:setX((UIManager.getLastMouseX and UIManager.getLastMouseX() or 300) - LWN.Config.UI.QuickMenuOuterRadius)
@@ -172,8 +191,9 @@ function UIRadial.showFor(actor)
 end
 
 function UIRadial.refresh()
-    if not UIRadial.target then return end
-    if not isUsableActor(UIRadial.target) then
+    if not UIRadial.targetNpcId then return end
+    local _, actor = resolveTarget()
+    if not isUsableActor(actor) then
         UIRadial.hide()
     end
 end

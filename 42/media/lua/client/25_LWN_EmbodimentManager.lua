@@ -8,6 +8,13 @@ Embody._actors = Embody._actors or {}
 Embody._cleanupBlocklist = Embody._cleanupBlocklist or {}
 Embody._cleanupInFlight = Embody._cleanupInFlight or {}
 
+local function ensureRecordShape(record)
+    if Store and Store.ensureRecordShape then
+        return Store.ensureRecordShape(record)
+    end
+    return record
+end
+
 local function protectedCall(obj, methodName, ...)
     if not obj then return nil end
     local fn = obj[methodName]
@@ -58,6 +65,77 @@ end
 
 local function worldAgeHours()
     return getGameTime() and getGameTime():getWorldAgeHours() or nil
+end
+
+local function isAlive(record)
+    if Store and Store.isAlive then
+        return Store.isAlive(record)
+    end
+    return record ~= nil
+end
+
+local function touchRecordStage(record, stage, reason)
+    record = ensureRecordShape(record)
+    if not record then return end
+
+    record.embodiment.stage = stage
+    record.embodiment.lastStageAt = worldAgeHours()
+    record.embodiment.lastStageReason = reason
+end
+
+local function touchCleanupRecord(record, state, reason, removeRecord)
+    record = ensureRecordShape(record)
+    if not record then return end
+
+    local cleanup = record.embodiment.cleanup or {}
+    record.embodiment.cleanup = cleanup
+    cleanup.state = state
+    cleanup.reason = reason or cleanup.reason
+    if removeRecord ~= nil then
+        cleanup.removeRecord = removeRecord == true
+    end
+    if state == "pending" then
+        cleanup.requestedAt = cleanup.requestedAt or worldAgeHours()
+    elseif state == "complete" then
+        cleanup.completedAt = worldAgeHours()
+    end
+end
+
+local function clearRecordTarget(record, reason)
+    record = ensureRecordShape(record)
+    if not record then return end
+
+    record.embodiment.target = record.embodiment.target or {}
+    record.embodiment.target.kind = nil
+    record.embodiment.target.npcId = nil
+    record.embodiment.target.lastKnownX = nil
+    record.embodiment.target.lastKnownY = nil
+    record.embodiment.target.lastKnownZ = nil
+    record.embodiment.target.lastResolvedHour = worldAgeHours()
+    record.embodiment.target.lastReason = reason
+end
+
+local function touchDeathRecord(record, state, source, reason)
+    record = ensureRecordShape(record)
+    if not record then return end
+
+    local death = record.embodiment.death or {}
+    record.embodiment.death = death
+    death.state = state
+    death.source = source or death.source
+    death.reason = reason or death.reason
+    if state == "alive" then
+        death.latched = false
+        death.latchedAt = nil
+        death.corpseSeen = false
+        death.corpseSeenAt = nil
+        death.corpseVisual = false
+        death.cleanupRequested = false
+        return
+    end
+
+    death.latched = true
+    death.latchedAt = death.latchedAt or worldAgeHours()
 end
 
 local function getCleanupState(npcId)
@@ -129,6 +207,9 @@ local function getLifecycleBlock(record, actor)
     if not record then
         return "record_missing", "record=nil"
     end
+    if not isAlive(record) then
+        return "record_dead", "recordLife=dead"
+    end
 
     if Embody._cleanupInFlight[record.id] then
         return "cleanup_in_progress", cleanupStateSummary(record.id)
@@ -195,13 +276,13 @@ end
 local function clearUiTargets(npcId)
     if not npcId then return end
 
-    if LWN.UICommandPanel and LWN.UICommandPanel.target and getKnownNpcId(LWN.UICommandPanel.target) == npcId and LWN.UICommandPanel.hide then
+    if LWN.UICommandPanel and LWN.UICommandPanel.targetNpcId == npcId and LWN.UICommandPanel.hide then
         LWN.UICommandPanel.hide()
     end
-    if LWN.UIDialogueWindow and LWN.UIDialogueWindow.target and getKnownNpcId(LWN.UIDialogueWindow.target) == npcId and LWN.UIDialogueWindow.hide then
+    if LWN.UIDialogueWindow and LWN.UIDialogueWindow.targetNpcId == npcId and LWN.UIDialogueWindow.hide then
         LWN.UIDialogueWindow.hide()
     end
-    if LWN.UIRadialMenu and LWN.UIRadialMenu.target and getKnownNpcId(LWN.UIRadialMenu.target) == npcId and LWN.UIRadialMenu.hide then
+    if LWN.UIRadialMenu and LWN.UIRadialMenu.targetNpcId == npcId and LWN.UIRadialMenu.hide then
         LWN.UIRadialMenu.hide()
     end
 end
@@ -254,14 +335,27 @@ local function collectCleanupObjects(record, npcId, actor)
     return results
 end
 
-local function detachWorldObject(obj, npcId, reason)
+local function detachWorldObject(obj, npcId, reason, options)
     if not obj then return end
 
     local modData = protectedCall(obj, "getModData")
+    local preserveWorldObject = options and options.preserveWorldObject == true or false
     traceCleanup("leftover.cleanup.start", npcId, nil, obj, {
         reason = reason,
-        detail = string.format("kind=%s", tostring(worldObjectKind(obj))),
+        detail = string.format("kind=%s preserve=%s", tostring(worldObjectKind(obj)), tostring(preserveWorldObject)),
     })
+
+    if preserveWorldObject then
+        if modData then
+            modData.LWN_LastNpcId = npcId or modData.LWN_LastNpcId
+            modData.LWN_NpcId = nil
+        end
+        traceCleanup("leftover.cleanup.preserved", npcId, nil, obj, {
+            reason = reason,
+            detail = string.format("kind=%s", tostring(worldObjectKind(obj))),
+        })
+        return
+    end
 
     if LWN.ActorFactory and LWN.ActorFactory.hasRuntimeCore and LWN.ActorFactory.hasRuntimeCore(obj) and LWN.ActorFactory.cleanupActor then
         LWN.ActorFactory.cleanupActor(obj, reason)
@@ -286,8 +380,10 @@ end
 
 local function releaseActor(record, actor, nextState, cooldownHours, reason)
     if not record then return false end
+    record = ensureRecordShape(record)
 
     clearUiTargets(record.id)
+    clearRecordTarget(record, reason)
 
     if actor then
         if LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
@@ -303,6 +399,7 @@ local function releaseActor(record, actor, nextState, cooldownHours, reason)
     record.embodiment.actorId = nil
     record.embodiment.missingTicks = 0
     record.embodiment.cooldownUntilHour = cooldownHours
+    touchRecordStage(record, nextState == "hidden" and "inactive" or nextState, reason)
     Embody.unregisterActor(record, reason)
     return true
 end
@@ -389,6 +486,8 @@ end
 
 function Embody.tryRearmHidden(record, player)
     if not record or not player then return false end
+    record = ensureRecordShape(record)
+    if not isAlive(record) then return false end
     if record.embodiment.state ~= "hidden" then return false end
     local companion = record.companion or {}
     if not companion.recruited and not record.debugSpawnOnly then return false end
@@ -401,6 +500,7 @@ function Embody.tryRearmHidden(record, player)
     if d2 > radius * radius then return false end
 
     record.embodiment.state = "eligible"
+    touchRecordStage(record, "eligible", "tryRearmHidden")
     traceStage("tryRearmHidden.eligible", record, nil, {
         source = "tryRearmHidden",
         detail = string.format("radius=%.2f distance=%.2f", radius, math.sqrt(d2)),
@@ -410,6 +510,7 @@ function Embody.tryRearmHidden(record, player)
 end
 
 function Embody.tryEmbody(record, player)
+    record = ensureRecordShape(record)
     local lifecycleReason, lifecycleDetail = getLifecycleBlock(record, nil)
     if lifecycleReason then
         setLastFailure(record, lifecycleReason, lifecycleDetail)
@@ -451,6 +552,7 @@ function Embody.tryEmbody(record, player)
         source = "tryEmbody",
         detail = string.format("radius=%.2f distance=%.2f", radius, math.sqrt(d2)),
     })
+    touchRecordStage(record, "spawning", "tryEmbody.start")
 
     local actor = LWN.ActorFactory.createActor(record, player)
     if actor then
@@ -474,6 +576,7 @@ function Embody.tryEmbody(record, player)
             record.embodiment.actorId = nil
             record.embodiment.missingTicks = 0
             record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
+            touchRecordStage(record, "inactive", "tryEmbody.initial_sync_failed")
             setLastFailure(record, "initial_sync_failed", syncErr)
             traceStage("tryEmbody.initial_sync_failed", record, actor, {
                 source = "tryEmbody",
@@ -492,6 +595,7 @@ function Embody.tryEmbody(record, player)
         record.embodiment.missingTicks = 0
         record.embodiment.lastFailureReason = nil
         record.embodiment.lastFailureDetail = nil
+        touchRecordStage(record, "active", "tryEmbody.initial_sync_ok")
         Embody.touchGrace(record)
         if Embody.registerActor(record, actor) == false then
             if LWN.ActorFactory and LWN.ActorFactory.rejectActor then
@@ -506,6 +610,7 @@ function Embody.tryEmbody(record, player)
             record.embodiment.actorId = nil
             record.embodiment.missingTicks = 0
             record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
+            touchRecordStage(record, "inactive", "tryEmbody.register_rejected")
             setLastFailure(record, "register_rejected", "registerActor returned false")
             traceStage("tryEmbody.register_rejected", record, actor, {
                 source = "tryEmbody",
@@ -533,6 +638,7 @@ function Embody.tryEmbody(record, player)
     -- Avoid spamming failed instantiation every tick.
     record.embodiment.state = "hidden"
     record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
+    touchRecordStage(record, "inactive", "tryEmbody.create_actor_failed")
     setLastFailure(record, "create_actor_failed", "ActorFactory returned nil")
     traceStage("tryEmbody.create_actor_failed", record, nil, {
         source = "tryEmbody",
@@ -542,7 +648,9 @@ function Embody.tryEmbody(record, player)
 end
 
 function Embody.tryDespawn(record, actor, player)
+    record = ensureRecordShape(record)
     if record.embodiment.state ~= "embodied" or not actor then return false end
+    if not isAlive(record) then return false end
 
     local radius = LWN.Config.Embodiment.DespawnRadiusTiles
     local companion = record.companion or {}
@@ -584,10 +692,12 @@ function Embody.tryDespawn(record, actor, player)
 end
 
 function Embody.touchGrace(record)
+    record = ensureRecordShape(record)
     record.embodiment.graceUntilHour = getGameTime():getWorldAgeHours() + LWN.Config.Embodiment.GraceHours
 end
 
 function Embody.registerActor(record, actor)
+    record = ensureRecordShape(record)
     if not record or not actor then return false end
     local lifecycleReason, lifecycleDetail = getLifecycleBlock(record, actor)
     if lifecycleReason then
@@ -612,6 +722,7 @@ function Embody.registerActor(record, actor)
         z = math.floor(protectedCall(actor, "getZ") or record.anchor.z or 0),
         lastSeenHour = getGameTime() and getGameTime():getWorldAgeHours() or 0,
     })
+    touchRecordStage(record, record.embodiment.death and record.embodiment.death.latched and "death_latched" or "active", "registerActor")
     traceRegistryState("registerActor.bound", record, actor, {
         source = "registerActor",
     }, false)
@@ -621,6 +732,28 @@ end
 function Embody.getActor(record)
     if not record then return nil end
     return Embody._actors[record.id]
+end
+
+function Embody.getUsableActorByNpcId(npcId)
+    if not npcId or not Store or not Store.getNPC then return nil, nil end
+
+    local record = Store.getNPC(npcId)
+    if not record or not isAlive(record) or record.embodiment.state ~= "embodied" or getCleanupState(npcId) then
+        return nil, record
+    end
+
+    local actor = Embody.getActor(record)
+    if not actor then
+        return nil, record
+    end
+    if getActorCleanupState(actor) then
+        return nil, record
+    end
+    if LWN.ActorFactory and LWN.ActorFactory.isManagedActor and not LWN.ActorFactory.isManagedActor(actor) then
+        return nil, record
+    end
+
+    return actor, record
 end
 
 function Embody.getCleanupState(npcId)
@@ -633,6 +766,7 @@ end
 
 function Embody.unregisterActor(record, reason)
     if not record then return end
+    record = ensureRecordShape(record)
     local actor = Embody._actors[record.id]
     traceRegistryState("unregisterActor.start", record, actor, {
         source = "unregisterActor",
@@ -644,6 +778,7 @@ function Embody.unregisterActor(record, reason)
     Embody._registryTraceCache[record.id] = nil
     Embody._deathLikeTraceCache = Embody._deathLikeTraceCache or {}
     Embody._deathLikeTraceCache[record.id] = nil
+    clearRecordTarget(record, reason or "unregisterActor")
     traceStage("unregisterActor.complete", record, actor, {
         source = "unregisterActor",
         detail = string.format(
@@ -696,6 +831,104 @@ function Embody.noteDeathLikeActor(record, actor, source)
     })
 end
 
+function Embody.noteDeath(record, actor, source, detail)
+    record = ensureRecordShape(record)
+    if not record or not actor then return false end
+    if not isAlive(record) and record.embodiment.death and record.embodiment.death.latched then
+        return false
+    end
+
+    record.status.life = "dead"
+    record.status.removed = false
+    record.status.lastChangedHour = worldAgeHours() or 0
+    record.status.reason = detail or source or "death"
+    record.embodiment.cooldownUntilHour = nil
+    record.embodiment.missingTicks = 0
+    touchDeathRecord(record, "death_latched", source or "death", detail)
+    touchCleanupRecord(record, "idle", detail or source, false)
+    touchRecordStage(record, "death_latched", detail or source or "death")
+    clearRecordTarget(record, source or "death")
+
+    local meta = Store and Store.setEmbodiedMeta and {
+        state = "death_latched",
+        x = math.floor(protectedCall(actor, "getX") or record.anchor.x or 0),
+        y = math.floor(protectedCall(actor, "getY") or record.anchor.y or 0),
+        z = math.floor(protectedCall(actor, "getZ") or record.anchor.z or 0),
+        lastSeenHour = worldAgeHours() or 0,
+    } or nil
+    if meta then
+        Store.setEmbodiedMeta(record.id, meta)
+    end
+
+    traceCleanup("death.latched", record.id, record, actor, {
+        reason = source,
+        detail = detail,
+    })
+    return true
+end
+
+function Embody.noteCorpseObserved(npcId, corpse, source)
+    if not npcId or not Store or not Store.getNPC then return false end
+
+    local record = Store.getNPC(npcId)
+    if not record or isAlive(record) ~= false then
+        return false
+    end
+
+    local death = record.embodiment.death or {}
+    if death.corpseSeen == true then
+        return false
+    end
+
+    death.corpseSeen = true
+    death.corpseSeenAt = worldAgeHours()
+    death.corpseVisual = protectedCall(corpse, "getVisual") ~= nil
+    death.state = "corpse_observed"
+    death.source = source or death.source
+    record.embodiment.death = death
+    touchRecordStage(record, "corpse_observed", source or "corpse")
+
+    traceCleanup("death.corpse_observed", npcId, record, corpse, {
+        reason = source,
+        detail = string.format("corpseVisual=%s", tostring(death.corpseVisual)),
+    })
+    return true
+end
+
+function Embody.tickDeathLifecycle(record, actor, source)
+    record = ensureRecordShape(record)
+    if not record or isAlive(record) then return false end
+    if getCleanupState(record.id) or Embody.isCleanupBlocked(record.id) then return true end
+
+    local death = record.embodiment.death or {}
+    local latchedAt = tonumber(death.latchedAt or worldAgeHours() or 0) or 0
+    local now = worldAgeHours() or latchedAt
+    local timeout = (LWN.Config and LWN.Config.Embodiment and LWN.Config.Embodiment.DeathCleanupDelayHours) or 0.0025
+    local actorWorld = actor and protectedCall(actor, "isExistInTheWorld") or nil
+    local shouldCleanup = death.corpseSeen == true
+        or actor == nil
+        or actorWorld == false
+        or (now - latchedAt) >= timeout
+
+    if not shouldCleanup then
+        traceCleanup("death.awaiting_corpse", record.id, record, actor, {
+            reason = source,
+            detail = string.format("latchedAt=%.4f corpseSeen=%s actorWorld=%s", latchedAt, tostring(death.corpseSeen), tostring(actorWorld)),
+        })
+        return true
+    end
+
+    death.cleanupRequested = true
+    record.embodiment.death = death
+    return Embody.canonicalCleanup(record, {
+        actor = actor,
+        removeRecord = false,
+        blockNpcId = true,
+        reason = death.corpseSeen == true and "death_corpse_cleanup" or "death_timeout_cleanup",
+        detail = source,
+    })
+end
+
 function Embody.canonicalCleanup(recordOrNpcId, options)
     local record = type(recordOrNpcId) == "table" and recordOrNpcId or nil
     local npcId = record and record.id or recordOrNpcId
@@ -707,6 +940,7 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
     if not record and Store and Store.getNPC then
         record = Store.getNPC(npcId)
     end
+    record = ensureRecordShape(record)
 
     local reason = options and options.reason or "canonical_cleanup"
     local detail = options and options.detail or nil
@@ -719,6 +953,10 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
     if not actor and record then
         actor = Embody.getActor(record)
     end
+    local preserveActorWorldObject = actor
+        and record
+        and isAlive(record) == false
+        and (worldObjectKind(actor) == "corpse" or worldObjectKind(actor) == "zombie")
     local registeredActor = record and Embody.getActor(record) or nil
     local actorSource = options and options.actor and "options.actor" or (actor and "registry" or "none")
     local actorCleanup = getActorCleanupState(actor)
@@ -760,6 +998,10 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
     })
 
     clearUiTargets(npcId)
+    if record and LWN.ActionRuntime and LWN.ActionRuntime.clear then
+        LWN.ActionRuntime.clear(record, actor)
+    end
+    clearRecordTarget(record, reason)
     updateCleanupState(npcId, "ui_targets.cleared", reason, record, actor, {
         removeRecord = removeRecord,
     })
@@ -768,14 +1010,23 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
     })
 
     if record then
+        touchCleanupRecord(record, "pending", reason, removeRecord)
+        touchRecordStage(record, "cleanup", reason)
         record.embodiment = record.embodiment or {}
         record.embodiment.state = removeRecord and "removed" or "hidden"
         record.embodiment.actorId = nil
         record.embodiment.missingTicks = 0
         if removeRecord then
             record.embodiment.cooldownUntilHour = nil
+            record.status.removed = true
+            record.status.lastChangedHour = worldAgeHours() or 0
+            record.status.reason = reason
         else
-            record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
+            if isAlive(record) then
+                record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
+            else
+                record.embodiment.cooldownUntilHour = nil
+            end
         end
         updateCleanupState(npcId, "record.deactivated", reason, record, actor, {
             removeRecord = removeRecord,
@@ -792,8 +1043,15 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
         })
         traceCleanup("actor.cleanup.start", npcId, record, actor, {
             reason = reason,
+            detail = string.format("preserveActorWorldObject=%s", tostring(preserveActorWorldObject)),
         })
-        if LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
+        if preserveActorWorldObject then
+            local modData = protectedCall(actor, "getModData")
+            if modData then
+                modData.LWN_LastNpcId = npcId or modData.LWN_LastNpcId
+                modData.LWN_NpcId = nil
+            end
+        elseif LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
             LWN.ActorFactory.cleanupActor(actor, reason)
         else
             protectedCall(actor, "StopAllActionQueue")
@@ -828,7 +1086,13 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
         })
         for _, obj in ipairs(leftovers) do
             if obj ~= actor then
-                detachWorldObject(obj, npcId, reason)
+                local kind = worldObjectKind(obj)
+                local preserveWorldObject = record
+                    and isAlive(record) == false
+                    and (kind == "corpse" or kind == "zombie")
+                detachWorldObject(obj, npcId, reason, {
+                    preserveWorldObject = preserveWorldObject,
+                })
             end
         end
     end
@@ -838,6 +1102,8 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
             removeRecord = removeRecord,
         })
         Embody.unregisterActor(record, reason)
+        touchCleanupRecord(record, "complete", reason, removeRecord)
+        touchRecordStage(record, removeRecord and "removed" or (isAlive(record) and "inactive" or "dead_cleaned"), reason)
         updateCleanupState(npcId, "registry.cleared", reason, record, actor, {
             removeRecord = removeRecord,
         })

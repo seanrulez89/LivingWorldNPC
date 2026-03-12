@@ -5,6 +5,25 @@ LWN.PopulationStore = LWN.PopulationStore or {}
 -- state here instead of treating embodied actors as authoritative.
 local Store = LWN.PopulationStore
 
+function Store.ensureRecordShape(record)
+    if LWN.Schema and LWN.Schema.ensureNPCRecordShape then
+        return LWN.Schema.ensureNPCRecordShape(record)
+    end
+    return record
+end
+
+function Store.isAlive(record)
+    record = Store.ensureRecordShape(record)
+    if not record then return false end
+    return not (record.status and record.status.life == "dead")
+end
+
+function Store.isRemoved(record)
+    record = Store.ensureRecordShape(record)
+    if not record then return true end
+    return record.status and record.status.removed == true or false
+end
+
 function Store.root()
     local root = ModData.getOrCreate(LWN.Config.ModDataTag)
     if not root.version then
@@ -29,26 +48,27 @@ end
 
 function Store.addNPC(record)
     local npcs = Store.ensureNPCTable()
+    Store.ensureRecordShape(record)
     npcs[record.id] = record
     return record
 end
 
 function Store.getNPC(id)
     local npcs = Store.ensureNPCTable()
-    return npcs[id]
+    return Store.ensureRecordShape(npcs[id])
 end
 
 function Store.eachNPC(fn)
     local npcs = Store.ensureNPCTable()
     for id, record in pairs(npcs) do
-        fn(record, id)
+        fn(Store.ensureRecordShape(record), id)
     end
 end
 
 function Store.findEmbodiedIds()
     local ids = {}
     Store.eachNPC(function(record)
-        if record.embodiment.state == "embodied" then
+        if Store.isAlive(record) and record.embodiment.state == "embodied" then
             table.insert(ids, record.id)
         end
     end)
@@ -58,7 +78,7 @@ end
 function Store.countEmbodied()
     local n = 0
     Store.eachNPC(function(record)
-        if record.embodiment.state == "embodied" then
+        if Store.isAlive(record) and record.embodiment.state == "embodied" then
             n = n + 1
         end
     end)
@@ -137,6 +157,14 @@ end
 function Store.removeNPC(id)
     local root = Store.root()
     local npcs = Store.ensureNPCTable()
+    local record = npcs[id]
+    if record then
+        Store.ensureRecordShape(record)
+        record.status.life = "dead"
+        record.status.removed = true
+        record.status.lastChangedHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
+        record.status.reason = record.status.reason or "removed"
+    end
     npcs[id] = nil
 
     root.embodied = root.embodied or {}

@@ -7,6 +7,18 @@ local Runtime = LWN.ActionRuntime
 
 Runtime.Queues = Runtime.Queues or {}
 
+local function protectedCall(obj, methodName, ...)
+    if not obj then return nil end
+    local fn = obj[methodName]
+    if not fn then return nil end
+
+    local ok, result = pcall(fn, obj, ...)
+    if ok then
+        return result
+    end
+    return nil
+end
+
 local function queueFor(id)
     Runtime.Queues[id] = Runtime.Queues[id] or {}
     return Runtime.Queues[id]
@@ -23,6 +35,92 @@ local function syncPlanMirror(record)
     end
 
     record.goals.currentIntent = q[1] and q[1].kind or nil
+    record.embodiment = record.embodiment or {}
+    record.embodiment.target = record.embodiment.target or {}
+    local current = q[1]
+    if current and current.kind == "attack_melee" then
+        record.embodiment.target.kind = current.data and (current.data.targetKind or "world_object") or "world_object"
+        record.embodiment.target.npcId = nil
+        record.embodiment.target.lastKnownX = current.data and current.data.targetX or nil
+        record.embodiment.target.lastKnownY = current.data and current.data.targetY or nil
+        record.embodiment.target.lastKnownZ = current.data and current.data.targetZ or nil
+        record.embodiment.target.lastResolvedHour = getGameTime() and getGameTime():getWorldAgeHours() or nil
+        record.embodiment.target.lastReason = "attack_melee"
+    else
+        record.embodiment.target.kind = nil
+        record.embodiment.target.npcId = nil
+        record.embodiment.target.lastKnownX = nil
+        record.embodiment.target.lastKnownY = nil
+        record.embodiment.target.lastKnownZ = nil
+        record.embodiment.target.lastResolvedHour = getGameTime() and getGameTime():getWorldAgeHours() or nil
+        record.embodiment.target.lastReason = "queue_sync"
+    end
+end
+
+local function isAttackTargetUsable(target)
+    if not target then return false end
+    if instanceof and not instanceof(target, "IsoZombie") then
+        return false
+    end
+    if protectedCall(target, "isDead") == true then
+        return false
+    end
+    if protectedCall(target, "isExistInTheWorld") == false then
+        return false
+    end
+    return true
+end
+
+local function resolveAttackTarget(actor, intent)
+    if not actor or not intent or not intent.data then return nil end
+
+    local target = intent.data.target
+    if isAttackTargetUsable(target) then
+        intent.data.targetX = protectedCall(target, "getX") or intent.data.targetX
+        intent.data.targetY = protectedCall(target, "getY") or intent.data.targetY
+        intent.data.targetZ = protectedCall(target, "getZ") or intent.data.targetZ
+        return target
+    end
+
+    local cell = getCell and getCell() or nil
+    if not cell then
+        return nil
+    end
+
+    local tx = math.floor(intent.data.targetX or protectedCall(actor, "getX") or 0)
+    local ty = math.floor(intent.data.targetY or protectedCall(actor, "getY") or 0)
+    local tz = math.floor(intent.data.targetZ or protectedCall(actor, "getZ") or 0)
+    local best = nil
+    local bestD2 = math.huge
+
+    for y = ty - 1, ty + 1 do
+        for x = tx - 1, tx + 1 do
+            local square = cell:getGridSquare(x, y, tz)
+            local objects = square and protectedCall(square, "getMovingObjects") or nil
+            if objects and objects.size and objects.get then
+                for i = 0, objects:size() - 1 do
+                    local obj = objects:get(i)
+                    if isAttackTargetUsable(obj) then
+                        local dx = (protectedCall(obj, "getX") or x) - (protectedCall(actor, "getX") or tx)
+                        local dy = (protectedCall(obj, "getY") or y) - (protectedCall(actor, "getY") or ty)
+                        local d2 = dx * dx + dy * dy
+                        if d2 < bestD2 then
+                            best = obj
+                            bestD2 = d2
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    intent.data.target = best
+    if best then
+        intent.data.targetX = protectedCall(best, "getX") or intent.data.targetX
+        intent.data.targetY = protectedCall(best, "getY") or intent.data.targetY
+        intent.data.targetZ = protectedCall(best, "getZ") or intent.data.targetZ
+    end
+    return best
 end
 
 function Runtime.clear(record, actor)
@@ -203,9 +301,12 @@ function Runtime.tick(record, actor)
     elseif current.kind == "idle_observe" then
         current.done = true
     elseif current.kind == "attack_melee" then
-        if current.data.target and actor.AttemptAttack then
-            actor:faceThisObject(current.data.target)
+        local target = resolveAttackTarget(actor, current)
+        if target and actor.AttemptAttack then
+            actor:faceThisObject(target)
             actor:AttemptAttack(1.0)
+        else
+            current.failed = true
         end
         current.done = true
     end

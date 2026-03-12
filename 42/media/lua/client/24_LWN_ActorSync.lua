@@ -128,6 +128,9 @@ local function safeMoodleLevel(actor, moodleType)
 end
 
 local function ensureRecordShape(record)
+    if LWN.PopulationStore and LWN.PopulationStore.ensureRecordShape then
+        LWN.PopulationStore.ensureRecordShape(record)
+    end
     record.identity = record.identity or {}
     record.stats = record.stats or {}
     record.anchor = record.anchor or {}
@@ -161,7 +164,9 @@ local function enforceEmbodiedFlags(record, actor)
 
     local female = record and record.identity and record.identity.female == true
     protectedCall(actor, "setFemale", female)
-    protectedCall(actor, "setFemaleEtc", female)
+    if protectedCall(actor, "isFemale") ~= female then
+        protectedCall(actor, "setFemaleEtc", female)
+    end
     protectedCall(actor, "setNPC", true)
     protectedCall(actor, "setIsNPC", true)
     protectedCall(actor, "setVisibleToNPCs", true)

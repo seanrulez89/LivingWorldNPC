@@ -66,6 +66,9 @@ function Director._scoreBlockedByCooldown(record, now)
 end
 
 function Director.score(record, player)
+    if LWN.PopulationStore and LWN.PopulationStore.isAlive and not LWN.PopulationStore.isAlive(record) then
+        return -math.huge
+    end
     if record.debugSpawnOnly then
         return -math.huge
     end
@@ -112,7 +115,7 @@ end
 
 function Director._clearNonSelectedEligibility(selectedId)
     Store.eachNPC(function(record)
-        if record.embodiment.state == "eligible" and record.id ~= selectedId then
+        if Store.isAlive(record) and record.embodiment.state == "eligible" and record.id ~= selectedId then
             record.embodiment.state = "hidden"
         end
     end)
@@ -158,7 +161,7 @@ function Director.update(player)
 
     local best, bestScore = nil, -math.huge
     Store.eachNPC(function(record)
-        if record.embodiment.state == "hidden" then
+        if Store.isAlive(record) and record.embodiment.state == "hidden" then
             local score = Director.score(record, player)
             if score > bestScore then
                 best = record

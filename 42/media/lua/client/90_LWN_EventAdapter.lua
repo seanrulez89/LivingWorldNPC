@@ -52,6 +52,20 @@ local function getPlayerSafe()
     return getPlayer and getPlayer() or nil
 end
 
+local function ensureRecordShape(record)
+    if LWN.PopulationStore and LWN.PopulationStore.ensureRecordShape then
+        return LWN.PopulationStore.ensureRecordShape(record)
+    end
+    return record
+end
+
+local function isAliveRecord(record)
+    if LWN.PopulationStore and LWN.PopulationStore.isAlive then
+        return LWN.PopulationStore.isAlive(record)
+    end
+    return record ~= nil
+end
+
 local function hookStageName(hookName, suffix)
     local stage = tostring(hookName or "onCreateHook")
     if string.sub(stage, 1, 2) == "On" then
@@ -227,6 +241,40 @@ local function getPresentationState(actor)
         square = squareText,
         squarePresent = square ~= nil,
     }
+end
+
+local function findDeathLatchedRecordNearSquare(square)
+    if not square or not LWN.PopulationStore or not LWN.PopulationStore.eachNPC then
+        return nil
+    end
+
+    local sx = protectedCall(square, "getX") or 0
+    local sy = protectedCall(square, "getY") or 0
+    local sz = protectedCall(square, "getZ") or 0
+    local bestRecord = nil
+    local bestD2 = math.huge
+
+    LWN.PopulationStore.eachNPC(function(record)
+        record = ensureRecordShape(record)
+        local death = record and record.embodiment and record.embodiment.death or nil
+        if record and isAliveRecord(record) == false and death and death.latched == true and death.corpseSeen ~= true then
+            local meta = LWN.PopulationStore.getEmbodiedMeta and LWN.PopulationStore.getEmbodiedMeta(record.id) or nil
+            local rx = math.floor((meta and meta.x) or record.anchor.x or 0)
+            local ry = math.floor((meta and meta.y) or record.anchor.y or 0)
+            local rz = math.floor((meta and meta.z) or record.anchor.z or 0)
+            if rz == sz then
+                local dx = rx - sx
+                local dy = ry - sy
+                local d2 = dx * dx + dy * dy
+                if d2 <= 9 and d2 < bestD2 then
+                    bestRecord = record
+                    bestD2 = d2
+                end
+            end
+        end
+    end)
+
+    return bestRecord
 end
 
 local function noteCreateHookSequence(modData, hookName)
@@ -841,10 +889,17 @@ local function resolveEmbodiedActor(record)
 end
 
 local function hideEmbodiedRecord(record, actor, reason, detail)
+    record = ensureRecordShape(record)
     traceStage("hideEmbodiedRecord.start", record, actor, {
         source = "hideEmbodiedRecord",
         detail = tostring(reason) .. ":" .. tostring(detail),
     })
+    if isAliveRecord(record) == false then
+        if LWN.EmbodimentManager and LWN.EmbodimentManager.tickDeathLifecycle then
+            LWN.EmbodimentManager.tickDeathLifecycle(record, actor, "hideEmbodiedRecord")
+        end
+        return
+    end
     print(string.format("[LWN][Embodiment] hiding %s because %s :: %s", tostring(record.id), tostring(reason), tostring(detail)))
     if LWN.EmbodimentManager and LWN.EmbodimentManager.canonicalCleanup then
         LWN.EmbodimentManager.canonicalCleanup(record, {
@@ -861,6 +916,7 @@ local function hideEmbodiedRecord(record, actor, reason, detail)
 end
 
 local function tickEmbodiedRecord(record, actor, player)
+    record = ensureRecordShape(record)
     local actorCleanup = getActorCleanupState(actor)
     if record.embodiment.state ~= "embodied" or isCleanupBlocked(record.id) or getCleanupState(record.id) or (actorCleanup and actorCleanup.pending == true) then
         traceStage("tickEmbodiedRecord.lifecycle_skipped", record, actor, {
@@ -881,6 +937,17 @@ local function tickEmbodiedRecord(record, actor, player)
     })
     traceDeathState(record, actor, "tickEmbodiedRecord.start")
     traceEmbodiedDeathLike(record, actor, "tickEmbodiedRecord.start")
+    if (LWN.ActorFactory and LWN.ActorFactory.isDeathLikeActor and LWN.ActorFactory.isDeathLikeActor(actor))
+        or isAliveRecord(record) == false
+    then
+        if isAliveRecord(record) ~= false and LWN.EmbodimentManager and LWN.EmbodimentManager.noteDeath then
+            LWN.EmbodimentManager.noteDeath(record, actor, "tickEmbodiedRecord.death_like", "presentation_state_death_like")
+        end
+        if LWN.EmbodimentManager and LWN.EmbodimentManager.tickDeathLifecycle then
+            LWN.EmbodimentManager.tickDeathLifecycle(record, actor, "tickEmbodiedRecord.death_like")
+        end
+        return
+    end
     if LWN.ActorSync and LWN.ActorSync.ensureEmbodiedActorState then
         LWN.ActorSync.ensureEmbodiedActorState(record, actor)
     end
@@ -939,6 +1006,7 @@ local function handleCreatedCharacter(actor, hookName)
     end
 
     local record = pendingRecord or (npcId and LWN.PopulationStore and LWN.PopulationStore.getNPC and LWN.PopulationStore.getNPC(npcId) or nil)
+    record = ensureRecordShape(record)
     local previousHook = modData and modData.LWN_PostCreateAppliedBy or nil
     local hookPending = modData and modData.LWN_CreateHookPending == true or false
     noteCreateHookSequence(modData, hookName)
@@ -978,16 +1046,19 @@ local function handleCreatedCharacter(actor, hookName)
 
     local actorCleanup = getActorCleanupState(actor)
     local recordState = record and record.embodiment and record.embodiment.state or nil
+    local recordStage = record and record.embodiment and record.embodiment.stage or nil
     local rejectReason = nil
     if not record then
         rejectReason = "record_missing"
+    elseif isAliveRecord(record) == false then
+        rejectReason = "record_dead"
     elseif isCleanupBlocked(npcId) then
         rejectReason = "cleanup_blocked"
     elseif recordState == "removed" then
         rejectReason = "record_removed"
     elseif actorCleanup and actorCleanup.pending == true then
         rejectReason = "actor_cleanup_pending"
-    elseif not pendingRecord and recordState ~= "embodied" then
+    elseif not pendingRecord and recordState ~= "embodied" and not hookPending and recordStage ~= "spawning" and recordStage ~= "presenting" then
         rejectReason = "record_not_embodied"
     end
 
@@ -1073,6 +1144,28 @@ local function handleCreatedCharacter(actor, hookName)
     end
 end
 
+function Adapter.onDeadBodySpawn(deadBody)
+    if not deadBody then return end
+
+    local npcId = getKnownNpcId(deadBody)
+    local record = npcId and LWN.PopulationStore and LWN.PopulationStore.getNPC and LWN.PopulationStore.getNPC(npcId) or nil
+    if not npcId or not record then
+        local square = protectedCall(deadBody, "getSquare")
+        record = findDeathLatchedRecordNearSquare(square)
+        npcId = record and record.id or npcId
+    end
+    if not npcId or not record then
+        return
+    end
+
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.noteCorpseObserved then
+        local observed = LWN.EmbodimentManager.noteCorpseObserved(npcId, deadBody, "OnDeadBodySpawn")
+        if observed and LWN.EmbodimentManager.tickDeathLifecycle then
+            LWN.EmbodimentManager.tickDeathLifecycle(record, LWN.EmbodimentManager.getActor and LWN.EmbodimentManager.getActor(record) or nil, "OnDeadBodySpawn")
+        end
+    end
+end
+
 function Adapter.onCreateSurvivor(survivor)
     handleCreatedCharacter(survivor, "OnCreateSurvivor")
 end
@@ -1094,7 +1187,7 @@ function Adapter.onEveryOneMinute()
     end
 
     LWN.PopulationStore.eachNPC(function(record)
-        if record.embodiment.state ~= "embodied" then
+        if isAliveRecord(record) and record.embodiment.state ~= "embodied" then
             record.stats.hunger = math.min(1.0, record.stats.hunger + 0.01)
             record.stats.thirst = math.min(1.0, record.stats.thirst + 0.012)
             record.stats.fatigue = math.min(1.0, record.stats.fatigue + 0.006)
@@ -1108,6 +1201,9 @@ end
 
 function Adapter.onEveryTenMinutes()
     LWN.PopulationStore.eachNPC(function(record)
+        if isAliveRecord(record) ~= true then
+            return
+        end
         local clue = LWN.WorldStory.maybeCreateClue(record)
         if clue then
             LWN.PopulationStore.addWorldClue(clue)
@@ -1131,13 +1227,13 @@ function Adapter.onTick()
     updateTravelledDistance(player)
 
     LWN.PopulationStore.eachNPC(function(record)
-        if record.embodiment.state == "hidden" and LWN.EmbodimentManager.tryRearmHidden then
+        if isAliveRecord(record) and record.embodiment.state == "hidden" and LWN.EmbodimentManager.tryRearmHidden then
             LWN.EmbodimentManager.tryRearmHidden(record, player)
         end
     end)
 
     LWN.PopulationStore.eachNPC(function(record)
-        if record.embodiment.state == "eligible" then
+        if isAliveRecord(record) and record.embodiment.state == "eligible" then
             LWN.EmbodimentManager.tryEmbody(record, player)
         end
     end)
@@ -1190,6 +1286,9 @@ function Adapter.bind()
         Events.OnCreateLivingCharacter.Add(Adapter.onCreateLivingCharacter)
     end
     Events.OnCreateSurvivor.Add(Adapter.onCreateSurvivor)
+    if Events.OnDeadBodySpawn then
+        Events.OnDeadBodySpawn.Add(Adapter.onDeadBodySpawn)
+    end
     Events.OnPlayerDeath.Add(Adapter.onPlayerDeath)
     Events.OnFillWorldObjectContextMenu.Add(LWN.UIContextMenu.onFillWorldObjectContextMenu)
     Events.OnCustomUIKeyPressed.Add(LWN.UIRadialMenu.onCustomUIKeyPressed)

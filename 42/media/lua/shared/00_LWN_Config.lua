@@ -18,6 +18,7 @@ LWN.Config = {
         DespawnRadiusTiles = 44,
         CompanionDespawnRadiusTiles = 58,
         GraceHours = 0.05,
+        DeathCleanupDelayHours = 0.0025,
         TickFrames = 6,
     },
 

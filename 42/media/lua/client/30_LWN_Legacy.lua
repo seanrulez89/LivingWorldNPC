@@ -6,7 +6,10 @@ local Legacy = LWN.Legacy
 function Legacy.collectCandidates()
     local out = {}
     LWN.PopulationStore.eachNPC(function(record)
-        if record.companion.recruited and record.relationshipToPlayer.trust >= LWN.Config.Legacy.MinTrust then
+        if LWN.PopulationStore.isAlive(record)
+            and record.companion.recruited
+            and record.relationshipToPlayer.trust >= LWN.Config.Legacy.MinTrust
+        then
             table.insert(out, LWN.Schema.newLegacySnapshot(record))
         end
     end)

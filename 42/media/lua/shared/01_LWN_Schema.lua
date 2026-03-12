@@ -17,6 +17,22 @@ end
 
 Schema.copyTable = copyTable
 
+local function ensureDefaults(dst, defaults)
+    for key, value in pairs(defaults) do
+        if type(value) == "table" then
+            if type(dst[key]) ~= "table" then
+                dst[key] = {}
+            end
+            ensureDefaults(dst[key], value)
+        elseif dst[key] == nil then
+            dst[key] = value
+        end
+    end
+    return dst
+end
+
+Schema.ensureDefaults = ensureDefaults
+
 function Schema.newRoot()
     return {
         version = LWN.Config.Version,
@@ -78,6 +94,12 @@ function Schema.newNPCRecord(id, seed)
     return {
         id = id,
         seed = seed,
+        status = {
+            life = "alive",
+            removed = false,
+            lastChangedHour = 0,
+            reason = nil,
+        },
         identity = {
             firstName = "Unknown",
             lastName = "Unknown",
@@ -98,11 +120,48 @@ function Schema.newNPCRecord(id, seed)
         },
         embodiment = {
             state = "hidden",
+            stage = "inactive",
             actorId = nil,
+            sessionId = 0,
             lastSeenHour = 0,
+            lastStageAt = 0,
+            lastStageReason = nil,
             graceUntilHour = 0,
             cooldownUntilHour = 0,
             missingTicks = 0,
+            presentation = {
+                stage = "idle",
+                pending = false,
+                ready = false,
+                lastReadyHour = nil,
+                lastReason = nil,
+            },
+            death = {
+                state = "alive",
+                latched = false,
+                latchedAt = nil,
+                source = nil,
+                reason = nil,
+                corpseSeen = false,
+                corpseSeenAt = nil,
+                corpseVisual = false,
+                cleanupRequested = false,
+            },
+            cleanup = {
+                state = "idle",
+                reason = nil,
+                removeRecord = false,
+                requestedAt = nil,
+                completedAt = nil,
+            },
+            target = {
+                kind = nil,
+                npcId = nil,
+                lastKnownX = nil,
+                lastKnownY = nil,
+                lastKnownZ = nil,
+                lastResolvedHour = nil,
+            },
         },
         stats = {
             hunger = 0.1,
@@ -200,6 +259,20 @@ function Schema.newNPCRecord(id, seed)
             canContinueAsLegacy = false,
         },
     }
+end
+
+function Schema.ensureNPCRecordShape(record)
+    if type(record) ~= "table" then
+        return record
+    end
+
+    local seed = record.seed
+    if type(seed) ~= "number" then
+        seed = 0
+    end
+
+    local defaults = Schema.newNPCRecord(record.id or "LWN-UNKNOWN", seed)
+    return ensureDefaults(record, defaults)
 end
 
 function Schema.newLegacySnapshot(record)

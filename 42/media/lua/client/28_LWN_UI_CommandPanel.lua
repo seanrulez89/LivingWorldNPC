@@ -8,7 +8,7 @@ LWN.UICommandPanel = LWN.UICommandPanel or {}
 local Panel = LWN.UICommandPanel
 Panel.window = nil
 Panel.textbox = nil
-Panel.target = nil
+Panel.targetNpcId = nil
 
 local function protectedCall(obj, methodName, ...)
     if not obj then return nil end
@@ -36,6 +36,26 @@ local function isUsableActor(actor)
         return LWN.ActorFactory.isManagedActor(actor)
     end
     return false
+end
+
+local function resolveTarget()
+    local npcId = Panel.targetNpcId
+    if not npcId then return nil, nil end
+
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.getUsableActorByNpcId then
+        local actor, record = LWN.EmbodimentManager.getUsableActorByNpcId(npcId)
+        if actor and record then
+            return actor, record
+        end
+    end
+
+    local record = LWN.PopulationStore.getNPC(npcId)
+    if not record then return nil, nil end
+    local actor = LWN.EmbodimentManager and LWN.EmbodimentManager.getActor and LWN.EmbodimentManager.getActor(record) or nil
+    if not isUsableActor(actor) then
+        return nil, record
+    end
+    return actor, record
 end
 
 local CommandPanelWindow = ISCollapsableWindow:derive("LWNCommandPanelWindow")
@@ -142,7 +162,7 @@ function Panel.show(actor)
     if not isUsableActor(actor) then return end
 
     Panel._ensure()
-    Panel.target = actor
+    Panel.targetNpcId = getNpcId(actor)
     Panel.window:setVisible(true)
     Panel.window:bringToTop()
     Panel:refresh()
@@ -152,14 +172,15 @@ function Panel.hide()
     if Panel.window then
         Panel.window:setVisible(false)
     end
-    Panel.target = nil
+    Panel.targetNpcId = nil
 end
 
 function Panel:refresh()
-    if not self.target then return end
-    if not isUsableActor(self.target) then
+    if not self.targetNpcId then return end
+    local actor = resolveTarget()
+    if not isUsableActor(actor) then
         self.hide()
         return
     end
-    self.renderTarget(self.target)
+    self.renderTarget(actor)
 end

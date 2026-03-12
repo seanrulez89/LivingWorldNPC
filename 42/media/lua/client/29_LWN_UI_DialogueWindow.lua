@@ -8,7 +8,7 @@ local W = LWN.UIDialogueWindow
 W.window = nil
 W.logBox = nil
 W.inputBox = nil
-W.target = nil
+W.targetNpcId = nil
 
 local function protectedCall(obj, methodName, ...)
     if not obj then return nil end
@@ -36,6 +36,26 @@ local function isUsableActor(actor)
         return LWN.ActorFactory.isManagedActor(actor)
     end
     return false
+end
+
+local function resolveTarget()
+    local npcId = W.targetNpcId
+    if not npcId then return nil, nil end
+
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.getUsableActorByNpcId then
+        local actor, record = LWN.EmbodimentManager.getUsableActorByNpcId(npcId)
+        if actor and record then
+            return actor, record
+        end
+    end
+
+    local record = LWN.PopulationStore.getNPC(npcId)
+    if not record then return nil, nil end
+    local actor = LWN.EmbodimentManager and LWN.EmbodimentManager.getActor and LWN.EmbodimentManager.getActor(record) or nil
+    if not isUsableActor(actor) then
+        return nil, record
+    end
+    return actor, record
 end
 
 local DialogueWindow = ISCollapsableWindow:derive("LWNDialogueWindow")
@@ -104,7 +124,7 @@ function W.show(actor)
     if not isUsableActor(actor) then return end
 
     W._ensure()
-    W.target = actor
+    W.targetNpcId = getNpcId(actor)
     W.window:setVisible(true)
     W.window:bringToTop()
     W:refresh()
@@ -114,25 +134,23 @@ function W.hide()
     if W.window then
         W.window:setVisible(false)
     end
-    W.target = nil
+    W.targetNpcId = nil
 end
 
 function W:refresh()
-    if not self.target then return end
-    if not isUsableActor(self.target) then
+    if not self.targetNpcId then return end
+    local actor, record = resolveTarget()
+    if not isUsableActor(actor) then
         self.hide()
         return
     end
-
-    local npcId = getNpcId(self.target)
-    local record = npcId and LWN.PopulationStore.getNPC(npcId) or nil
     if not record then
         self.hide()
         return
     end
 
     local summary = {
-        tostring(protectedCall(self.target, "getFullName") or npcId),
+        tostring(protectedCall(actor, "getFullName") or self.targetNpcId),
         "Ask about: food / rest / home / family / trade",
         "Core command flow remains menu-driven; this window is an info stub during development.",
         "Arc: " .. tostring(record.storyArc and record.storyArc.type or "none"),
