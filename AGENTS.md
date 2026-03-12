@@ -23,6 +23,7 @@
 - Avoid speculative engine hooks. If an event or API is uncertain, add a TODO note and keep the hook isolated.
 - Keep debug tooling available in development builds.
 - After touching Lua runtime code, run the local validation scripts if available.
+- Treat each meaningful coding turn as a snapshot boundary: after code changes, run validation, review `git status`, and prefer a small descriptive commit before moving to the next hypothesis.
 
 ## Preferred workflow
 - Use the Local checkout for game-facing changes.

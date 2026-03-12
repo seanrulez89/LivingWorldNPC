@@ -85,6 +85,28 @@ Date: 2026-03-11
   - `added=...`
 - 성공으로 단정하지 않는다. 이 stage 이후에도 여전히 안 보이면 다음 유력 후보는 descriptor -> human visual 직접 반영 쪽이다.
 
+## 2026-03-12 최소 패치 메모
+- 이번 턴은 가설을 다시 좁혀 `descriptor / SurvivorDesc -> renderable body graph / sprite parts / human visual final state 반영 실패`만 겨냥했다.
+- 관찰 근거:
+  - 최근 로그에서 `world=true`, `ghost=false`, `invisible=false`, `sceneCulled=false`, `alpha=1.00`이 이미 확인됐다.
+  - 같은 구간에서 `humanVisual=true`, `actorDescriptor=true`, `itemVisuals>0`, `wornItems>0`도 확인돼, 이번 턴은 world registration / visibility flag / itemVisuals 부족 가설을 우선순위에서 내렸다.
+- 코드 변경 의도:
+  - `ActorFactory.refreshEmbodiedPresentation()`에서 descriptor 바인딩과 post-clothing materialization을 분리해 추적한다.
+  - `Dressup(desc)`는 pre-clothing 1회만 유지하고, clothing/loadout 이후에는 `InitSpriteParts(desc)` + `onWornItemsChanged()` + `resetModel*()` 중심으로 final state를 다시 굳힌다.
+  - `ActorSync`는 생성 직후 visual state를 매 tick 덮어쓰지 않도록, `LWN_PresentationPending` 플래그가 있을 때만 1회 settle을 수행한다.
+- 새/중요 stage:
+  - `refreshEmbodiedPresentation.descriptor_bound`
+  - `refreshEmbodiedPresentation.materialized`
+  - `applyLoadout.materialized`
+  - `settleEmbodiedPresentation.ready`
+  - `pushRecordToActor.presentation_settled`
+  - `ensureEmbodiedActorState.presentation_settled`
+- 이번 턴 판정에 특히 볼 필드:
+  - `detail=phase=... descriptorApplied=... dressup=... initSpriteParts=... female=...`
+  - 기존 `humanVisual`, `actorDescriptor`, `skin`, `hair`, `beard`, `itemVisuals`, `wornItems`
+- 여전히 해결로 단정하지 않는다.
+  - 위 stage들에서 descriptor/materialization은 정상인데 인게임에서 계속 투명하면, 다음 턴에는 body graph 이후의 render registration 또는 same-frame invalidation 쪽으로 더 좁혀야 한다.
+
 ## 추가 작업 메모: 레퍼런스 재학습
 - 이번 턴은 런타임 코드 수정 대신 `reference_mods` 재검토를 우선했다.
 - 새로 추가된 `reference_mods/3001908830/mods/PZNS_Framework`를 포함해 Bandits, BanditsWeekOne, BanditsCreator, PZNS를 다시 읽었다.
@@ -98,9 +120,96 @@ Date: 2026-03-11
 ## 작업 플로우 고정 메모
 - WSL에서는 PowerShell 검증보다 `./scripts/validate-wsl.sh`를 기본 검증 경로로 사용한다.
 - 메인 저장소에서는 `reference_mods/` 원본 스냅샷을 추적하지 않고, 분석 문서만 유지한다.
+- 의미 있는 코딩 턴이 끝날 때마다 `validate-wsl` 실행 → `git status` 확인 → 작은 스냅샷 커밋 생성을 기본 운영 규칙으로 사용한다.
+- 여러 가설 실험은 한 커밋에 섞지 않고, 롤백 가능한 작은 단위로 남긴다.
 - 아직 남은 핵심 작업:
   - 인게임 재테스트 + `EmbodimentTrace` 로그 수집
   - Stage 3 최소 패치의 가설 판정
   - 그 결과에 따라 다음 최소 패치 방향 결정
 - 환경 업데이트:
   - WSL에 `lua`/`luac`가 설치되어, 이제 `./scripts/validate-wsl.sh`에서 변경된 Lua 파일 문법 검사가 가능하다.
+
+## 2026-03-12 alive vs death/downed presentation 추적 메모
+- 이번 턴은 가설을 더 좁혀, "살아 있는 embodied actor의 visible presentation path는 어긋나 있고, death/downed/cleanup/repair 전환에서만 다른 representation이 드러난다"는 가능성만 겨냥했다.
+- 관찰 근거:
+  - 이미 `world=true`, `ghost=false`, `invisible=false`, `sceneCulled=false`, `alpha=1.00`, `humanVisual=true`, `actorDescriptor=true`, `itemVisuals>0`, `wornItems>0`가 확인됐다.
+  - 사용자 관찰상 살아 있을 때는 안 보이지만, 공격받아 피를 흘린 뒤 죽거나 누운 시점에는 "누워 있는 좀비 같은 것"이 보였다.
+- 이번 최소 패치 의도:
+  - 같은 `npcId` 기준으로 alive -> downed/death-like -> cleanup/despawn -> repair 전후를 한 줄 흐름으로 비교하기 쉽게 만든다.
+  - `health<=0` 또는 death-like actor를 `resolveEmbodiedActor()`가 다시 월드에 붙잡아 repair하는 경우만 최소 차단해, 죽은 표현체가 살아 있는 actor presentation 분석을 더 흐리지 않게 한다.
+  - despawn/cleanup 직전과 직후도 같은 필드셋으로 남겨, "alive actor가 너무 빨리 꺼진 뒤 다른 object만 남는지"를 판별하기 쉽게 한다.
+- 이번 턴에 추가한 핵심 trace/stage:
+  - 공통 필드 확장:
+    - `object`
+    - `npc`
+    - `health`
+    - `zombie`
+    - `reanimated`
+    - `dead`
+    - `downed`
+    - `deathLike`
+  - 새 stage:
+    - `pushRecordToActor.presentation_changed`
+    - `ensureEmbodiedActorState.presentation_changed`
+    - `pullActorToRecord.presentation_changed`
+    - `tickEmbodiedRecord.start`
+    - `tickEmbodiedRecord.pre_despawn`
+    - `cleanupActor.complete`
+    - `resolveEmbodiedActor.repair_blocked_death_like`
+- 이번 턴에서 특히 판정할 로그 패턴:
+  - 같은 `npcId`로 `pullActorToRecord.presentation_changed`가 `downed=true` 또는 `deathLike=true`로 바뀌는지
+  - 그 직후 `cleanupActor.start/complete`가 같은 actor 상태를 닫는지
+  - `resolveEmbodiedActor.repair_blocked_death_like`가 찍히면, 이전에는 죽은/죽음 유사 actor를 repair 대상으로 다시 붙잡고 있었을 가능성이 있다
+  - 반대로 위 전환 로그가 없는데 화면에는 누운 개체가 보이면, 그 개체는 기존 embodied actor가 아니라 다른 visible object일 가능성이 올라간다
+- 이번 패치는 해결 선언이 아니라 판정력 강화다.
+
+## 2026-03-12 alpha zero / corpse-reanimation object identity 메모
+- 이번 턴은 두 축만 유지했다.
+  - 1순위: 살아 있는 embodied actor가 `world=true`, `ghost=false`, `invisible=false`, `sceneCulled=false`, `humanVisual=true`, `actorDescriptor=true`인데도 `alpha=0.00`, `targetAlpha=0.00`로 남는 경로 추적
+  - 2순위: 죽은 뒤 화면에 보이는 누운 인물 / 기상한 좀비 / 뒤늦은 corpse가 기존 embodied actor와 같은 객체인지 별도 객체인지 판별
+- 이번 코드 변경의 의도:
+  - 기존 `EmbodimentTrace` 한 줄 요약에 `objectRef`, `alpha`, `targetAlpha`, `alphaZero`, `targetAlphaZero`를 추가해 같은 `npcId` 안에서 객체 identity와 alpha 상태를 바로 비교한다.
+  - 새 `PresentationWatch` 로그로 `object`, `objectRef`, `npc`, `world`, `health`, `dead`, `downed`, `deathLike`, `ghost`, `invisible`, `sceneCulled`, `alpha`, `targetAlpha`, `humanVisual`, `actorDescriptor`의 변화만 따로 뽑아낸다.
+  - visible actor인데 alpha만 0으로 남는 경우에만 `setAlphaAndTarget(1.0)` + `setAlphaToTarget(0)`를 보수적으로 재시도한다.
+  - death 쪽은 확실한 이벤트 이름을 추측하지 않고, `OnTick`에서 death-like/downed actor 주변 square를 probe해 corpse/zombie/player 계열 object를 `objectRef` 기준으로 비교한다.
+- 이번 턴에 추가된 핵심 로그:
+  - `[LWN][PresentationWatch] ... detail=alpha:...->...`
+  - `[LWN][PresentationWatch] ... alphaWatch=true ...`
+  - `[LWN][PresentationWatch] action=alpha_repair ...`
+  - `stage=deathState.changed`
+  - `stage=deathProbe.objects_changed`
+  - `[LWN][DeathTrace] ... relatedKind=corpse|zombie|player ... sameActorRef=... sameNpcId=... relatedRef=...`
+- 다음 테스트에서 특히 볼 블록:
+  - 같은 `npcId`에서 `module=ActorFactory/EventAdapter/ActorSync`의 `objectRef=...`, `alpha=...`, `targetAlpha=...`
+  - 직후 이어지는 `[LWN][PresentationWatch]`의 `detail=...` 또는 `alphaWatch=true`
+  - `action=alpha_repair`가 찍히면 before/after alpha 값이 실제로 회복되는지
+  - 죽는 순간 `stage=deathState.changed` 다음 `[LWN][DeathTrace] relatedKind=...`가 어떤 `relatedRef`를 남기는지
+- 객체 판정 기준:
+  - `sameActorRef=true`면 화면의 개체가 기존 embodied actor와 같은 Lua/Java object다.
+  - `sameActorRef=false`인데 `relatedKind=corpse` 또는 `relatedKind=zombie`가 뜨면 별도 corpse/reanimated object다.
+  - `sameNpcId=true`면 새 object에도 `ModData.LWN_NpcId`가 남았다는 뜻이고, `sameNpcId=false`면 단순 근접 object일 가능성이 높다.
+
+## 2026-03-12 delete/remove/despawn lifecycle 메모
+- 이번 턴은 delete가 완전 제거로 이어지지 않는 경로만 좁게 추적했다.
+- 현재 가설:
+  - `EventAdapter`는 death-like embodied actor를 자동으로 `embodied -> hidden/removed`로 내리지 않아서, 같은 `npcId`가 죽은 뒤에도 canonical record 상 `embodied`로 남을 수 있다.
+  - `cleanupActor`가 끝난 뒤에도 engine 쪽 object가 월드에 남으면 `ModData.LWN_NpcId`가 살아 있고, 우클릭 context scan이 그 stale actor를 다시 타깃으로 잡을 수 있다.
+  - corpse / reanimated zombie는 기존 embodied `IsoPlayer`와 별도 object일 수 있으며, 이때는 `DeathTrace.sameActorRef=false`와 `relatedKind=corpse|zombie`로 구분한다.
+- 이번 패치에서 추가한 판정 로그:
+  - `[LWN][ContextTrace] stage=debug.delete.request`
+  - `[LWN][ContextTrace] stage=worldObject.inspect`
+  - `[LWN][ContextTrace] stage=candidate.accepted|candidate.rejected`
+  - `stage=registerActor.bound`
+  - `stage=unregisterActor.start`
+  - `stage=unregisterActor.complete`
+  - `stage=embodiedActor.death_like`
+- 다음 테스트에서는 같은 `npcId`로 아래 순서를 본다:
+  - `ContextTrace stage=debug.delete.request`
+  - `cleanupActor.start`
+  - `cleanupActor.complete`
+  - `unregisterActor.start`
+  - `unregisterActor.complete`
+  - 삭제 후 다시 우클릭했을 때 `ContextTrace stage=candidate.rejected | reason=record_missing` 또는 `reason=death_like_actor`
+- 삭제 후에도 corpse / zombie가 남아 있으면:
+  - `ContextTrace`는 메뉴 타깃에서 제외되는지 확인한다.
+  - 같은 시점의 `[LWN][DeathTrace]`로 `relatedKind`, `relatedRef`, `sameActorRef`, `sameNpcId`를 본다.
