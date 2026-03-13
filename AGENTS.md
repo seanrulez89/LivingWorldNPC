@@ -2,7 +2,7 @@
 
 ## Project identity
 - This repository is a **Project Zomboid Build 42 single-player mod**.
-- The mod root is the repository root used by Codex.
+- The mod root is the repository root used directly by local tooling and any coding agent.
 - The game loads the mod from this folder directly during local testing.
 
 ## Hard constraints

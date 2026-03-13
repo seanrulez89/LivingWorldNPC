@@ -9,6 +9,9 @@ This project is currently in active R&D.
 - Canonical NPC state lives in `ModData`
 - On-screen NPCs are embodied dynamically when needed
 - The current embodiment path is still under active investigation
+- Highest current blocker: alive embodied NPCs still do not render visibly in-game even when runtime/debug state looks healthy
+- Current strongest unverified hypothesis: Build 42 alive presentation is failing at the `IsoPlayer` carrier / actor-class boundary rather than at simple alpha, ghost, or world-registration flags
+- Recommended next manual investigation order: (1) carrier A/B test away from `IsoPlayer`, (2) move the first full presentation build to the post-create hook only, (3) force an explicit alive-state animator/state reset after refresh
 - The repository contains both runtime code and research/debug documentation
 
 In short: this is a working development repository, **not a finished stable release**.
@@ -64,6 +67,7 @@ That script currently checks:
 Start here if you want context:
 
 - `docs/README.md`
+- `docs/TEST_LOG_HISTORY.md`
 - `docs/LWN_BUILD42_DECISION_MATRIX_2026-03-12.md`
 - `docs/STRUCTURE_REVIEW_EXPERIMENTS_2026-03-12.md`
 - `docs/OFFICIAL_BUILD42_API_AUDIT_2026-03-12.md`

@@ -1,0 +1,47 @@
+# LivingWorldNPC Work Notes
+
+Date: 2026-03-14
+
+## Scope of this file
+This file is for work performed on 2026-03-14 only.
+
+## 2026-03-14 repo audit summary
+- Performed a direct full-repo sweep without delegating to an external coding agent.
+- Reviewed repository layout, tracked runtime Lua modules, top-level docs, workflow docs, scripts, and the local-only `reference_mods/` footprint.
+- Confirmed the repo is still organized around the expected Build 42 mod structure:
+  - `42/` runtime mod files
+  - `docs/` research, verdicts, test logs, and work notes
+  - `scripts/` local validation/helpers
+  - `reference_mods/` ignored local research snapshots
+- Confirmed the core runtime architecture remains split as intended:
+  - canonical data/state in `PopulationStore` + schema-backed records
+  - embodiment lifecycle centered on `ActorFactory`, `ActorSync`, and `EmbodimentManager`
+  - post-create recovery/comparison logic in `EventAdapter`
+  - UI targeting resolved via `npcId` rather than durable actor refs
+
+## Current technical read after code/doc review
+- `ActorFactory.createActor()` still allocates embodied NPCs through `IsoPlayer.new(...)` and marks `OnCreateLivingCharacter` as the expected post-create hook.
+- `EventAdapter` still compares both `OnCreateLivingCharacter` and `OnCreateSurvivor`, which is useful for lifecycle evidence but also reinforces that the create-hook path is still part of the active investigation surface.
+- The repo's current docs and logs still support the same top blocker:
+  - alive embodied NPCs remain invisible despite apparently healthy runtime/debug state
+- After reviewing the current docs and the code that implements the spawn/presentation path, the strongest unverified repo-level hypothesis remains:
+  - alive presentation is failing at the `IsoPlayer` carrier / actor-class boundary rather than at simple visibility flags
+
+## Documentation updates made today
+- Updated `README.md` so the repo front page now exposes:
+  - the current highest-priority blocker
+  - the strongest current unverified hypothesis
+  - the recommended next manual experiment order
+  - `docs/TEST_LOG_HISTORY.md` as recommended reading
+- Updated `docs/README.md` to surface the current blocker/next-spike guidance and include this new dated work-notes file.
+- Updated `AGENTS.md` wording so the repo root guidance is tooling/agent-neutral instead of Codex-specific.
+- Updated `docs/GIT_WORKFLOW_2026-03-11.md` wording so the workflow rule reads as a general project rule rather than a Codex-only one.
+
+## Recommended next direct coding focus
+1. A/B test a carrier path away from `IsoPlayer`.
+2. If the carrier stays the same, move the first full presentation build to the post-create hook only.
+3. If that still fails, add one explicit alive-state animator/state reset pass after refresh.
+
+## Git note
+- At the start of this audit, `git status --short --branch` reported a clean working tree on `master` tracking `origin/master`.
+- After the documentation refresh above, re-run validation and `git status` before the next commit.

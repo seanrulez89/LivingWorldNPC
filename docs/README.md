@@ -2,6 +2,15 @@
 
 This directory contains research notes, audits, workflow references, and experiment summaries for LivingWorldNPC.
 
+## Current blocker / next spike
+
+- alive embodied NPCs are still invisible in-game despite healthy-looking runtime/debug state
+- the strongest current unverified hypothesis is an `IsoPlayer` carrier / actor-class mismatch in the alive presentation path
+- recommended next manual experiments:
+  1. A/B test a carrier path away from `IsoPlayer`
+  2. move the first full presentation build to the post-create hook only
+  3. force an explicit alive-state animator/state reset after refresh
+
 ## Start here
 
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
@@ -35,7 +44,7 @@ These documents summarize what was learned from reference mods and how those les
 
 - `GIT_WORKFLOW_2026-03-11.md`
   - git hygiene, validation workflow, snapshot-commit rule
-- `WORK_NOTES_2026-03-11.md`, `WORK_NOTES_2026-03-13.md`, ...
+- `WORK_NOTES_2026-03-11.md`, `WORK_NOTES_2026-03-13.md`, `WORK_NOTES_2026-03-14.md`, ...
   - date-matched work notes; each file should only contain work from its own date
 - `TEST_LOG_HISTORY.md`
   - append-only in-game test history linking observation -> logs -> lesson -> fix -> next check
