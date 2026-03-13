@@ -1226,6 +1226,10 @@ function Adapter.onTick()
 
     updateTravelledDistance(player)
 
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.tickDeferredCleanup then
+        LWN.EmbodimentManager.tickDeferredCleanup()
+    end
+
     LWN.PopulationStore.eachNPC(function(record)
         if isAliveRecord(record) and record.embodiment.state == "hidden" and LWN.EmbodimentManager.tryRearmHidden then
             LWN.EmbodimentManager.tryRearmHidden(record, player)

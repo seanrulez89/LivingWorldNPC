@@ -192,6 +192,21 @@ local function updateCleanupState(npcId, stage, reason, record, actor, extra)
         if extra.registeredMatch ~= nil then
             state.registeredMatch = extra.registeredMatch
         end
+        if extra.actor ~= nil then
+            state.actor = extra.actor
+        end
+        if extra.deferred ~= nil then
+            state.deferred = extra.deferred == true
+        end
+        if extra.attempts ~= nil then
+            state.attempts = extra.attempts
+        end
+        if extra.skipDetail ~= nil then
+            state.skipDetail = extra.skipDetail
+        end
+        if extra.cooldownUntilHour ~= nil then
+            state.cooldownUntilHour = extra.cooldownUntilHour
+        end
     end
 
     if Embody._cleanupInFlight[npcId] or not Embody._cleanupBlocklist[npcId] then
@@ -358,7 +373,14 @@ local function detachWorldObject(obj, npcId, reason, options)
     end
 
     if LWN.ActorFactory and LWN.ActorFactory.hasRuntimeCore and LWN.ActorFactory.hasRuntimeCore(obj) and LWN.ActorFactory.cleanupActor then
-        LWN.ActorFactory.cleanupActor(obj, reason)
+        local cleanupResult = LWN.ActorFactory.cleanupActor(obj, reason)
+        if cleanupResult and cleanupResult.deferred == true then
+            traceCleanup("leftover.cleanup.deferred", npcId, nil, obj, {
+                reason = reason,
+                detail = cleanupResult.detail,
+            })
+            return
+        end
     else
         protectedCall(obj, "removeFromSquare")
         protectedCall(obj, "removeFromWorld")
@@ -380,21 +402,20 @@ end
 
 local function releaseActor(record, actor, nextState, cooldownHours, reason)
     if not record then return false end
-    record = ensureRecordShape(record)
-
-    clearUiTargets(record.id)
-    clearRecordTarget(record, reason)
-
-    if actor then
-        if LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
-            LWN.ActorFactory.cleanupActor(actor, reason)
-        else
-            protectedCall(actor, "StopAllActionQueue")
-            protectedCall(actor, "removeFromSquare")
-            protectedCall(actor, "removeFromWorld")
-        end
+    if nextState == "hidden" and Embody.canonicalCleanup then
+        return Embody.canonicalCleanup(record, {
+            actor = actor,
+            removeRecord = false,
+            blockNpcId = true,
+            cooldownUntilHour = cooldownHours,
+            reason = reason or "releaseActor",
+            detail = "releaseActor",
+        })
     end
 
+    record = ensureRecordShape(record)
+    clearUiTargets(record.id)
+    clearRecordTarget(record, reason)
     record.embodiment.state = nextState
     record.embodiment.actorId = nil
     record.embodiment.missingTicks = 0
@@ -489,6 +510,7 @@ function Embody.tryRearmHidden(record, player)
     record = ensureRecordShape(record)
     if not isAlive(record) then return false end
     if record.embodiment.state ~= "hidden" then return false end
+    if getCleanupState(record.id) or Embody.isCleanupBlocked(record.id) then return false end
     local companion = record.companion or {}
     if not companion.recruited and not record.debugSpawnOnly then return false end
 
@@ -946,6 +968,7 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
     local detail = options and options.detail or nil
     local removeRecord = not (options and options.removeRecord == false)
     local blockNpcId = options and options.blockNpcId
+    local cooldownUntilHour = options and options.cooldownUntilHour or nil
     if blockNpcId == nil then
         blockNpcId = removeRecord
     end
@@ -1023,23 +1046,30 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
             record.status.reason = reason
         else
             if isAlive(record) then
-                record.embodiment.cooldownUntilHour = getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record)
+                record.embodiment.cooldownUntilHour = cooldownUntilHour or (getGameTime():getWorldAgeHours() + autoRearmCooldownHours(record))
             else
                 record.embodiment.cooldownUntilHour = nil
             end
         end
         updateCleanupState(npcId, "record.deactivated", reason, record, actor, {
             removeRecord = removeRecord,
+            cooldownUntilHour = record.embodiment.cooldownUntilHour,
         })
         traceCleanup("record.deactivated", npcId, record, actor, {
             reason = reason,
-            detail = string.format("removeRecord=%s", tostring(removeRecord)),
+            detail = string.format(
+                "removeRecord=%s cooldownUntil=%.4f",
+                tostring(removeRecord),
+                tonumber(record.embodiment.cooldownUntilHour or 0) or 0
+            ),
         })
     end
 
+    local actorCleanupDeferred = false
     if actor then
         updateCleanupState(npcId, "actor.cleanup.start", reason, record, actor, {
             removeRecord = removeRecord,
+            actor = actor,
         })
         traceCleanup("actor.cleanup.start", npcId, record, actor, {
             reason = reason,
@@ -1052,18 +1082,35 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
                 modData.LWN_NpcId = nil
             end
         elseif LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
-            LWN.ActorFactory.cleanupActor(actor, reason)
+            local cleanupResult = LWN.ActorFactory.cleanupActor(actor, reason)
+            actorCleanupDeferred = cleanupResult and (cleanupResult.deferred == true or cleanupResult.completed == false) or false
+            if actorCleanupDeferred then
+                blockNpcId = true
+                Embody._cleanupBlocklist[npcId] = getCleanupState(npcId) or cleanupState
+                updateCleanupState(npcId, "actor.cleanup.deferred", reason, record, actor, {
+                    removeRecord = removeRecord,
+                    actor = actor,
+                    deferred = true,
+                    detail = cleanupResult and cleanupResult.detail or nil,
+                })
+                traceCleanup("actor.cleanup.deferred", npcId, record, actor, {
+                    reason = reason,
+                    detail = cleanupResult and cleanupResult.detail or "cleanupActor returned deferred",
+                })
+            end
         else
             protectedCall(actor, "StopAllActionQueue")
             protectedCall(actor, "removeFromSquare")
             protectedCall(actor, "removeFromWorld")
         end
-        updateCleanupState(npcId, "actor.cleanup.complete", reason, record, actor, {
-            removeRecord = removeRecord,
-        })
-        traceCleanup("actor.cleanup.complete", npcId, record, actor, {
-            reason = reason,
-        })
+        if actorCleanupDeferred ~= true then
+            updateCleanupState(npcId, "actor.cleanup.complete", reason, record, actor, {
+                removeRecord = removeRecord,
+            })
+            traceCleanup("actor.cleanup.complete", npcId, record, actor, {
+                reason = reason,
+            })
+        end
     else
         updateCleanupState(npcId, "actor.cleanup.skipped", reason, record, actor, {
             removeRecord = removeRecord,
@@ -1102,17 +1149,31 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
             removeRecord = removeRecord,
         })
         Embody.unregisterActor(record, reason)
-        touchCleanupRecord(record, "complete", reason, removeRecord)
-        touchRecordStage(record, removeRecord and "removed" or (isAlive(record) and "inactive" or "dead_cleaned"), reason)
-        updateCleanupState(npcId, "registry.cleared", reason, record, actor, {
-            removeRecord = removeRecord,
-        })
-        traceCleanup("registry.cleared", npcId, record, actor, {
-            reason = reason,
-        })
+        if actorCleanupDeferred == true then
+            touchRecordStage(record, "cleanup_deferred", reason)
+            updateCleanupState(npcId, "registry.deferred", reason, record, actor, {
+                removeRecord = removeRecord,
+                actor = actor,
+                deferred = true,
+                detail = string.format("removeRecord=%s", tostring(removeRecord)),
+            })
+            traceCleanup("registry.deferred", npcId, record, actor, {
+                reason = reason,
+                detail = string.format("removeRecord=%s", tostring(removeRecord)),
+            })
+        else
+            touchCleanupRecord(record, "complete", reason, removeRecord)
+            touchRecordStage(record, removeRecord and "removed" or (isAlive(record) and "inactive" or "dead_cleaned"), reason)
+            updateCleanupState(npcId, "registry.cleared", reason, record, actor, {
+                removeRecord = removeRecord,
+            })
+            traceCleanup("registry.cleared", npcId, record, actor, {
+                reason = reason,
+            })
+        end
     end
 
-    if removeRecord and Store and Store.removeNPC then
+    if actorCleanupDeferred ~= true and removeRecord and Store and Store.removeNPC then
         Store.removeNPC(npcId)
         updateCleanupState(npcId, "record.removed", reason, nil, actor, {
             removeRecord = removeRecord,
@@ -1122,7 +1183,132 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
         })
     end
 
-    Embody._cleanupInFlight[npcId] = nil
+    if actorCleanupDeferred ~= true then
+        Embody._cleanupInFlight[npcId] = nil
+        if removeRecord ~= true and (record == nil or isAlive(record) == true) then
+            Embody._cleanupBlocklist[npcId] = nil
+        end
+    end
 
     return true
+end
+
+function Embody.tickDeferredCleanup()
+    if not Embody._cleanupInFlight then return end
+
+    local pendingIds = {}
+    for npcId, cleanupState in pairs(Embody._cleanupInFlight) do
+        if cleanupState and cleanupState.deferred == true then
+            pendingIds[#pendingIds + 1] = npcId
+        end
+    end
+
+    for _, npcId in ipairs(pendingIds) do
+        local cleanupState = Embody._cleanupInFlight[npcId]
+        if cleanupState and cleanupState.deferred == true then
+            local record = Store and Store.getNPC and Store.getNPC(npcId) or nil
+            local actor = cleanupState.actor
+            local attempts = (tonumber(cleanupState.attempts) or 0) + 1
+            local canFinalize = true
+            local finalizeDetail = "actor=nil"
+
+            if LWN.ActorFactory and LWN.ActorFactory.canFinalizeDeferredCleanup then
+                canFinalize, finalizeDetail = LWN.ActorFactory.canFinalizeDeferredCleanup(actor)
+            elseif actor and protectedCall(actor, "isExistInTheWorld") == true then
+                canFinalize = false
+                finalizeDetail = string.format(
+                    "actorWorld=%s squarePresent=%s",
+                    tostring(protectedCall(actor, "isExistInTheWorld")),
+                    tostring((protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")) ~= nil)
+                )
+            end
+
+            if canFinalize ~= true then
+                updateCleanupState(npcId, "deferred.finalize.skipped", cleanupState.reason, record, actor, {
+                    removeRecord = cleanupState.removeRecord,
+                    actor = actor,
+                    deferred = true,
+                    attempts = attempts,
+                    skipDetail = finalizeDetail,
+                    detail = finalizeDetail,
+                })
+                if cleanupState.lastSkipDetail ~= finalizeDetail or attempts == 1 then
+                    cleanupState.lastSkipDetail = finalizeDetail
+                    traceCleanup("deferred.finalize.skipped", npcId, record, actor, {
+                        reason = cleanupState.reason,
+                        detail = finalizeDetail,
+                    })
+                end
+            else
+                traceCleanup("deferred.finalize.start", npcId, record, actor, {
+                    reason = cleanupState.reason,
+                    detail = string.format("attempts=%s", tostring(attempts)),
+                })
+
+                local cleanupResult = nil
+                if LWN.ActorFactory and LWN.ActorFactory.finalizeDeferredCleanup then
+                    cleanupResult = LWN.ActorFactory.finalizeDeferredCleanup(actor, cleanupState.reason)
+                elseif LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
+                    cleanupResult = LWN.ActorFactory.cleanupActor(actor, cleanupState.reason)
+                else
+                    cleanupResult = {
+                        completed = true,
+                        detail = "no_actor_factory_finalizer",
+                    }
+                end
+
+                if cleanupResult and cleanupResult.completed ~= false then
+                    if record then
+                        touchCleanupRecord(record, "complete", cleanupState.reason, cleanupState.removeRecord)
+                        touchRecordStage(
+                            record,
+                            cleanupState.removeRecord and "removed" or (isAlive(record) and "inactive" or "dead_cleaned"),
+                            cleanupState.reason
+                        )
+                    end
+
+                    updateCleanupState(npcId, "deferred.finalize.complete", cleanupState.reason, record, actor, {
+                        removeRecord = cleanupState.removeRecord,
+                        actor = actor,
+                        deferred = false,
+                        attempts = attempts,
+                        detail = cleanupResult.detail,
+                    })
+                    traceCleanup("deferred.finalize.complete", npcId, record, actor, {
+                        reason = cleanupState.reason,
+                        detail = cleanupResult.detail,
+                    })
+
+                    if cleanupState.removeRecord and Store and Store.removeNPC then
+                        Store.removeNPC(npcId)
+                        updateCleanupState(npcId, "record.removed", cleanupState.reason, nil, actor, {
+                            removeRecord = cleanupState.removeRecord,
+                            detail = "deferred_cleanup_complete",
+                        })
+                        traceCleanup("record.removed", npcId, nil, actor, {
+                            reason = cleanupState.reason,
+                            detail = "deferred_cleanup_complete",
+                        })
+                    end
+
+                    if cleanupState.removeRecord ~= true and (record == nil or isAlive(record) == true) then
+                        Embody._cleanupBlocklist[npcId] = nil
+                    end
+                    Embody._cleanupInFlight[npcId] = nil
+                else
+                    updateCleanupState(npcId, "deferred.finalize.incomplete", cleanupState.reason, record, actor, {
+                        removeRecord = cleanupState.removeRecord,
+                        actor = actor,
+                        deferred = true,
+                        attempts = attempts,
+                        detail = cleanupResult and cleanupResult.detail or "completed=false",
+                    })
+                    traceCleanup("deferred.finalize.incomplete", npcId, record, actor, {
+                        reason = cleanupState.reason,
+                        detail = cleanupResult and cleanupResult.detail or "completed=false",
+                    })
+                end
+            end
+        end
+    end
 end

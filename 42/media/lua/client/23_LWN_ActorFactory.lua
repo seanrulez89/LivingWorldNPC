@@ -12,6 +12,9 @@ local fallbackClothing = {
     "Base.Shoes_Random",
 }
 
+local modelManager
+local isModelRegistered
+
 local function callIf(obj, methodName, ...)
     if not obj then return nil end
     local fn = obj[methodName]
@@ -453,6 +456,7 @@ local function actorPresentationState(actor)
         targetAlphaZero = protectedCall(actor, "isTargetAlphaZero", 0),
         humanVisual = protectedCall(actor, "getHumanVisual") ~= nil,
         actorDescriptor = protectedCall(actor, "getDescriptor") ~= nil,
+        modelRegistered = modData and modData.LWN_ModelRegistered or nil,
     }
 end
 
@@ -494,6 +498,7 @@ local function presentationStateSummary(actor)
     appendPart(parts, "targetAlphaZero", state.targetAlphaZero)
     appendPart(parts, "humanVisual", state.humanVisual)
     appendPart(parts, "actorDescriptor", state.actorDescriptor)
+    appendPart(parts, "modelRegistered", state.modelRegistered)
     return table.concat(parts, ",")
 end
 
@@ -524,6 +529,7 @@ local trackedPresentationFields = {
     "targetAlphaZero",
     "humanVisual",
     "actorDescriptor",
+    "modelRegistered",
 }
 
 local function copyTable(source)
@@ -562,6 +568,87 @@ local function alphaObservationVerdict(modData)
         end
     end
     return "last_lwn_alpha_request_non_value_method"
+end
+
+local function classifyAlphaState(state)
+    if not state then
+        return "state_nil"
+    end
+    if state.deathLike == true then
+        return "death_like"
+    end
+    if state.ghost == true or state.invisible == true or state.sceneCulled == true then
+        return "flag_hidden"
+    end
+
+    local alphaZero = state.alphaZero == true
+        or (type(state.alpha) == "number" and state.alpha <= 0.01)
+    local targetZero = state.targetAlphaZero == true
+        or (type(state.targetAlpha) == "number" and state.targetAlpha <= 0.01)
+    if alphaZero and targetZero then
+        return "alpha_zero_both"
+    end
+    if targetZero then
+        return "target_alpha_zero"
+    end
+    if alphaZero then
+        return "alpha_zero"
+    end
+    return "visible_candidate"
+end
+
+local function traceAlphaChurn(actor, state, stage, reason)
+    if not actor then return nil end
+
+    local modData = protectedCall(actor, "getModData")
+    local alphaClass = classifyAlphaState(state)
+    if modData then
+        local previousClass = modData.LWN_AlphaClass
+        if previousClass and previousClass ~= alphaClass then
+            modData.LWN_AlphaClassTransitions = (tonumber(modData.LWN_AlphaClassTransitions) or 0) + 1
+            if string.find(previousClass, "zero", 1, true) or string.find(alphaClass, "zero", 1, true) then
+                modData.LWN_AlphaOscillationCount = (tonumber(modData.LWN_AlphaOscillationCount) or 0) + 1
+            end
+        end
+        modData.LWN_AlphaClass = alphaClass
+        modData.LWN_AlphaClassAt = worldAgeHours()
+        modData.LWN_AlphaClassReason = reason
+    end
+
+    if not isDebugModeEnabled() then
+        return alphaClass
+    end
+
+    local previousLoggedClass = modData and modData.LWN_AlphaClassLogged or nil
+    local shouldLog = previousLoggedClass ~= alphaClass
+        or alphaClass ~= "visible_candidate"
+        or (modData and tonumber(modData.LWN_AlphaRepairSuppressedCount) or 0) > 0
+    if not shouldLog then
+        return alphaClass
+    end
+
+    if modData then
+        modData.LWN_AlphaClassLogged = alphaClass
+    end
+    print(string.format(
+        "[LWN][AlphaTrace] stage=%s | npcId=%s | objectRef=%s | class=%s | transitions=%s | oscillations=%s | repairAttempts=%s | repairSuppressed=%s | reason=%s | alpha=%s | targetAlpha=%s | modelRegistered=%s | expectedHook=%s | lastCreateHook=%s | appliedBy=%s",
+        safeText(stage),
+        safeText(getKnownNpcIdFromActor(actor)),
+        safeText(objectRef(actor)),
+        safeText(alphaClass),
+        safeText(modData and modData.LWN_AlphaClassTransitions or 0),
+        safeText(modData and modData.LWN_AlphaOscillationCount or 0),
+        safeText(modData and modData.LWN_AlphaRepairAttemptCount or 0),
+        safeText(modData and modData.LWN_AlphaRepairSuppressedCount or 0),
+        safeText(reason),
+        safeNumber(state and state.alpha or nil),
+        safeNumber(state and state.targetAlpha or nil),
+        safeText(state and state.modelRegistered or nil),
+        safeText(modData and modData.LWN_CreateHookExpected or nil),
+        safeText(modData and modData.LWN_LastCreateHook or nil),
+        safeText(modData and modData.LWN_PostCreateAppliedBy or nil)
+    ))
+    return alphaClass
 end
 
 local function traceAlphaRequest(actor, methodName, value, reason)
@@ -741,6 +828,31 @@ local function tracePresentationGuard(actor, action, status, reason, source, bef
     ))
 end
 
+local function traceCleanupContract(actor, stage, reason, detail)
+    if not actor or not isDebugModeEnabled() then return end
+
+    local state = actorPresentationState(actor)
+    local modData = protectedCall(actor, "getModData")
+    print(string.format(
+        "[LWN][CleanupContract] stage=%s | npcId=%s | objectRef=%s | reason=%s | detail=%s | world=%s | squarePresent=%s | npc=%s | ghost=%s | invisible=%s | sceneCulled=%s | alphaClass=%s | cleanupPending=%s | cleanupStage=%s | modelRegistered=%s",
+        safeText(stage),
+        safeText(getKnownNpcIdFromActor(actor)),
+        safeText(objectRef(actor)),
+        safeText(reason),
+        safeText(detail),
+        safeText(state and state.world or nil),
+        safeText(state and state.squarePresent or nil),
+        safeText(state and state.npc or nil),
+        safeText(state and state.ghost or nil),
+        safeText(state and state.invisible or nil),
+        safeText(state and state.sceneCulled or nil),
+        safeText(classifyAlphaState(state)),
+        safeText(modData and modData.LWN_CleanupPending or nil),
+        safeText(modData and modData.LWN_CleanupStage or nil),
+        safeText(state and state.modelRegistered or nil)
+    ))
+end
+
 local function tracePresentationWatch(moduleName, stage, record, actor, extra)
     if not isDebugModeEnabled() or not actor then return end
 
@@ -778,6 +890,7 @@ local function tracePresentationWatch(moduleName, stage, record, actor, extra)
         local lastSignature = Factory._presentationAlphaWatch[key]
         if lastSignature ~= signature then
             Factory._presentationAlphaWatch[key] = signature
+            traceAlphaChurn(actor, current, "alive_zero_observed", moduleName .. "." .. stage)
             print(string.format(
                 "[LWN][PresentationWatch] module=%s | stage=%s | npcId=%s | alphaWatch=true | objectRef=%s | object=%s | world=%s | ghost=%s | invisible=%s | sceneCulled=%s | alpha=%s | targetAlpha=%s | alphaZero=%s | targetAlphaZero=%s | health=%s | dead=%s | downed=%s | deathLike=%s | humanVisual=%s | actorDescriptor=%s",
                 safeText(moduleName),
@@ -827,6 +940,7 @@ local function tracePresentationWatch(moduleName, stage, record, actor, extra)
         end
     else
         Factory._presentationAlphaWatch[key] = nil
+        traceAlphaChurn(actor, current, "visible_candidate", moduleName .. "." .. stage)
     end
 
     Factory._presentationTraceCache[key] = copyTable(current)
@@ -887,6 +1001,7 @@ local function stageTrace(moduleName, stage, record, actor, descriptor, extra)
     appendPart(parts, "targetAlpha", presentation and safeNumber(presentation.targetAlpha) or nil)
     appendPart(parts, "alphaZero", presentation and presentation.alphaZero or nil)
     appendPart(parts, "targetAlphaZero", presentation and presentation.targetAlphaZero or nil)
+    appendPart(parts, "modelRegistered", presentation and presentation.modelRegistered or nil)
     appendPart(parts, "descriptor", descriptor ~= nil)
     appendPart(parts, "actorDescriptor", actorDescriptor ~= nil)
     appendPart(parts, "humanVisual", visual ~= nil)
@@ -988,11 +1103,19 @@ local function logInfo(message, record, actor, extra)
     end
 end
 
-local function modelManager()
+modelManager = function()
     if ModelManager and ModelManager.instance then
         return ModelManager.instance
     end
     return nil
+end
+
+isModelRegistered = function(actor)
+    local manager = modelManager()
+    if not manager or not actor then
+        return nil
+    end
+    return protectedCall(manager, "ContainsChar", actor)
 end
 
 local function refreshModelManager(actor, reason)
@@ -1009,13 +1132,29 @@ local function refreshModelManager(actor, reason)
     protectedCall(manager, "ResetCharacterEquippedHands", actor)
 
     local after = protectedCall(manager, "ContainsChar", actor)
-    if LWN.Config.Debug.Verbose then
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_ModelRegistered = after == true
+        modData.LWN_LastModelRefreshReason = reason
+        modData.LWN_LastModelRefreshAt = worldAgeHours()
+        modData.LWN_ModelRefreshCount = (tonumber(modData.LWN_ModelRefreshCount) or 0) + 1
+    end
+    if isDebugModeEnabled() then
+        local state = actorPresentationState(actor)
         print(string.format(
-            "[LWN][ActorFactory] ModelManager refresh reason=%s before=%s after=%s npcId=%s",
+            "[LWN][RegistrationTrace] stage=model_refresh | reason=%s | npcId=%s | objectRef=%s | beforeContains=%s | afterContains=%s | refreshCount=%s | alphaClass=%s | world=%s | squarePresent=%s | expectedHook=%s | lastCreateHook=%s | appliedBy=%s",
             safeText(reason),
+            safeText(getKnownNpcIdFromActor(actor)),
+            safeText(objectRef(actor)),
             safeText(before),
             safeText(after),
-            safeText(getNpcIdFromActor(actor))
+            safeText(modData and modData.LWN_ModelRefreshCount or 0),
+            safeText(classifyAlphaState(state)),
+            safeText(state and state.world or nil),
+            safeText(state and state.squarePresent or nil),
+            safeText(modData and modData.LWN_CreateHookExpected or nil),
+            safeText(modData and modData.LWN_LastCreateHook or nil),
+            safeText(modData and modData.LWN_PostCreateAppliedBy or nil)
         ))
     end
     return after
@@ -1034,6 +1173,32 @@ local function repairVisibleAlpha(actor, reason)
         return false
     end
 
+    local modData = protectedCall(actor, "getModData")
+    local repairSignature = table.concat({
+        safeText(classifyAlphaState(before)),
+        safeNumber(before and before.alpha or nil),
+        safeNumber(before and before.targetAlpha or nil),
+        safeText(before and before.modelRegistered or nil),
+        safeText(reason),
+    }, "|")
+    if modData then
+        if modData.LWN_LastAlphaRepairSignature == repairSignature then
+            modData.LWN_AlphaRepairRepeatCount = (tonumber(modData.LWN_AlphaRepairRepeatCount) or 0) + 1
+        else
+            modData.LWN_LastAlphaRepairSignature = repairSignature
+            modData.LWN_AlphaRepairRepeatCount = 1
+        end
+        if (tonumber(modData.LWN_AlphaRepairRepeatCount) or 0) >= 3 then
+            modData.LWN_AlphaRepairSuppressedCount = (tonumber(modData.LWN_AlphaRepairSuppressedCount) or 0) + 1
+            tracePresentationGuard(actor, "repair_alpha", "suppressed", "repeated_identical_zero_state", reason, before, nil)
+            traceAlphaChurn(actor, before, "repair_suppressed", reason)
+            return false
+        end
+        modData.LWN_AlphaRepairAttemptCount = (tonumber(modData.LWN_AlphaRepairAttemptCount) or 0) + 1
+        modData.LWN_LastAlphaRepairReason = reason
+        modData.LWN_LastAlphaRepairAt = worldAgeHours()
+    end
+
     traceAlphaRequest(actor, "setAlphaAndTarget", 1.0, reason .. ".setAlphaAndTarget")
     traceAlphaRequest(actor, "setAlphaToTarget", 0, reason .. ".setAlphaToTarget")
 
@@ -1050,8 +1215,18 @@ local function repairVisibleAlpha(actor, reason)
         before,
         after
     )
+    if modData then
+        modData.LWN_LastAlphaRepairOutcome = repaired and "applied" or "partial"
+        modData.LWN_LastAlphaRepairOutcomeAt = worldAgeHours()
+        if repaired then
+            modData.LWN_AlphaRepairSuccessCount = (tonumber(modData.LWN_AlphaRepairSuccessCount) or 0) + 1
+        else
+            modData.LWN_AlphaRepairPartialCount = (tonumber(modData.LWN_AlphaRepairPartialCount) or 0) + 1
+        end
+    end
+    traceAlphaChurn(actor, after, "repair_result", reason)
     print(string.format(
-        "[LWN][PresentationWatch] action=alpha_repair | reason=%s | npcId=%s | objectRef=%s | beforeAlpha=%s | beforeTargetAlpha=%s | afterAlpha=%s | afterTargetAlpha=%s | dead=%s | downed=%s | deathLike=%s",
+        "[LWN][PresentationWatch] action=alpha_repair | reason=%s | npcId=%s | objectRef=%s | beforeAlpha=%s | beforeTargetAlpha=%s | afterAlpha=%s | afterTargetAlpha=%s | dead=%s | downed=%s | deathLike=%s | modelRegistered=%s | repairs=%s | suppressed=%s",
         safeText(reason),
         safeText(getNpcIdFromActor(actor)),
         safeText(objectRef(actor)),
@@ -1061,7 +1236,10 @@ local function repairVisibleAlpha(actor, reason)
         safeNumber(after and after.targetAlpha or nil),
         safeText(after and after.dead or nil),
         safeText(after and after.downed or nil),
-        safeText(after and after.deathLike or nil)
+        safeText(after and after.deathLike or nil),
+        safeText(after and after.modelRegistered or nil),
+        safeText(modData and modData.LWN_AlphaRepairAttemptCount or 0),
+        safeText(modData and modData.LWN_AlphaRepairSuppressedCount or 0)
     ))
     return true
 end
@@ -1118,29 +1296,97 @@ local function markPresentationPending(actor, reason)
     modData.LWN_PresentationPendingAt = getGameTime() and getGameTime():getWorldAgeHours() or nil
 end
 
-local function safeCleanupActor(actor, cleanupReason)
-    if not actor then return end
-    local deathLike = actorPresentationState(actor)
-    deathLike = deathLike and deathLike.deathLike == true or false
+local function updateActorCleanupMarkers(actor, cleanupReason, stage, pending)
     local modData = protectedCall(actor, "getModData")
     if modData and modData.LWN_NpcId ~= nil then
         modData.LWN_LastNpcId = modData.LWN_NpcId
     end
-    if modData then
-        modData.LWN_CleanupPending = true
-        modData.LWN_CleanupStage = "safeCleanupActor.start"
-        modData.LWN_CleanupReason = cleanupReason or modData.LWN_CleanupReason or "cleanupActor"
-        modData.LWN_CleanupNpcId = modData.LWN_NpcId or modData.LWN_LastNpcId
+    if not modData then
+        return nil
     end
 
-    protectedCall(actor, "StopAllActionQueue")
-    if deathLike ~= true then
-        protectedCall(actor, "setGhostMode", true)
-        protectedCall(actor, "setInvisible", true)
-        protectedCall(actor, "setSceneCulled", true)
+    modData.LWN_CleanupPending = pending ~= false
+    modData.LWN_CleanupStage = stage or modData.LWN_CleanupStage
+    modData.LWN_CleanupReason = cleanupReason or modData.LWN_CleanupReason or "cleanupActor"
+    modData.LWN_CleanupNpcId = modData.LWN_NpcId or modData.LWN_LastNpcId or modData.LWN_CleanupNpcId
+    return modData
+end
+
+local function shouldDeferPhysicalCleanup(actor)
+    if not actor then
+        return false, "actor_missing_or_invalid"
     end
-    protectedCall(actor, "setNPC", false)
-    protectedCall(actor, "setIsNPC", false)
+    if protectedCall(actor, "getBodyDamage") == nil
+        or protectedCall(actor, "getStats") == nil
+        or protectedCall(actor, "getInventory") == nil
+    then
+        return false, "actor_missing_or_invalid"
+    end
+
+    local state = actorPresentationState(actor)
+    local liveIsoPlayer = instanceof
+        and instanceof(actor, "IsoPlayer")
+        and protectedCall(actor, "isDead") ~= true
+        and protectedCall(actor, "isZombie") ~= true
+        and protectedCall(actor, "isReanimatedPlayer") ~= true
+        and not (state and state.deathLike == true)
+    if liveIsoPlayer ~= true then
+        return false, string.format("presentation=%s", tostring(state and state.presentationRole or "unknown"))
+    end
+
+    if protectedCall(actor, "isExistInTheWorld") == true then
+        return true, "live_iso_player_cleanup_quarantined_until_next_tick"
+    end
+
+    return false, "live_iso_player_not_in_world"
+end
+
+local function stageDeferredCleanupActor(actor, cleanupReason)
+    if not actor then
+        return {
+            deferred = false,
+            completed = true,
+            detail = "actor=nil",
+        }
+    end
+
+    local state = actorPresentationState(actor)
+    local modData = updateActorCleanupMarkers(actor, cleanupReason, "safeCleanupActor.quarantined", true)
+
+    protectedCall(actor, "StopAllActionQueue")
+
+    if modData then
+        modData.LWN_LastCleanupHour = worldAgeHours()
+        modData.LWN_LastCleanupWorld = protectedCall(actor, "isExistInTheWorld")
+        modData.LWN_LastCleanupReason = modData.LWN_CleanupReason
+        modData.LWN_LastCleanupStage = "safeCleanupActor.quarantined"
+        modData.LWN_CleanupQuarantinedAt = modData.LWN_CleanupQuarantinedAt or worldAgeHours()
+        modData.LWN_CleanupDeferredReason = modData.LWN_CleanupReason
+        modData.LWN_CleanupDeferredTicks = (tonumber(modData.LWN_CleanupDeferredTicks) or 0) + 1
+        modData.LWN_CleanupContract = "quarantine_preserve_live_iso_player"
+    end
+    traceCleanupContract(actor, "cleanup_queued", cleanupReason, presentationStateSummary(actor))
+    traceAlphaChurn(actor, state, "cleanup_quarantined", cleanupReason)
+
+    return {
+        deferred = true,
+        completed = false,
+        detail = string.format(
+            "contract=quarantine_preserve_live_iso_player reason=%s actorWorld=%s %s",
+            tostring(cleanupReason),
+            tostring(protectedCall(actor, "isExistInTheWorld")),
+            tostring(presentationStateSummary(actor))
+        ),
+    }
+end
+
+local function safeCleanupActor(actor, cleanupReason)
+    if not actor then return end
+    local before = actorPresentationState(actor)
+    local modData = updateActorCleanupMarkers(actor, cleanupReason, "safeCleanupActor.start", true)
+
+    protectedCall(actor, "StopAllActionQueue")
+    traceCleanupContract(actor, "finalize_start", cleanupReason, presentationStateSummary(actor))
 
     -- Prefer the engine-managed despawn path. Clearing square/current references
     -- here can leave a scheduled update with a nil currentSquare in the same frame.
@@ -1151,18 +1397,49 @@ local function safeCleanupActor(actor, cleanupReason)
         -- direct world removal so stale actor refs stop shadowing delete/remove.
         protectedCall(actor, "removeFromSquare")
         protectedCall(actor, "removeFromWorld")
+        stillWorld = protectedCall(actor, "isExistInTheWorld")
     end
 
     if modData then
         modData.LWN_CreateHookPending = false
         modData.LWN_PresentationPending = false
-        modData.LWN_LastCleanupHour = getGameTime() and getGameTime():getWorldAgeHours() or nil
+        modData.LWN_LastCleanupHour = worldAgeHours()
         modData.LWN_LastCleanupWorld = stillWorld
         modData.LWN_LastCleanupReason = modData.LWN_CleanupReason
-        modData.LWN_LastCleanupStage = "safeCleanupActor.complete"
-        modData.LWN_CleanupStage = "safeCleanupActor.complete"
-        modData.LWN_NpcId = nil
+        modData.LWN_LastCleanupStage = stillWorld == true and "safeCleanupActor.incomplete" or "safeCleanupActor.complete"
+        modData.LWN_CleanupStage = modData.LWN_LastCleanupStage
+        modData.LWN_CleanupPending = stillWorld == true
+        modData.LWN_CleanupContract = stillWorld == true
+            and "quarantine_retry_required"
+            or "finalized_removed_from_world"
+        if stillWorld ~= true then
+            modData.LWN_NpcId = nil
+        end
     end
+
+    if stillWorld == true then
+        protectedCall(actor, "setNPC", true)
+        protectedCall(actor, "setIsNPC", true)
+        protectedCall(actor, "setVisibleToNPCs", true)
+        restoreEmbodiedPresentationFlags(actor, "safeCleanupActor.incomplete_restore")
+        repairVisibleAlpha(actor, "safeCleanupActor.incomplete_restore")
+        traceCleanupContract(actor, "finalize_incomplete_live_actor", cleanupReason, presentationStateSummary(actor))
+    else
+        traceCleanupContract(actor, "finalize_complete", cleanupReason, presentationStateSummary(actor))
+    end
+
+    return {
+        deferred = false,
+        completed = stillWorld ~= true,
+        detail = string.format(
+            "reason=%s actorWorld=%s despawned=%s before=%s after=%s",
+            tostring(cleanupReason),
+            tostring(stillWorld),
+            tostring(despawned),
+            tostring(before and before.objectRef or nil),
+            tostring(presentationStateSummary(actor))
+        ),
+    }
 end
 
 local function hasRuntimeCore(actor)
@@ -1711,7 +1988,20 @@ function Factory.rejectActor(actor, reason, npcId, record, descriptor, descripto
     local failureExtra = extra or {}
     failureExtra.npcId = npcId
     logFailure(reason, failureRecord, actor, descriptor, descriptorMode, failureExtra)
-    safeCleanupActor(actor, reason)
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.canonicalCleanup and (failureRecord or npcId) then
+        local cleanupRecord = failureRecord or npcId
+        local queued = LWN.EmbodimentManager.canonicalCleanup(cleanupRecord, {
+            actor = actor,
+            removeRecord = false,
+            blockNpcId = true,
+            reason = reason or "rejectActor",
+            detail = failureExtra and failureExtra.stage or "rejectActor",
+        })
+        if queued ~= false then
+            return
+        end
+    end
+    Factory.cleanupActor(actor, reason)
 end
 
 function Factory.cleanupActor(actor, reason)
@@ -1727,15 +2017,75 @@ function Factory.cleanupActor(actor, reason)
         npcId = npcId,
         detail = string.format("reason=%s %s", tostring(reason), tostring(presentationStateSummary(actor))),
     })
-    safeCleanupActor(actor, reason or "cleanupActor")
-    if record then
+    local shouldDefer, deferDetail = shouldDeferPhysicalCleanup(actor)
+    if shouldDefer then
+        local result = stageDeferredCleanupActor(actor, reason or "cleanupActor")
+        stageTrace("ActorFactory", "cleanupActor.deferred", nil, actor, nil, {
+            source = "cleanupActor",
+            npcId = npcId,
+            detail = deferDetail,
+        })
+        return result
+    end
+
+    local result = safeCleanupActor(actor, reason or "cleanupActor")
+    if record and result and result.completed ~= false then
         touchCleanupState(record, "complete", reason or "cleanupActor", false)
     end
-    stageTrace("ActorFactory", "cleanupActor.complete", nil, actor, nil, {
+    stageTrace("ActorFactory", result and result.completed == false and "cleanupActor.incomplete" or "cleanupActor.complete", nil, actor, nil, {
         source = "cleanupActor",
         npcId = npcId,
-        detail = string.format("reason=%s %s", tostring(reason), tostring(presentationStateSummary(actor))),
+        detail = result and result.detail or string.format("reason=%s %s", tostring(reason), tostring(presentationStateSummary(actor))),
     })
+    return result
+end
+
+function Factory.canFinalizeDeferredCleanup(actor)
+    if not actor then
+        return true, "actor=nil"
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_LastCleanupStage = "safeCleanupActor.finalize_ready"
+        modData.LWN_CleanupStage = "safeCleanupActor.finalize_ready"
+        modData.LWN_LastCleanupReason = modData.LWN_CleanupReason or modData.LWN_LastCleanupReason
+        modData.LWN_CleanupPending = true
+    end
+    return true, string.format(
+        "next_tick_finalize world=%s squarePresent=%s modelRegistered=%s alphaClass=%s",
+        tostring(protectedCall(actor, "isExistInTheWorld")),
+        tostring((protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")) ~= nil),
+        tostring(isModelRegistered(actor)),
+        tostring(classifyAlphaState(actorPresentationState(actor)))
+    )
+end
+
+function Factory.finalizeDeferredCleanup(actor, reason)
+    if not actor then
+        return {
+            deferred = false,
+            completed = true,
+            detail = "actor=nil",
+        }
+    end
+
+    local canFinalize, detail = Factory.canFinalizeDeferredCleanup(actor)
+    if canFinalize ~= true then
+        return {
+            deferred = true,
+            completed = false,
+            detail = detail,
+        }
+    end
+
+    local result = safeCleanupActor(actor, reason or "cleanupActor.deferred_finalize")
+    stageTrace("ActorFactory", result and result.completed == false and "cleanupActor.deferred_incomplete" or "cleanupActor.deferred_complete", nil, actor, nil, {
+        source = "finalizeDeferredCleanup",
+        npcId = getKnownNpcIdFromActor(actor),
+        detail = result and result.detail or detail,
+    })
+    return result
 end
 
 local refreshActorPresentation
