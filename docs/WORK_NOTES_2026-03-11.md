@@ -259,6 +259,37 @@ Date: 2026-03-11
   - 살아 있는 embodied actor 복구용으로 `setSceneCulled(false)`를 여러 lifecycle 지점에서 반복 호출하는 패턴은, 문서 의미상 "현재 씬 cull 상태"를 강제로 되돌리는 용도와 완전히 일치한다고 보기 어렵다.
   - corpse/dead-body는 alpha 계열은 비교 가능하지만, character 전용 `ghost/invisible/sceneCulled` 복구와 동일한 층으로 취급하면 해석이 흔들린다.
 
+## 2026-03-13 최신 테스트 로그 분석 메모
+- 분석 대상:
+  - 최신 `console.txt` 수정 시각 `2026-03-13 09:14:11 +0900`
+  - 이번 보존 구간은 생성 직후가 아니라 이미 embodied 된 `LWN-000037`의 runtime 중간부터 시작한다.
+- 예외/에러:
+  - 이번 최신 로그에서는 `ERROR`, `Exception`, Lua stack trace가 보이지 않았다.
+  - 즉, 이번 테스트의 남은 문제는 crash보다 presentation/logic 쪽이다.
+- 이번 테스트에서 개선된 점:
+  - stale target 관련해서는 cleanup 후 `ui_targets.cleared`, `registry.cleared`, `candidate.rejected | reason=leftover_death_object`가 남아, leftover zombie가 다시 NPC 후보로 붙지 않았다.
+  - delete crash는 직접 delete 요청 로그가 없어서 완전 판정은 불가하지만, 같은 cleanup contract를 쓰는 death cleanup은 예외 없이 끝났다.
+  - corpse flicker는 이번 로그 기준으로는 크게 줄었다. corpse/player/zombie가 여러 objectRef 사이에서 출렁이는 패턴이 아니라, death-like player와 separate zombie의 짧은 동시 존재만 남았다.
+- 여전히 남은 핵심 문제:
+  - 1순위는 여전히 "alive embodied NPC가 논리적으로는 정상인데 실제로는 안 보인다"이다.
+  - 근거:
+    - alive 구간 내내 `world=true`
+    - `ghost=false`, `invisible=false`, `sceneCulled=false`
+    - `alpha=1.00`, `targetAlpha=1.00`
+    - `humanVisual=true`, `actorDescriptor=true`, `itemVisuals=5`, `wornItems=3`
+    - `PresentationGuard`는 계속 `status=already_set`
+  - 따라서 alpha/culling/simple-flag 문제는 우선순위가 더 내려갔고, render registration 또는 Build 42에서의 `IsoPlayer` alive presentation path 자체가 더 유력하다.
+- death/corpse/cleanup 해석:
+  - death 전환은 같은 `IsoPlayer{ ID:93 }`에 대해 `health=0.00`, `deathLike=true`로 감지됐다.
+  - 같은 순간 `DeathTrace`는 별도 `IsoZombie{ ID:38 }`를 같은 square에서 잡았고 `sameActorRef=false`, `sameNpcId=false`였다.
+  - cleanup 전까지 `corpseSeen=false`가 유지돼 corpse 기반 정리로 넘어가지 못했고, 약 0.58초 뒤 `death_timeout_cleanup`로 원래 actor를 정리했다.
+  - 즉, death overlap은 "이전보다 훨씬 덜 어지럽지만 완전히 사라진 것은 아니고, separate zombie spawn + original actor delayed cleanup" 형태로 아직 남아 있다.
+- 이번 로그가 시사하는 추가 개선사항 3개:
+  - alive actor의 실제 render/model registration 상태를 직접 추적한다.
+    - 예: `ModelManager` 등록 여부, same-frame remove/add, visible actor와의 차이 비교
+  - death 시 separate zombie가 확인되고 `corpseSeen=false`가 계속되면, 원래 death-like actor cleanup을 더 앞당기는 조건을 검토한다.
+  - 다음 테스트에서는 생성 직후 `ActorFactory`/`OnCreate*` 블록이 잘리지 않도록 콘솔 보존 범위나 테스트 시작 직후 로그 확보 절차를 보강한다.
+
 ## 2026-03-13 전면 구조 재정렬 메모
 - 이번 턴의 결론은 "방향 폐기"가 아니라 "계약 재정의 후 계속 진행 가능" 쪽이다.
 - 다만 유지 조건은 더 엄격해졌다.

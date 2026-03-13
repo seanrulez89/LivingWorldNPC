@@ -35,8 +35,8 @@ These documents summarize what was learned from reference mods and how those les
 
 - `GIT_WORKFLOW_2026-03-11.md`
   - git hygiene, validation workflow, snapshot-commit rule
-- `WORK_NOTES_2026-03-11.md`
-  - chronological technical findings and experiment notes
+- `WORK_NOTES_2026-03-11.md`, `WORK_NOTES_2026-03-13.md`, ...
+  - date-matched work notes; each file should only contain work from its own date
 - `TEST_LOG_HISTORY.md`
   - append-only in-game test history linking observation -> logs -> lesson -> fix -> next check
 - `CODEX_LOCAL_ENVIRONMENT_ACTIONS.md`
