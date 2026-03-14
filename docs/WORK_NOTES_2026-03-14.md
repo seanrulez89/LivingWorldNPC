@@ -232,6 +232,28 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/CARRIER_ISOZOMBIE_TRUST_HOSTILITY_2026-03-14.md`
 
+## 2026-03-14 IsoZombie hostility exploration pass
+- Extended the trust-gated hostility groundwork into the carrier shell itself.
+- Main change:
+  - `IsoZombie` now applies relationship policy directly to combat posture rather than only storing policy into modData
+- Friendly/neutral shell posture now attempts to suppress zombie-initiated aggression conservatively with:
+  - `setUseless(true)`
+  - `setTargetSeenTime(0)`
+  - `setCanWalk(false)`
+  - `setNoTeeth(true)`
+  - `setTarget(nil)`
+  - `setAttackedBy(nil)`
+- Hostile shell posture now attempts a cautious first activation path with:
+  - `setUseless(false)`
+  - `setCanWalk(true)`
+  - `setNoTeeth(false)`
+  - optional target/face/path-to-player calls when a player reference exists
+- Important limitation:
+  - this still does not guarantee final engine-level suppression of player direct attacks against friendly shells
+  - that requires a narrower control point later
+- New document:
+  - `docs/CARRIER_ISOZOMBIE_HOSTILITY_EXPLORATION_2026-03-14.md`
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate

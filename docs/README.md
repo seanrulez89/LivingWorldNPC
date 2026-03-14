@@ -45,6 +45,8 @@ This directory contains research notes, audits, workflow references, and experim
   - confirms the first successful visible, persistent, interactive `IsoZombie` shell result
 - `CARRIER_ISOZOMBIE_TRUST_HOSTILITY_2026-03-14.md`
   - relationship-driven hostility policy groundwork for `IsoZombie`, preserving future betrayal design instead of hardcoding permanent safety
+- `CARRIER_ISOZOMBIE_HOSTILITY_EXPLORATION_2026-03-14.md`
+  - careful first pass applying relationship policy directly to zombie shell posture and hostile activation attempts
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`
