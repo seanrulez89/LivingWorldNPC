@@ -41,6 +41,10 @@ This directory contains research notes, audits, workflow references, and experim
   - carrier-aware sync and UI targeting changes for `IsoZombie`, removing human-only setter assumptions and allowing managed zombie carriers through context targeting
 - `CARRIER_ISOZOMBIE_MANAGED_TARGET_FINALIZATION_2026-03-14.md`
   - final managed-actor/targetability adjustment so `IsoZombie` carriers are no longer judged by human runtime-core rules
+- `CARRIER_ISOZOMBIE_SUCCESS_RESULT_2026-03-14.md`
+  - confirms the first successful visible, persistent, interactive `IsoZombie` shell result
+- `CARRIER_ISOZOMBIE_TRUST_HOSTILITY_2026-03-14.md`
+  - relationship-driven hostility policy groundwork for `IsoZombie`, preserving future betrayal design instead of hardcoding permanent safety
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`

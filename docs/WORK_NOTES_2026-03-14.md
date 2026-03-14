@@ -211,6 +211,27 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/CARRIER_ISOZOMBIE_MANAGED_TARGET_FINALIZATION_2026-03-14.md`
 
+## 2026-03-14 IsoZombie success consolidation
+- Confirmed the first genuinely successful `IsoZombie` shell result:
+  - visible
+  - persistent
+  - right-click menu available
+  - delete safe
+  - no major runtime errors in the latest stable test
+- New document:
+  - `docs/CARRIER_ISOZOMBIE_SUCCESS_RESULT_2026-03-14.md`
+
+## 2026-03-14 trust-gated hostility groundwork
+- Added the first relationship-driven combat policy helper instead of hardcoding permanent friendliness or permanent hostility.
+- New helper:
+  - `Social.relationshipCombatPolicy(record)`
+- `IsoZombie` now stores policy state into modData and branches between inert vs non-neutralized shell behavior using relationship policy.
+- Important limitation:
+  - this is policy groundwork only
+  - it does not yet fully control every engine-level player attack or hostile-targeting decision
+- New document:
+  - `docs/CARRIER_ISOZOMBIE_TRUST_HOSTILITY_2026-03-14.md`
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate
