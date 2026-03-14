@@ -598,15 +598,48 @@ function Embody.tryEmbody(record, player)
     })
     touchRecordStage(record, "spawning", "tryEmbody.start")
 
-    local actor = LWN.ActorFactory.createActor(record, player)
+    local spawnResult = nil
+    if LWN.CarrierAdapter and LWN.CarrierAdapter.spawn then
+        spawnResult = LWN.CarrierAdapter.spawn(record, {
+            player = player,
+        })
+    else
+        local legacyActor = LWN.ActorFactory and LWN.ActorFactory.createActor and LWN.ActorFactory.createActor(record, player) or nil
+        spawnResult = {
+            ok = legacyActor ~= nil,
+            actor = legacyActor,
+            detail = legacyActor and "legacy_spawn_without_adapter" or "legacy_spawn_failed_without_adapter",
+            handle = legacyActor and {
+                kind = record.embodiment and record.embodiment.carrierKind or "isoplayer",
+                actor = legacyActor,
+                status = "active",
+            } or nil,
+        }
+    end
+
+    local actor = spawnResult and spawnResult.actor or nil
+    local handle = spawnResult and spawnResult.handle or nil
     if actor then
         traceStage("tryEmbody.actor_created", record, actor, {
             source = "tryEmbody",
+            detail = string.format("carrierKind=%s spawnDetail=%s", tostring(handle and handle.kind or nil), tostring(spawnResult and spawnResult.detail or nil)),
         })
-        local ok, syncErr = pcall(LWN.ActorSync.pushRecordToActor, record, actor)
+        local ok, syncErr = pcall(function()
+            if LWN.CarrierAdapter and LWN.CarrierAdapter.sync then
+                return LWN.CarrierAdapter.sync(record, handle, {
+                    mode = "full",
+                    source = "tryEmbody.initial_sync",
+                })
+            end
+            return LWN.ActorSync.pushRecordToActor(record, actor)
+        end)
         if not ok then
             print(string.format("[LWN][Embodiment] initial sync failed for %s :: %s", tostring(record.id), tostring(syncErr)))
-            if LWN.ActorFactory and LWN.ActorFactory.rejectActor then
+            if LWN.CarrierAdapter and LWN.CarrierAdapter.retire then
+                LWN.CarrierAdapter.retire(record, handle, {
+                    reason = "tryEmbody.initial_sync_failed",
+                })
+            elseif LWN.ActorFactory and LWN.ActorFactory.rejectActor then
                 LWN.ActorFactory.rejectActor(actor, "tryEmbody failed during initial sync", record.id, record, nil, nil, {
                     source = "tryEmbody",
                     stage = "tryEmbody.initial_sync_failed",
@@ -631,6 +664,7 @@ function Embody.tryEmbody(record, player)
 
         traceStage("tryEmbody.initial_sync_ok", record, actor, {
             source = "tryEmbody",
+            detail = string.format("carrierKind=%s", tostring(handle and handle.kind or nil)),
         })
 
         record.embodiment.state = "embodied"
@@ -642,7 +676,11 @@ function Embody.tryEmbody(record, player)
         touchRecordStage(record, "active", "tryEmbody.initial_sync_ok")
         Embody.touchGrace(record)
         if Embody.registerActor(record, actor) == false then
-            if LWN.ActorFactory and LWN.ActorFactory.rejectActor then
+            if LWN.CarrierAdapter and LWN.CarrierAdapter.retire then
+                LWN.CarrierAdapter.retire(record, handle, {
+                    reason = "tryEmbody.register_rejected",
+                })
+            elseif LWN.ActorFactory and LWN.ActorFactory.rejectActor then
                 LWN.ActorFactory.rejectActor(actor, "tryEmbody rejected lifecycle-blocked actor after create", record.id, record, nil, nil, {
                     source = "tryEmbody",
                     stage = "tryEmbody.register_rejected",
@@ -1155,12 +1193,20 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
                 modData.LWN_LastNpcId = npcId or modData.LWN_LastNpcId
                 modData.LWN_NpcId = nil
             end
-        elseif LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
-            local cleanupResult = LWN.ActorFactory.cleanupActor(actor, reason)
-            actorCleanupDeferred = cleanupResult and (cleanupResult.deferred == true or cleanupResult.completed == false) or false
+        elseif LWN.CarrierAdapter and LWN.CarrierAdapter.retire then
+            local handle = Embody.getCarrierHandle(record) or {
+                kind = record and record.embodiment and record.embodiment.carrierKind or "isoplayer",
+                actor = actor,
+                status = "active",
+            }
+            local cleanupResult = LWN.CarrierAdapter.retire(record, handle, {
+                reason = reason,
+            })
+            actorCleanupDeferred = cleanupResult and (cleanupResult.status == "retiring" or cleanupResult.status == "retire_blocked") or false
             if actorCleanupDeferred then
                 blockNpcId = true
                 Embody._cleanupBlocklist[npcId] = getCleanupState(npcId) or cleanupState
+                cleanupState.handle = handle
                 updateCleanupState(npcId, "actor.cleanup.deferred", reason, record, actor, {
                     removeRecord = removeRecord,
                     actor = actor,
@@ -1324,6 +1370,11 @@ function Embody.tickDeferredCleanup()
                 local cleanupResult = nil
                 if LWN.ActorFactory and LWN.ActorFactory.finalizeDeferredCleanup then
                     cleanupResult = LWN.ActorFactory.finalizeDeferredCleanup(actor, cleanupState.reason)
+                elseif LWN.CarrierAdapter and LWN.CarrierAdapter.retire then
+                    cleanupResult = LWN.CarrierAdapter.retire(record, cleanupState.handle or Embody.getCarrierHandle(record), {
+                        reason = cleanupState.reason,
+                    })
+                    cleanupResult.completed = cleanupResult.ok ~= false and cleanupResult.status ~= "retiring" and cleanupResult.status ~= "retire_blocked"
                 elseif LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
                     cleanupResult = LWN.ActorFactory.cleanupActor(actor, cleanupState.reason)
                 else

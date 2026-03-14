@@ -118,6 +118,21 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/CARRIER_ADAPTER_DRAFT_2026-03-14.md`
 
+## 2026-03-14 carrier adapter migration pass
+- Performed the first real routing pass from direct legacy actor calls into the carrier adapter.
+- Main changes:
+  - `tryEmbody()` now prefers `CarrierAdapter.spawn()`
+  - initial embodiment sync now prefers `CarrierAdapter.sync()`
+  - canonical cleanup now prefers `CarrierAdapter.retire()`
+  - deferred cleanup finalization can retire through the adapter
+  - event-hook sync path now prefers adapter sync
+  - debug wipe fallback now prefers adapter retire
+- New document:
+  - `docs/CARRIER_ADAPTER_MIGRATION_PASS_2026-03-14.md`
+- Important scope note:
+  - this is still not the full migration
+  - legacy `ActorFactory` / `ActorSync` still sit behind the current `isoplayer` carrier implementation
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate

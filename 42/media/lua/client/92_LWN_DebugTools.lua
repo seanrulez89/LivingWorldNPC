@@ -451,6 +451,14 @@ function DebugTools.wipeAndReseed(player)
                 reason = "debug_wipe",
                 detail = "wipeAndReseed",
             })
+        elseif actor and LWN.CarrierAdapter and LWN.CarrierAdapter.retire then
+            LWN.CarrierAdapter.retire(record, LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or {
+                kind = record and record.embodiment and record.embodiment.carrierKind or "isoplayer",
+                actor = actor,
+                status = "active",
+            }, {
+                reason = "debug_wipe",
+            })
         elseif actor and LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
             LWN.ActorFactory.cleanupActor(actor)
         end
@@ -461,6 +469,7 @@ function DebugTools.wipeAndReseed(player)
     end
     if LWN.EmbodimentManager then
         LWN.EmbodimentManager._actors = {}
+        LWN.EmbodimentManager._carrierHandles = {}
         LWN.EmbodimentManager._cleanupBlocklist = {}
         LWN.EmbodimentManager._cleanupInFlight = {}
         LWN.EmbodimentManager._registryTraceCache = {}

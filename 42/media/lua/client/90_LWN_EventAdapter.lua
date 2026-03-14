@@ -1119,7 +1119,21 @@ local function handleCreatedCharacter(actor, hookName)
         square = anchorSquare,
         detail = createHookComparisonDetail(record, actor, hookName, modData, "phase=presentation_refreshed"),
     })
-    if LWN.ActorSync and LWN.ActorSync.pushRecordToActor then
+    if LWN.CarrierAdapter and LWN.CarrierAdapter.sync then
+        local carrierHandle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
+        if not carrierHandle then
+            carrierHandle = {
+                kind = record and record.embodiment and record.embodiment.carrierKind or "isoplayer",
+                actor = actor,
+                status = "active",
+                detail = "event_hook_ephemeral_handle",
+            }
+        end
+        LWN.CarrierAdapter.sync(record, carrierHandle, {
+            mode = "full",
+            source = hookName,
+        })
+    elseif LWN.ActorSync and LWN.ActorSync.pushRecordToActor then
         LWN.ActorSync.pushRecordToActor(record, actor)
     end
     traceStage(stageBase .. ".synced", record, actor, {

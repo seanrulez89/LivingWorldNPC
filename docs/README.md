@@ -25,6 +25,8 @@ This directory contains research notes, audits, workflow references, and experim
   - what to keep, what to discard, and which carrier experiments to run after retiring `IsoPlayer`
 - `CARRIER_ADAPTER_DRAFT_2026-03-14.md`
   - first adapter boundary draft plus the initial runtime-handle bridge for future carrier migration
+- `CARRIER_ADAPTER_MIGRATION_PASS_2026-03-14.md`
+  - first real spawn/sync/retire routing pass from legacy actor calls into the adapter
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`
