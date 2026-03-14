@@ -35,6 +35,8 @@ This directory contains research notes, audits, workflow references, and experim
   - consolidated result summary for the `IsoPlayer` and `IsoSurvivor` experiments, plus the current next-step verdict
 - `CARRIER_ISOZOMBIE_SPIKE_IMPL_2026-03-14.md`
   - first implementation pass for the `IsoZombie` proof-of-life carrier experiment
+- `CARRIER_ISOZOMBIE_RESOLVE_HARDENING_2026-03-14.md`
+  - hardening pass for `IsoZombie` continuity: longer grace, carrier-aware resolve, and recovery from the carrier handle
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`

@@ -184,6 +184,16 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/CARRIER_ISOZOMBIE_SPIKE_IMPL_2026-03-14.md`
 
+## 2026-03-14 IsoZombie resolve hardening pass
+- After the first visible `IsoZombie` proof-of-life result, the next blocker turned out to be actor continuity rather than spawn viability.
+- Main changes:
+  - `resolveEmbodiedActor()` now uses a carrier-aware usability check
+  - `IsoZombie` gets a longer `actor_lost` grace window than human-oriented carriers
+  - on-tick logic can recover from the carrier handle if normal actor resolution briefly fails
+  - `Embody.getUsableActorByNpcId()` now respects carrier usability before older managed-actor assumptions
+- New document:
+  - `docs/CARRIER_ISOZOMBIE_RESOLVE_HARDENING_2026-03-14.md`
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate
