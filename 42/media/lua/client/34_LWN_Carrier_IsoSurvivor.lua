@@ -159,7 +159,6 @@ local function markManaged(record, actor)
     -- Avoid player-specific NPC setters here. Some IsoSurvivor instances appear to
     -- carry a null internal `player` and throw engine-side NPEs when those setters run.
     protectedCall(actor, "setVisibleToNPCs", true)
-    protectedCall(actor, "setSceneCulled", false)
     protectedCall(actor, "setInvisible", false)
     protectedCall(actor, "setGhostMode", false)
     protectedCall(actor, "resetModel")

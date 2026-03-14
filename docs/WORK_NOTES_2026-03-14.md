@@ -147,6 +147,19 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/CARRIER_ISOSURVIVOR_SPIKE_2026-03-14.md`
 
+## 2026-03-14 IsoSurvivor reject cleanup follow-up
+- Applied a tiny follow-up patch after reviewing the remaining `IsoSurvivor` reject-path error.
+- Change made:
+  - removed `setSceneCulled(false)` from `IsoSurvivor` mark/management setup because it triggered `IsoGameCharacter.getVisual()` / `subclasses must implement this` exceptions on the rejected survivor object.
+- Expected result:
+  - same runtime rejection behavior
+  - fewer remaining errors during the reject path
+
+## 2026-03-14 IsoZombie spike planning
+- Wrote the next carrier experiment plan targeting `IsoZombie` as a more engine-native visible-world carrier candidate.
+- New document:
+  - `docs/CARRIER_ISOZOMBIE_SPIKE_PLAN_2026-03-14.md`
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate

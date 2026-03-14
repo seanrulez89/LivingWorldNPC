@@ -29,6 +29,8 @@ This directory contains research notes, audits, workflow references, and experim
   - first real spawn/sync/retire routing pass from legacy actor calls into the adapter
 - `CARRIER_ISOSURVIVOR_SPIKE_2026-03-14.md`
   - proof-of-life `IsoSurvivor` carrier experiment, including constructor fallback strategy and test path
+- `CARRIER_ISOZOMBIE_SPIKE_PLAN_2026-03-14.md`
+  - planning document for the next embodied carrier experiment using `IsoZombie`
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`
