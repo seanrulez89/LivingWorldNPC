@@ -492,12 +492,25 @@ function DebugTools.deleteNpcById(npcId, player)
     local record = Store.getNPC(npcId)
     if not record then return false end
 
+    local actor = findActorForRecord(record)
+    if actor and LWN.ActorFactory and LWN.ActorFactory.isActorInCombatOrUnderAttack then
+        local inCombat, combatReason = LWN.ActorFactory.isActorInCombatOrUnderAttack(actor)
+        if inCombat == true then
+            sayInfo(player, string.format("NPC %s is in combat and cannot be deleted (%s)", npcId, tostring(combatReason)))
+            return false
+        end
+    end
+
     if LWN.EmbodimentManager and LWN.EmbodimentManager.canonicalCleanup then
         LWN.EmbodimentManager.canonicalCleanup(record, {
+            actor = actor,
             reason = "debug_delete",
-            detail = "deleteNpcById",
+            detail = "deleteNpcById:immediate_noncombat",
         })
     else
+        if actor and LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
+            LWN.ActorFactory.cleanupActor(actor, "debug_delete")
+        end
         Store.removeNPC(npcId)
     end
     sayInfo(player, string.format("Deleted NPC %s", npcId))

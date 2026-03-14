@@ -67,10 +67,28 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/CLEANUP_NPE_HARDENING_2026-03-14.md`
 
+## 2026-03-14 debug delete combat guard pass
+- Simplified the operator contract for debug deletion after combat-time delete continued crashing even with deferred cleanup hardening.
+- New rule implemented:
+  - if an embodied NPC is in combat / under attack, debug delete is refused
+  - if the NPC is not in combat, debug delete proceeds immediately without deferred quarantine
+- Combat detection currently checks:
+  - actor has a target
+  - actor is attacking
+  - nearby zombies are targeting the actor or attacking in immediate proximity
+- Code changes:
+  - added `ActorFactory.isActorInCombatOrUnderAttack(actor)`
+  - `debug_delete` now bypasses deferred cleanup in `ActorFactory.cleanupActor()`
+  - `DebugTools.deleteNpcById()` now blocks combat-time delete and emits a user-facing reason
+- New document:
+  - `docs/DEBUG_DELETE_COMBAT_GUARD_2026-03-14.md`
+
 ## Recommended next direct coding focus
-1. Re-test debug delete on a live embodied NPC and confirm the `getCurrentSquare()==nil` crash is gone.
-2. If cleanup becomes stable, keep the safer delayed-retirement contract even if the actor carrier changes later.
-3. Treat the alive-render transparency problem as a separate architecture decision from cleanup safety.
+1. Re-test both cases explicitly:
+   - non-combat delete should be immediate
+   - combat delete should refuse with a message and no crash
+2. If combat guard proves reliable, keep this simpler debug-delete contract even if actor internals change later.
+3. Treat the alive-render transparency problem as a separate architecture decision from debug-delete safety.
 
 ## Git note
 - At the start of this audit, `git status --short --branch` reported a clean working tree on `master` tracking `origin/master`.

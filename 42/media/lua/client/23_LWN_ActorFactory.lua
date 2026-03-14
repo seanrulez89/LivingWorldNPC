@@ -1364,7 +1364,7 @@ local function updateActorCleanupMarkers(actor, cleanupReason, stage, pending)
     return modData
 end
 
-local function shouldDeferPhysicalCleanup(actor)
+local function shouldDeferPhysicalCleanup(actor, cleanupReason)
     if not actor then
         return false, "actor_missing_or_invalid"
     end
@@ -1384,6 +1384,10 @@ local function shouldDeferPhysicalCleanup(actor)
         and not (state and state.deathLike == true)
     if liveIsoPlayer ~= true then
         return false, string.format("presentation=%s", tostring(state and state.presentationRole or "unknown"))
+    end
+
+    if cleanupReason == "debug_delete" then
+        return false, "debug_delete_immediate_cleanup"
     end
 
     if protectedCall(actor, "isExistInTheWorld") == true then
@@ -1530,6 +1534,58 @@ local function hasRuntimeCore(actor)
     local okInventory = protectedCall(actor, "getInventory") ~= nil
 
     return okBody and okStats and okInventory
+end
+
+local function isActorInCombatOrUnderAttack(actor)
+    if not actor then return false, "actor=nil" end
+
+    local target = protectedCall(actor, "getTarget") or protectedCall(actor, "getTargetChar")
+    if target then
+        return true, "actor_has_target"
+    end
+
+    if protectedCall(actor, "isAttacking") == true then
+        return true, "actor_is_attacking"
+    end
+
+    local square = protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare")
+    local cell = getCell and getCell() or nil
+    if not square or not cell then
+        return false, square and "cell=nil" or "square=nil"
+    end
+
+    local ax = tonumber(protectedCall(actor, "getX") or protectedCall(square, "getX") or 0) or 0
+    local ay = tonumber(protectedCall(actor, "getY") or protectedCall(square, "getY") or 0) or 0
+    local az = tonumber(protectedCall(actor, "getZ") or protectedCall(square, "getZ") or 0) or 0
+
+    for y = math.floor(ay) - 2, math.floor(ay) + 2 do
+        for x = math.floor(ax) - 2, math.floor(ax) + 2 do
+            local scanSquare = protectedCall(cell, "getGridSquare", x, y, az)
+            local moving = protectedCall(scanSquare, "getMovingObjects")
+            if moving and moving.size then
+                for i = 0, moving:size() - 1 do
+                    local obj = moving:get(i)
+                    if obj and instanceof and instanceof(obj, "IsoZombie") then
+                        local zombieTarget = protectedCall(obj, "getTarget") or protectedCall(obj, "getTargetChar")
+                        if zombieTarget == actor then
+                            return true, "zombie_targeting_actor"
+                        end
+                        if protectedCall(obj, "isAttacking") == true then
+                            local zx = tonumber(protectedCall(obj, "getX") or 0) or 0
+                            local zy = tonumber(protectedCall(obj, "getY") or 0) or 0
+                            local dx = zx - ax
+                            local dy = zy - ay
+                            if (dx * dx + dy * dy) <= 2.25 then
+                                return true, "attacking_zombie_near_actor"
+                            end
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    return false, "no_combat_pressure"
 end
 
 local function isSquareSpawnable(square)
@@ -2097,7 +2153,7 @@ function Factory.cleanupActor(actor, reason)
         npcId = npcId,
         detail = string.format("reason=%s %s", tostring(reason), tostring(presentationStateSummary(actor))),
     })
-    local shouldDefer, deferDetail = shouldDeferPhysicalCleanup(actor)
+    local shouldDefer, deferDetail = shouldDeferPhysicalCleanup(actor, reason)
     if shouldDefer then
         local result = stageDeferredCleanupActor(actor, reason or "cleanupActor")
         stageTrace("ActorFactory", "cleanupActor.deferred", nil, actor, nil, {
@@ -2118,6 +2174,10 @@ function Factory.cleanupActor(actor, reason)
         detail = result and result.detail or string.format("reason=%s %s", tostring(reason), tostring(presentationStateSummary(actor))),
     })
     return result
+end
+
+function Factory.isActorInCombatOrUnderAttack(actor)
+    return isActorInCombatOrUnderAttack(actor)
 end
 
 function Factory.canFinalizeDeferredCleanup(actor)
