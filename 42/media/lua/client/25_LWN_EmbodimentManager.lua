@@ -5,6 +5,7 @@ local Embody = LWN.EmbodimentManager
 local Store = LWN.PopulationStore
 
 Embody._actors = Embody._actors or {}
+Embody._carrierHandles = Embody._carrierHandles or {}
 Embody._cleanupBlocklist = Embody._cleanupBlocklist or {}
 Embody._cleanupInFlight = Embody._cleanupInFlight or {}
 
@@ -739,6 +740,37 @@ function Embody.touchGrace(record)
     record.embodiment.graceUntilHour = getGameTime():getWorldAgeHours() + LWN.Config.Embodiment.GraceHours
 end
 
+function Embody.registerCarrierHandle(record, handle)
+    record = ensureRecordShape(record)
+    if not record or not handle then return false end
+
+    handle.npcId = record.id
+    Embody._carrierHandles[record.id] = handle
+    record.embodiment.carrierKind = handle.kind or record.embodiment.carrierKind or "none"
+    record.embodiment.carrierState = record.embodiment.carrierState or {}
+    record.embodiment.carrierState.status = handle.status
+    record.embodiment.carrierState.detail = handle.detail
+    record.embodiment.carrierState.spawnedAt = handle.spawnedAt
+    record.embodiment.carrierState.lastSyncAt = handle.lastSyncAt
+    record.embodiment.carrierState.lastRetireAt = handle.lastRetireAt
+    return true
+end
+
+function Embody.getCarrierHandle(record)
+    if not record then return nil end
+    return Embody._carrierHandles[record.id]
+end
+
+function Embody.unregisterCarrierHandle(record, reason)
+    if not record then return end
+    record = ensureRecordShape(record)
+    Embody._carrierHandles[record.id] = nil
+    record.embodiment.carrierState = record.embodiment.carrierState or {}
+    record.embodiment.carrierState.status = "retired"
+    record.embodiment.carrierState.detail = reason or "unregisterCarrierHandle"
+    record.embodiment.carrierState.lastRetireAt = worldAgeHours()
+end
+
 function Embody.registerActor(record, actor)
     record = ensureRecordShape(record)
     if not record or not actor then return false end
@@ -758,6 +790,16 @@ function Embody.registerActor(record, actor)
         return false
     end
     Embody._actors[record.id] = actor
+    Embody.registerCarrierHandle(record, {
+        kind = record.embodiment and record.embodiment.carrierKind or "isoplayer",
+        actor = actor,
+        status = "active",
+        spawnedAt = worldAgeHours(),
+        detail = "legacy_registerActor_bridge",
+        runtime = {
+            source = "Embody.registerActor",
+        },
+    })
     Store.setEmbodiedMeta(record.id, {
         state = record.embodiment.state,
         x = math.floor(protectedCall(actor, "getX") or record.anchor.x or 0),
@@ -774,6 +816,10 @@ end
 
 function Embody.getActor(record)
     if not record then return nil end
+    local handle = Embody.getCarrierHandle(record)
+    if handle and LWN.CarrierAdapter and LWN.CarrierAdapter.getActor then
+        return LWN.CarrierAdapter.getActor(handle)
+    end
     return Embody._actors[record.id]
 end
 
@@ -816,6 +862,7 @@ function Embody.unregisterActor(record, reason)
         reason = reason,
     }, true)
     Embody._actors[record.id] = nil
+    Embody.unregisterCarrierHandle(record, reason or "unregisterActor")
     Store.setEmbodiedMeta(record.id, nil)
     Embody._registryTraceCache = Embody._registryTraceCache or {}
     Embody._registryTraceCache[record.id] = nil

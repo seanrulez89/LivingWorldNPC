@@ -23,6 +23,8 @@ This directory contains research notes, audits, workflow references, and experim
   - small trace-noise cleanup for death waiting and trivial detached-self leftover snapshots
 - `ISOPLAYER_EXIT_PLAN_2026-03-14.md`
   - what to keep, what to discard, and which carrier experiments to run after retiring `IsoPlayer`
+- `CARRIER_ADAPTER_DRAFT_2026-03-14.md`
+  - first adapter boundary draft plus the initial runtime-handle bridge for future carrier migration
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`

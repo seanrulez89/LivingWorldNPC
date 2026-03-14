@@ -105,6 +105,19 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/ISOPLAYER_EXIT_PLAN_2026-03-14.md`
 
+## 2026-03-14 carrier adapter draft pass
+- Added the first adapter boundary intended to separate canonical NPC state from embodied world-carrier choice.
+- New runtime code:
+  - `31_LWN_CarrierAdapter.lua`
+  - `32_LWN_Carrier_None.lua`
+  - `33_LWN_Carrier_IsoPlayer.lua`
+- `EmbodimentManager` now also tracks runtime carrier handles and bridges legacy actor registration into that handle system.
+- Important scope note:
+  - this is a structural bridge, not a full migration yet
+  - current embodiment logic still largely runs through legacy paths, but the repo now has a concrete place to move spawn/sync/retire behavior into
+- New document:
+  - `docs/CARRIER_ADAPTER_DRAFT_2026-03-14.md`
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate
