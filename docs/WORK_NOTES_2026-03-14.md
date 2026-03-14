@@ -264,6 +264,16 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/CARRIER_ISOZOMBIE_FRIENDLY_ATTACK_SUPPRESSION_2026-03-14.md`
 
+## 2026-03-14 next-session handoff consolidation
+- Added a dedicated restart/handoff document so next-week work can resume without re-deriving the current state.
+- New document:
+  - `docs/NEXT_SESSION_HANDOFF_2026-03-14.md`
+- Most important practical reminders captured there:
+  - resume from branch `spike/isozombie`
+  - `IsoZombie` is currently the strongest carrier candidate
+  - `IsoPlayer` and `IsoSurvivor` should not be the restart point
+  - next likely work items are trust-decrease debug UI and a better player-attack suppression control point for friendly shells
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate

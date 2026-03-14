@@ -49,6 +49,8 @@ This directory contains research notes, audits, workflow references, and experim
   - careful first pass applying relationship policy directly to zombie shell posture and hostile activation attempts
 - `CARRIER_ISOZOMBIE_FRIENDLY_ATTACK_SUPPRESSION_2026-03-14.md`
   - minimal friendly-shell suppression test using `setGodMod(true)` only when policy disallows player attack
+- `NEXT_SESSION_HANDOFF_2026-03-14.md`
+  - practical restart guide for the next session: current branch, confirmed findings, unresolved blockers, and recommended next actions
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`
