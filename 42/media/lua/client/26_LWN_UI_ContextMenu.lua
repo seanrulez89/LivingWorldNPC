@@ -317,9 +317,15 @@ local function addDebugSubmenu(context, player, actor)
 
     if not enabled then return end
 
-    settingsSub:addOption("Debug: Spawn NPC Near Player", player, function(p)
+    settingsSub:addOption("Debug: Spawn NPC Near Player (IsoPlayer)", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayer then
             LWN.DebugTools.spawnOneNearPlayer(p)
+        end
+    end)
+
+    settingsSub:addOption("Debug: Spawn NPC Near Player (IsoSurvivor Spike)", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayerIsoSurvivor then
+            LWN.DebugTools.spawnOneNearPlayerIsoSurvivor(p)
         end
     end)
 
