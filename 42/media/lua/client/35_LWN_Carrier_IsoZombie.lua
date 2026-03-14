@@ -22,6 +22,9 @@ local function protectedCall(obj, methodName, ...)
     return nil
 end
 
+local ISOZOMBIE_SETTLE_MAX_SYNC_ATTEMPTS = 12
+local ISOZOMBIE_SETTLE_MAX_HOURS = 0.0015
+
 local function worldAgeHours()
     return getGameTime() and getGameTime():getWorldAgeHours() or 0
 end
@@ -150,6 +153,15 @@ local function assessRuntimeReadiness(actor)
     )
 end
 
+local function markNoAutoRearm(record)
+    if record and record.embodiment then
+        record.embodiment.noAutoRearm = true
+        record.embodiment.state = "hidden"
+        record.embodiment.actorId = nil
+        record.embodiment.cooldownUntilHour = worldAgeHours() + 24
+    end
+end
+
 local function shallowRetire(record, actor, reason)
     if not actor then
         return {
@@ -167,6 +179,7 @@ local function shallowRetire(record, actor, reason)
     protectedCall(actor, "setInvisible", true)
     protectedCall(actor, "removeFromSquare")
     protectedCall(actor, "removeFromWorld")
+    markNoAutoRearm(record)
 
     trace("retire.shallow", record, string.format(
         "reason=%s world=%s squarePresent=%s",
@@ -233,40 +246,30 @@ function Carrier.spawn(record, options)
 
     applyBasicZombieCarrierFlags(record, actor)
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
-    trace(runtimeOk and "spawn.runtime_ready" or "spawn.runtime_rejected", record, string.format("spawn=%s | %s", tostring(spawnDetail), tostring(runtimeDetail)))
+    local spawnedAt = worldAgeHours()
+    trace(runtimeOk and "spawn.runtime_ready" or "spawn.pending_settle", record, string.format("spawn=%s | %s", tostring(spawnDetail), tostring(runtimeDetail)))
 
-    if runtimeOk ~= true then
-        shallowRetire(record, actor, "isozombie_runtime_core_missing")
-        local detailText = string.format("runtime_rejected via=%s | %s", tostring(spawnDetail), tostring(runtimeDetail))
-        return {
-            ok = false,
-            actor = nil,
-            detail = detailText,
-            handle = {
-                kind = "isozombie",
-                actor = nil,
-                status = "failed",
-                spawnedAt = worldAgeHours(),
-                detail = detailText,
-            },
-        }
-    end
-
-    trace("spawn.ok", record, string.format("spawn=%s | %s", tostring(spawnDetail), tostring(runtimeDetail)))
     return {
         ok = true,
         actor = actor,
-        detail = string.format("isozombie_spawned_via=%s", tostring(spawnDetail)),
+        detail = runtimeOk == true
+            and string.format("isozombie_spawned_via=%s", tostring(spawnDetail))
+            or string.format("isozombie_pending_settle via=%s | %s", tostring(spawnDetail), tostring(runtimeDetail)),
         handle = {
             kind = "isozombie",
             actor = actor,
-            status = "active",
-            spawnedAt = worldAgeHours(),
-            detail = string.format("isozombie_spawned_via=%s", tostring(spawnDetail)),
+            status = runtimeOk == true and "active" or "pending_settle",
+            spawnedAt = spawnedAt,
+            detail = runtimeOk == true
+                and string.format("isozombie_spawned_via=%s", tostring(spawnDetail))
+                or string.format("isozombie_pending_settle via=%s | %s", tostring(spawnDetail), tostring(runtimeDetail)),
             runtime = {
                 spawnDetail = spawnDetail,
                 runtimeDetail = runtimeDetail,
                 neutralized = true,
+                settlePending = runtimeOk ~= true,
+                settleAttempts = 0,
+                settleStartedAt = spawnedAt,
             },
         },
     }
@@ -283,9 +286,27 @@ function Carrier.sync(record, handle, options)
         }
     end
 
+    handle.runtime = handle.runtime or {}
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
     if runtimeOk ~= true then
-        trace("sync.runtime_rejected", record, runtimeDetail)
+        local settleAttempts = (tonumber(handle.runtime.settleAttempts) or 0) + 1
+        local settleStartedAt = tonumber(handle.runtime.settleStartedAt or handle.spawnedAt or worldAgeHours()) or worldAgeHours()
+        local elapsed = math.max(0, worldAgeHours() - settleStartedAt)
+        handle.runtime.settleAttempts = settleAttempts
+        handle.runtime.settleStartedAt = settleStartedAt
+        handle.runtime.runtimeDetail = runtimeDetail
+
+        if settleAttempts < ISOZOMBIE_SETTLE_MAX_SYNC_ATTEMPTS and elapsed < ISOZOMBIE_SETTLE_MAX_HOURS then
+            trace("sync.pending_settle", record, string.format("attempt=%s/%s elapsed=%.6f/%.6f | %s", settleAttempts, ISOZOMBIE_SETTLE_MAX_SYNC_ATTEMPTS, elapsed, ISOZOMBIE_SETTLE_MAX_HOURS, tostring(runtimeDetail)))
+            return {
+                ok = true,
+                status = "pending_settle",
+                detail = string.format("isozombie_pending_settle attempt=%s | %s", tostring(settleAttempts), tostring(runtimeDetail)),
+            }
+        end
+
+        trace("sync.runtime_rejected", record, string.format("attempt=%s elapsed=%.6f | %s", settleAttempts, elapsed, tostring(runtimeDetail)))
+        shallowRetire(record, actor, "isozombie_runtime_core_missing")
         return {
             ok = false,
             status = "failed",
@@ -293,6 +314,8 @@ function Carrier.sync(record, handle, options)
         }
     end
 
+    handle.runtime.settlePending = false
+    handle.runtime.runtimeDetail = runtimeDetail
     applyBasicZombieCarrierFlags(record, actor)
 
     local anchor = record and record.anchor or nil
