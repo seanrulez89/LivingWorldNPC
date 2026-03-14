@@ -15,6 +15,8 @@ This directory contains research notes, audits, workflow references, and experim
 
 - `ISO_PLAYER_HARDENING_2026-03-14.md`
   - concrete code-level hardening pass for the current `IsoPlayer` route and what result should trigger abandonment
+- `CLEANUP_NPE_HARDENING_2026-03-14.md`
+  - safety hardening for live `IsoPlayer` debug cleanup after a `getCurrentSquare()==nil` crash during deletion
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`

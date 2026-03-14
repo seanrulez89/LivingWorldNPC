@@ -1336,6 +1336,9 @@ local function restoreEmbodiedPresentationFlags(actor, reason)
     return changed
 end
 
+local MIN_LIVE_ISOPLAYER_CLEANUP_DEFER_TICKS = 90
+local MIN_LIVE_ISOPLAYER_CLEANUP_DEFER_HOURS = 0.0005
+
 local function markPresentationPending(actor, reason)
     local modData = protectedCall(actor, "getModData")
     if not modData then return end
@@ -1401,6 +1404,7 @@ local function stageDeferredCleanupActor(actor, cleanupReason)
 
     local state = actorPresentationState(actor)
     local modData = updateActorCleanupMarkers(actor, cleanupReason, "safeCleanupActor.quarantined", true)
+    local square = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
 
     protectedCall(actor, "StopAllActionQueue")
 
@@ -1411,8 +1415,13 @@ local function stageDeferredCleanupActor(actor, cleanupReason)
         modData.LWN_LastCleanupStage = "safeCleanupActor.quarantined"
         modData.LWN_CleanupQuarantinedAt = modData.LWN_CleanupQuarantinedAt or worldAgeHours()
         modData.LWN_CleanupDeferredReason = modData.LWN_CleanupReason
-        modData.LWN_CleanupDeferredTicks = (tonumber(modData.LWN_CleanupDeferredTicks) or 0) + 1
+        modData.LWN_CleanupDeferredTicks = 0
+        modData.LWN_CleanupFinalizeAttempts = 0
         modData.LWN_CleanupContract = "quarantine_preserve_live_iso_player"
+        modData.LWN_CleanupAnchorX = tonumber(protectedCall(square, "getX") or protectedCall(actor, "getX") or 0) or 0
+        modData.LWN_CleanupAnchorY = tonumber(protectedCall(square, "getY") or protectedCall(actor, "getY") or 0) or 0
+        modData.LWN_CleanupAnchorZ = tonumber(protectedCall(square, "getZ") or protectedCall(actor, "getZ") or 0) or 0
+        modData.LWN_CleanupHadSquare = square ~= nil
     end
     traceCleanupContract(actor, "cleanup_queued", cleanupReason, presentationStateSummary(actor))
     traceAlphaChurn(actor, state, "cleanup_quarantined", cleanupReason)
@@ -1421,9 +1430,10 @@ local function stageDeferredCleanupActor(actor, cleanupReason)
         deferred = true,
         completed = false,
         detail = string.format(
-            "contract=quarantine_preserve_live_iso_player reason=%s actorWorld=%s %s",
+            "contract=quarantine_preserve_live_iso_player reason=%s actorWorld=%s quarantineTicks>=%s %s",
             tostring(cleanupReason),
             tostring(protectedCall(actor, "isExistInTheWorld")),
+            tostring(MIN_LIVE_ISOPLAYER_CLEANUP_DEFER_TICKS),
             tostring(presentationStateSummary(actor))
         ),
     }
@@ -1433,6 +1443,10 @@ local function safeCleanupActor(actor, cleanupReason)
     if not actor then return end
     local before = actorPresentationState(actor)
     local modData = updateActorCleanupMarkers(actor, cleanupReason, "safeCleanupActor.start", true)
+    local preSquare = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
+    local anchorX = tonumber(protectedCall(preSquare, "getX") or (modData and modData.LWN_CleanupAnchorX) or protectedCall(actor, "getX") or 0) or 0
+    local anchorY = tonumber(protectedCall(preSquare, "getY") or (modData and modData.LWN_CleanupAnchorY) or protectedCall(actor, "getY") or 0) or 0
+    local anchorZ = tonumber(protectedCall(preSquare, "getZ") or (modData and modData.LWN_CleanupAnchorZ) or protectedCall(actor, "getZ") or 0) or 0
 
     protectedCall(actor, "StopAllActionQueue")
     traceCleanupContract(actor, "finalize_start", cleanupReason, presentationStateSummary(actor))
@@ -1449,12 +1463,28 @@ local function safeCleanupActor(actor, cleanupReason)
         stillWorld = protectedCall(actor, "isExistInTheWorld")
     end
 
+    local postSquare = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
+    local squareRestored = false
+    if stillWorld ~= true and postSquare == nil and preSquare then
+        protectedCall(actor, "setCurrent", preSquare)
+        protectedCall(actor, "setCurrentSquare", preSquare)
+        protectedCall(actor, "setSquare", preSquare)
+        protectedCall(actor, "setMovingSquare", preSquare)
+        protectedCall(actor, "setMovingSquareNow")
+        protectedCall(actor, "setX", anchorX + 0.5)
+        protectedCall(actor, "setY", anchorY + 0.5)
+        protectedCall(actor, "setZ", anchorZ)
+        postSquare = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
+        squareRestored = postSquare ~= nil
+    end
+
     if modData then
         modData.LWN_CreateHookPending = false
         modData.LWN_PresentationPending = false
         modData.LWN_LastCleanupHour = worldAgeHours()
         modData.LWN_LastCleanupWorld = stillWorld
         modData.LWN_LastCleanupReason = modData.LWN_CleanupReason
+        modData.LWN_LastCleanupSquareRestored = squareRestored
         modData.LWN_LastCleanupStage = stillWorld == true and "safeCleanupActor.incomplete" or "safeCleanupActor.complete"
         modData.LWN_CleanupStage = modData.LWN_LastCleanupStage
         modData.LWN_CleanupPending = stillWorld == true
@@ -1474,17 +1504,18 @@ local function safeCleanupActor(actor, cleanupReason)
         repairVisibleAlpha(actor, "safeCleanupActor.incomplete_restore")
         traceCleanupContract(actor, "finalize_incomplete_live_actor", cleanupReason, presentationStateSummary(actor))
     else
-        traceCleanupContract(actor, "finalize_complete", cleanupReason, presentationStateSummary(actor))
+        traceCleanupContract(actor, squareRestored and "finalize_complete_square_restored" or "finalize_complete", cleanupReason, presentationStateSummary(actor))
     end
 
     return {
         deferred = false,
         completed = stillWorld ~= true,
         detail = string.format(
-            "reason=%s actorWorld=%s despawned=%s before=%s after=%s",
+            "reason=%s actorWorld=%s despawned=%s squareRestored=%s before=%s after=%s",
             tostring(cleanupReason),
             tostring(stillWorld),
             tostring(despawned),
+            tostring(squareRestored),
             tostring(before and before.objectRef or nil),
             tostring(presentationStateSummary(actor))
         ),
@@ -2095,16 +2126,48 @@ function Factory.canFinalizeDeferredCleanup(actor)
     end
 
     local modData = protectedCall(actor, "getModData")
+    local quarantinedAt = tonumber(modData and modData.LWN_CleanupQuarantinedAt or nil) or 0
+    local now = worldAgeHours()
+    local elapsed = math.max(0, now - quarantinedAt)
+    local finalizeAttempts = (tonumber(modData and modData.LWN_CleanupFinalizeAttempts or 0) or 0) + 1
+    local squarePresent = (protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")) ~= nil
+    local inWorld = protectedCall(actor, "isExistInTheWorld") == true
+
     if modData then
-        modData.LWN_LastCleanupStage = "safeCleanupActor.finalize_ready"
-        modData.LWN_CleanupStage = "safeCleanupActor.finalize_ready"
+        modData.LWN_CleanupFinalizeAttempts = finalizeAttempts
+        modData.LWN_CleanupDeferredTicks = finalizeAttempts
         modData.LWN_LastCleanupReason = modData.LWN_CleanupReason or modData.LWN_LastCleanupReason
         modData.LWN_CleanupPending = true
     end
+
+    if inWorld and (finalizeAttempts < MIN_LIVE_ISOPLAYER_CLEANUP_DEFER_TICKS or elapsed < MIN_LIVE_ISOPLAYER_CLEANUP_DEFER_HOURS) then
+        if modData then
+            modData.LWN_LastCleanupStage = "safeCleanupActor.finalize_wait"
+            modData.LWN_CleanupStage = "safeCleanupActor.finalize_wait"
+        end
+        return false, string.format(
+            "quarantine_wait world=%s squarePresent=%s attempts=%s/%s elapsed=%.6f/%.6f modelRegistered=%s alphaClass=%s",
+            tostring(inWorld),
+            tostring(squarePresent),
+            tostring(finalizeAttempts),
+            tostring(MIN_LIVE_ISOPLAYER_CLEANUP_DEFER_TICKS),
+            elapsed,
+            MIN_LIVE_ISOPLAYER_CLEANUP_DEFER_HOURS,
+            tostring(isModelRegistered(actor)),
+            tostring(classifyAlphaState(actorPresentationState(actor)))
+        )
+    end
+
+    if modData then
+        modData.LWN_LastCleanupStage = "safeCleanupActor.finalize_ready"
+        modData.LWN_CleanupStage = "safeCleanupActor.finalize_ready"
+    end
     return true, string.format(
-        "next_tick_finalize world=%s squarePresent=%s modelRegistered=%s alphaClass=%s",
-        tostring(protectedCall(actor, "isExistInTheWorld")),
-        tostring((protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")) ~= nil),
+        "finalize_ready world=%s squarePresent=%s attempts=%s elapsed=%.6f modelRegistered=%s alphaClass=%s",
+        tostring(inWorld),
+        tostring(squarePresent),
+        tostring(finalizeAttempts),
+        elapsed,
         tostring(isModelRegistered(actor)),
         tostring(classifyAlphaState(actorPresentationState(actor)))
     )

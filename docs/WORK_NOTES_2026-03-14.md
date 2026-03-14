@@ -50,10 +50,27 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/ISO_PLAYER_HARDENING_2026-03-14.md`
 
+## 2026-03-14 cleanup NPE hardening pass
+- Investigated the post-delete crash observed after debug-removing a live embodied NPC.
+- Crash signature from `console.txt`:
+  - `java.lang.NullPointerException`
+  - `BodyDamage.UpdateBoredom(...)`
+  - because `IsoGameCharacter.getCurrentSquare()` was `null`
+- Conclusion from the log:
+  - physical cleanup was still happening too early for a live `IsoPlayer`; delayed engine reaction/animation work could still touch the actor after removal.
+- Changes made:
+  - added a longer quarantine gate before deferred physical cleanup can finalize for live `IsoPlayer` actors
+  - cached the actor's last known square/position at quarantine time
+  - after world removal, attempted to restore square references on the detached actor if cleanup had nulled them out
+- Validation performed:
+  - `./scripts/validate-wsl.sh`
+- New document:
+  - `docs/CLEANUP_NPE_HARDENING_2026-03-14.md`
+
 ## Recommended next direct coding focus
-1. Run the next in-game verdict pass against the hardened path.
-2. If alive NPCs are still transparent after `finalizePostCreatePresentation.ready` and `action=alive_state_rebuild`, treat that as strong evidence against the current `IsoPlayer` route.
-3. If visibility improves, keep the post-create finalization contract and continue narrowing any remaining edge cases.
+1. Re-test debug delete on a live embodied NPC and confirm the `getCurrentSquare()==nil` crash is gone.
+2. If cleanup becomes stable, keep the safer delayed-retirement contract even if the actor carrier changes later.
+3. Treat the alive-render transparency problem as a separate architecture decision from cleanup safety.
 
 ## Git note
 - At the start of this audit, `git status --short --branch` reported a clean working tree on `master` tracking `origin/master`.
