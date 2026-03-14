@@ -94,6 +94,17 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/LOG_QUALITY_TUNING_2026-03-14.md`
 
+## 2026-03-14 IsoPlayer exit planning pass
+- Wrote a migration-oriented architecture note for the post-`IsoPlayer` phase.
+- Summary judgment:
+  - keep the canonical record/state/cleanup architecture
+  - retire `IsoPlayer` as the default live human embodiment carrier
+  - evaluate `IsoSurvivor` as a narrow proof-of-life spike
+  - evaluate `IsoZombie` as a more engine-native visible-world carrier spike if human-carrier support remains weak
+  - prefer a long-term carrier-adapter boundary so embodiment can change without rewriting simulation state
+- New document:
+  - `docs/ISOPLAYER_EXIT_PLAN_2026-03-14.md`
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate
