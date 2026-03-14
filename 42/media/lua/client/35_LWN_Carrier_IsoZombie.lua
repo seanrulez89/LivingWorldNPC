@@ -100,20 +100,44 @@ local function spawnZombieAtSquare(square, record)
     return actor, "addZombiesInOutfit"
 end
 
+local function relationshipCombatPolicy(record)
+    if LWN.Social and LWN.Social.relationshipCombatPolicy then
+        return LWN.Social.relationshipCombatPolicy(record)
+    end
+    return {
+        state = "neutral",
+        allowPlayerAttack = true,
+        allowCarrierAttackPlayer = false,
+        shouldNeutralizeCarrier = true,
+        reason = "social_policy_missing",
+    }
+end
+
 local function applyBasicZombieCarrierFlags(record, actor)
     if not actor then return end
     local modData = protectedCall(actor, "getModData")
+    local policy = relationshipCombatPolicy(record)
     if modData and record then
         modData.LWN_NpcId = record.id
         modData.LWN_LastNpcId = record.id
         modData.LWN_CarrierKind = "isozombie"
         modData.LWN_CarrierSpike = true
+        modData.LWN_RelationState = policy.state
+        modData.LWN_AllowPlayerAttack = policy.allowPlayerAttack == true
+        modData.LWN_AllowCarrierAttackPlayer = policy.allowCarrierAttackPlayer == true
+        modData.LWN_HostilityReason = policy.reason
     end
 
-    protectedCall(actor, "setUseless", true)
-    protectedCall(actor, "setTargetSeenTime", 0)
+    if policy.shouldNeutralizeCarrier == true then
+        protectedCall(actor, "setUseless", true)
+        protectedCall(actor, "setTargetSeenTime", 0)
+        protectedCall(actor, "setCanWalk", false)
+    else
+        protectedCall(actor, "setUseless", false)
+        protectedCall(actor, "setCanWalk", true)
+    end
+
     protectedCall(actor, "setFakeDead", false)
-    protectedCall(actor, "setCanWalk", false)
     protectedCall(actor, "setCrawler", false)
     protectedCall(actor, "setSitAgainstWall", false)
     protectedCall(actor, "setReanimate", false)

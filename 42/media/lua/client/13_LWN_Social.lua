@@ -63,6 +63,44 @@ function Social.canRecruit(record)
     return record.relationshipToPlayer.trust >= LWN.Config.Social.RecruitTrustFloor
 end
 
+function Social.relationshipCombatPolicy(record)
+    local rel = record.relationshipToPlayer or {}
+    local drama = record.drama or {}
+    local companion = record.companion or {}
+    local trust = tonumber(rel.trust or 0) or 0
+    local betrayalScore = Social.betrayalScore(record)
+    local recruitFloor = LWN.Config.Social.RecruitTrustFloor or 0.45
+    local betrayThreshold = LWN.Config.Social.BetrayThreshold or 1.25
+
+    if drama.pendingBetrayal == true or betrayalScore >= betrayThreshold then
+        return {
+            state = "hostile",
+            allowPlayerAttack = true,
+            allowCarrierAttackPlayer = true,
+            shouldNeutralizeCarrier = false,
+            reason = drama.pendingBetrayal == true and "pending_betrayal" or "betrayal_score",
+        }
+    end
+
+    if companion.recruited == true and trust >= recruitFloor then
+        return {
+            state = "friendly",
+            allowPlayerAttack = false,
+            allowCarrierAttackPlayer = false,
+            shouldNeutralizeCarrier = true,
+            reason = "trusted_companion",
+        }
+    end
+
+    return {
+        state = "neutral",
+        allowPlayerAttack = true,
+        allowCarrierAttackPlayer = false,
+        shouldNeutralizeCarrier = true,
+        reason = companion.recruited == true and "recruited_but_low_trust" or "not_recruited",
+    }
+end
+
 function Social.maybeSuggest(record)
     local stats = record.stats
     if stats.hunger > 0.7 then
