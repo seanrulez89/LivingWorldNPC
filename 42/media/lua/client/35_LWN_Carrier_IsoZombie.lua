@@ -127,6 +127,8 @@ local function applyRelationshipCombatState(record, actor, options)
     local policy = relationshipCombatPolicy(record)
     local player = getPrimaryPlayer(options)
 
+    protectedCall(actor, "setGodMod", policy.allowPlayerAttack ~= true)
+
     if policy.shouldNeutralizeCarrier == true then
         protectedCall(actor, "setUseless", true)
         protectedCall(actor, "setTargetSeenTime", 0)
