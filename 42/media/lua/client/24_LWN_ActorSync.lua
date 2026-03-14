@@ -148,6 +148,15 @@ local function getNpcId(actor)
     return modData and modData.LWN_NpcId or nil
 end
 
+local function getCarrierKind(record, actor)
+    local handle = record and LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
+    if handle and handle.kind then
+        return handle.kind
+    end
+    local modData = protectedCall(actor, "getModData")
+    return modData and modData.LWN_CarrierKind or record and record.embodiment and record.embodiment.carrierKind or nil
+end
+
 traceStage = function(stage, record, actor, extra)
     if LWN.ActorFactory and LWN.ActorFactory.debugStage then
         LWN.ActorFactory.debugStage("ActorSync", stage, record, actor, protectedCall(actor, "getDescriptor"), extra)
@@ -162,27 +171,36 @@ local function enforceEmbodiedFlags(record, actor)
         modData.LWN_NpcId = record.id
     end
 
+    local carrierKind = getCarrierKind(record, actor)
     local female = record and record.identity and record.identity.female == true
-    protectedCall(actor, "setFemale", female)
-    if protectedCall(actor, "isFemale") ~= female then
-        protectedCall(actor, "setFemaleEtc", female)
+
+    if carrierKind ~= "isozombie" then
+        protectedCall(actor, "setFemale", female)
+        if protectedCall(actor, "isFemale") ~= female then
+            protectedCall(actor, "setFemaleEtc", female)
+        end
+        protectedCall(actor, "setNPC", true)
+        protectedCall(actor, "setIsNPC", true)
+        protectedCall(actor, "setForname", record and record.identity and record.identity.firstName or nil)
+        protectedCall(actor, "setSurname", record and record.identity and record.identity.lastName or nil)
     end
-    protectedCall(actor, "setNPC", true)
-    protectedCall(actor, "setIsNPC", true)
+
     protectedCall(actor, "setVisibleToNPCs", true)
-    protectedCall(actor, "setForname", record and record.identity and record.identity.firstName or nil)
-    protectedCall(actor, "setSurname", record and record.identity and record.identity.lastName or nil)
 
-    if LWN.ActorFactory and LWN.ActorFactory.restoreEmbodiedPresentationFlags then
-        LWN.ActorFactory.restoreEmbodiedPresentationFlags(actor, "ActorSync.enforceEmbodiedFlags")
+    if carrierKind ~= "isozombie" then
+        if LWN.ActorFactory and LWN.ActorFactory.restoreEmbodiedPresentationFlags then
+            LWN.ActorFactory.restoreEmbodiedPresentationFlags(actor, "ActorSync.enforceEmbodiedFlags")
+        else
+            protectedCall(actor, "setSceneCulled", false)
+            protectedCall(actor, "setGhostMode", false)
+            protectedCall(actor, "setInvisible", false)
+        end
+
+        if LWN.ActorFactory and LWN.ActorFactory.repairVisibleAlpha then
+            LWN.ActorFactory.repairVisibleAlpha(actor, "ActorSync.enforceEmbodiedFlags")
+        end
     else
-        protectedCall(actor, "setSceneCulled", false)
-        protectedCall(actor, "setGhostMode", false)
         protectedCall(actor, "setInvisible", false)
-    end
-
-    if LWN.ActorFactory and LWN.ActorFactory.repairVisibleAlpha then
-        LWN.ActorFactory.repairVisibleAlpha(actor, "ActorSync.enforceEmbodiedFlags")
     end
 end
 

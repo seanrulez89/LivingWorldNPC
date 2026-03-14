@@ -148,11 +148,26 @@ local function traceContextCandidate(stage, actor, reason, worldObject)
     ))
 end
 
+local function isManagedZombieCarrier(actor)
+    if not actor then return false end
+    if worldObjectKind(actor) ~= "zombie" then return false end
+
+    local npcId = getActiveNpcId(actor) or getNpcId(actor)
+    if not npcId then return false end
+
+    local modData = getModData(actor)
+    return modData ~= nil and modData.LWN_CarrierKind == "isozombie"
+end
+
 local function isTargetableNpcActor(actor)
     if not actor then return false end
 
     local kind = worldObjectKind(actor)
-    if kind == "corpse" or kind == "zombie" then
+    if kind == "corpse" then
+        traceContextCandidate("candidate.rejected", actor, "leftover_death_object", nil)
+        return false
+    end
+    if kind == "zombie" and not isManagedZombieCarrier(actor) then
         traceContextCandidate("candidate.rejected", actor, "leftover_death_object", nil)
         return false
     end
