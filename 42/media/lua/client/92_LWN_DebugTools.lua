@@ -341,6 +341,10 @@ function DebugTools.spawnOneNearPlayerIsoSurvivor(player)
     return spawnOneNearPlayerWithCarrier(player, "isosurvivor")
 end
 
+function DebugTools.spawnOneNearPlayerIsoZombie(player)
+    return spawnOneNearPlayerWithCarrier(player, "isozombie")
+end
+
 function DebugTools.dumpLastActorFailure(player)
     local failure = LWN.ActorFactory and LWN.ActorFactory.getLastFailure and LWN.ActorFactory.getLastFailure() or nil
     if not failure then

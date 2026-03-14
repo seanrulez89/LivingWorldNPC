@@ -171,6 +171,19 @@ This file is for work performed on 2026-03-14 only.
   - stop treating `IsoSurvivor` as the likely next carrier
   - treat `IsoZombie` as the next embodied-carrier spike candidate
 
+## 2026-03-14 IsoZombie spike implementation pass
+- Started the first actual `IsoZombie` proof-of-life carrier implementation on branch `spike/isozombie`.
+- New runtime code:
+  - `35_LWN_Carrier_IsoZombie.lua`
+- New debug entry:
+  - `DebugTools.spawnOneNearPlayerIsoZombie(player)`
+- New menu entry:
+  - `Debug: Spawn NPC Near Player (IsoZombie Spike)`
+- Important implementation choice:
+  - used `addZombiesInOutfit(...)` rather than guessing a low-level `IsoZombie.new(...)` path, because the goal is a world-ready visible actor proof-of-life
+- New document:
+  - `docs/CARRIER_ISOZOMBIE_SPIKE_IMPL_2026-03-14.md`
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate

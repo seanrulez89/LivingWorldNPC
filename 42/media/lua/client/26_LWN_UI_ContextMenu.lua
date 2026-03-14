@@ -329,6 +329,12 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
+    settingsSub:addOption("Debug: Spawn NPC Near Player (IsoZombie Spike)", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayerIsoZombie then
+            LWN.DebugTools.spawnOneNearPlayerIsoZombie(p)
+        end
+    end)
+
     settingsSub:addOption("Debug: Delete Nearest NPC", player, function(p)
         traceContextCandidate("debug.delete.request", nil, "delete_nearest_npc", nil)
         if LWN.DebugTools and LWN.DebugTools.deleteNearestNpc then
