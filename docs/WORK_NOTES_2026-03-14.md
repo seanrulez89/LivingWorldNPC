@@ -254,6 +254,16 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/CARRIER_ISOZOMBIE_HOSTILITY_EXPLORATION_2026-03-14.md`
 
+## 2026-03-14 friendly-shell attack suppression probe
+- Added a narrow follow-up probe for friendly-shell damage suppression using a reference-backed control point.
+- Change made:
+  - `IsoZombie` now applies `setGodMod(true)` only when `relationshipCombatPolicy(record).allowPlayerAttack == false`
+  - neutral/hostile states turn god mode back off
+- Important reason for this approach:
+  - it is much easier to reason about and revert than trying to intercept every player attack path immediately
+- New document:
+  - `docs/CARRIER_ISOZOMBIE_FRIENDLY_ATTACK_SUPPRESSION_2026-03-14.md`
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate
