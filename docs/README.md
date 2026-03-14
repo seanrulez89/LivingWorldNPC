@@ -31,6 +31,8 @@ This directory contains research notes, audits, workflow references, and experim
   - proof-of-life `IsoSurvivor` carrier experiment, including constructor fallback strategy and test path
 - `CARRIER_ISOZOMBIE_SPIKE_PLAN_2026-03-14.md`
   - planning document for the next embodied carrier experiment using `IsoZombie`
+- `CARRIER_EXPERIMENT_RESULTS_2026-03-14.md`
+  - consolidated result summary for the `IsoPlayer` and `IsoSurvivor` experiments, plus the current next-step verdict
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`

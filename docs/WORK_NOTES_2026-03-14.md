@@ -160,6 +160,17 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/CARRIER_ISOZOMBIE_SPIKE_PLAN_2026-03-14.md`
 
+## 2026-03-14 carrier experiment result consolidation
+- Confirmed current standing after live testing:
+  - `IsoPlayer` still spawns and deletes stably enough to test, but remains transparent while alive
+  - `IsoSurvivor` no longer crashes the game after reject-path hardening, but still fails as a runtime-ready carrier and is blocked before embodiment proceeds
+- Wrote a consolidated result summary and verdict document:
+  - `docs/CARRIER_EXPERIMENT_RESULTS_2026-03-14.md`
+- Current practical direction:
+  - keep the adapter/canonical architecture
+  - stop treating `IsoSurvivor` as the likely next carrier
+  - treat `IsoZombie` as the next embodied-carrier spike candidate
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate
