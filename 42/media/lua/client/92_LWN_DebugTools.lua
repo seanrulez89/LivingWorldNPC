@@ -279,7 +279,7 @@ function DebugTools.toggleEnabled()
     return state.devToolsEnabled
 end
 
-function DebugTools.spawnOneNearPlayer(player)
+local function spawnOneNearPlayerWithCarrier(player, carrierKind)
     if not player then return nil end
 
     local roomOk, roomDetail = makeRoomForDebugSpawn(player)
@@ -308,23 +308,37 @@ function DebugTools.spawnOneNearPlayer(player)
     record.debugSpawnOnly = true
     record.embodiment.state = "eligible"
     record.embodiment.cooldownUntilHour = worldAgeHours()
+    record.embodiment.preferredCarrierKind = carrierKind or "isoplayer"
+    record.embodiment.carrierKind = carrierKind or "isoplayer"
 
     Store.addNPC(record)
 
     local actor = LWN.EmbodimentManager.tryEmbody(record, player)
     if actor then
-        sayInfo(player, string.format("Spawned embodied NPC %s", record.id))
+        sayInfo(player, string.format("Spawned embodied NPC %s via %s", record.id, tostring(record.embodiment and record.embodiment.carrierKind or carrierKind)))
     else
+        local handle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
+        local handleDetail = handle and handle.detail or nil
         local failure = LWN.ActorFactory and LWN.ActorFactory.getLastFailure and LWN.ActorFactory.getLastFailure() or nil
-        if failure and failure.npcId == record.id then
+        if handleDetail then
+            sayInfo(player, string.format("Spawn failed for %s via %s: %s", record.id, tostring(carrierKind), tostring(handleDetail)))
+        elseif failure and failure.npcId == record.id then
             sayInfo(player, string.format("Spawn failed for %s; see console for ActorFactory failure details", record.id))
         else
             local reason = record.embodiment and record.embodiment.lastFailureReason or "unknown"
             local detail = record.embodiment and record.embodiment.lastFailureDetail or ""
-            sayInfo(player, string.format("Spawn blocked for %s: %s %s", record.id, tostring(reason), tostring(detail)))
+            sayInfo(player, string.format("Spawn blocked for %s via %s: %s %s", record.id, tostring(carrierKind), tostring(reason), tostring(detail)))
         end
     end
     return record, actor
+end
+
+function DebugTools.spawnOneNearPlayer(player)
+    return spawnOneNearPlayerWithCarrier(player, "isoplayer")
+end
+
+function DebugTools.spawnOneNearPlayerIsoSurvivor(player)
+    return spawnOneNearPlayerWithCarrier(player, "isosurvivor")
 end
 
 function DebugTools.dumpLastActorFailure(player)

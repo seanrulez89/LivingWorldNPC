@@ -62,6 +62,9 @@ function Adapter.resolveKind(record, options)
     end
 
     local embodiment = record and record.embodiment or nil
+    if embodiment and embodiment.preferredCarrierKind and Carriers[embodiment.preferredCarrierKind] then
+        return embodiment.preferredCarrierKind
+    end
     if embodiment and embodiment.carrierKind and Carriers[embodiment.carrierKind] then
         return embodiment.carrierKind
     end

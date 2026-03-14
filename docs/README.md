@@ -27,6 +27,8 @@ This directory contains research notes, audits, workflow references, and experim
   - first adapter boundary draft plus the initial runtime-handle bridge for future carrier migration
 - `CARRIER_ADAPTER_MIGRATION_PASS_2026-03-14.md`
   - first real spawn/sync/retire routing pass from legacy actor calls into the adapter
+- `CARRIER_ISOSURVIVOR_SPIKE_2026-03-14.md`
+  - proof-of-life `IsoSurvivor` carrier experiment, including constructor fallback strategy and test path
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`

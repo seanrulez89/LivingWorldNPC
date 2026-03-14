@@ -133,6 +133,20 @@ This file is for work performed on 2026-03-14 only.
   - this is still not the full migration
   - legacy `ActorFactory` / `ActorSync` still sit behind the current `isoplayer` carrier implementation
 
+## 2026-03-14 IsoSurvivor carrier spike pass
+- Added a proof-of-life `IsoSurvivor` carrier implementation behind the adapter.
+- New runtime code:
+  - `34_LWN_Carrier_IsoSurvivor.lua`
+- Added targeted carrier selection support through:
+  - `record.embodiment.preferredCarrierKind`
+- Added a dedicated debug spawn entry:
+  - `DebugTools.spawnOneNearPlayerIsoSurvivor(player)`
+- Constructor strategy is intentionally multi-path because practical Lua examples were scarce:
+  - try `SurvivorFactory.InstansiateInCell(...)`
+  - then several `IsoSurvivor.new(...)` signatures
+- New document:
+  - `docs/CARRIER_ISOSURVIVOR_SPIKE_2026-03-14.md`
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate
