@@ -288,6 +288,27 @@ local function summarizeCleanupObjects(leftovers, actor)
     return string.format("count=%d objects=%s", #leftovers, table.concat(parts, ";"))
 end
 
+local function shouldTraceLeftoverSnapshot(leftovers, actor)
+    if not leftovers or #leftovers == 0 then
+        return false
+    end
+
+    if #leftovers ~= 1 then
+        return true
+    end
+
+    local obj = leftovers[1]
+    if not obj then
+        return false
+    end
+
+    if actor and obj == actor and protectedCall(obj, "isExistInTheWorld") ~= true then
+        return false
+    end
+
+    return true
+end
+
 local function clearUiTargets(npcId)
     if not npcId then return end
 
@@ -933,10 +954,16 @@ function Embody.tickDeathLifecycle(record, actor, source)
         or (now - latchedAt) >= timeout
 
     if not shouldCleanup then
-        traceCleanup("death.awaiting_corpse", record.id, record, actor, {
-            reason = source,
-            detail = string.format("latchedAt=%.4f corpseSeen=%s actorWorld=%s", latchedAt, tostring(death.corpseSeen), tostring(actorWorld)),
-        })
+        local traceNow = now
+        local lastTrace = tonumber(death.lastAwaitingCorpseTraceAt or 0) or 0
+        if lastTrace <= 0 or (traceNow - lastTrace) >= 0.0005 then
+            death.lastAwaitingCorpseTraceAt = traceNow
+            record.embodiment.death = death
+            traceCleanup("death.awaiting_corpse", record.id, record, actor, {
+                reason = source,
+                detail = string.format("latchedAt=%.4f corpseSeen=%s actorWorld=%s", latchedAt, tostring(death.corpseSeen), tostring(actorWorld)),
+            })
+        end
         return true
     end
 
@@ -1127,10 +1154,12 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
             reason = reason,
         })
     else
-        traceCleanup("leftover.snapshot", npcId, record, actor, {
-            reason = reason,
-            detail = summarizeCleanupObjects(leftovers, actor),
-        })
+        if shouldTraceLeftoverSnapshot(leftovers, actor) then
+            traceCleanup("leftover.snapshot", npcId, record, actor, {
+                reason = reason,
+                detail = summarizeCleanupObjects(leftovers, actor),
+            })
+        end
         for _, obj in ipairs(leftovers) do
             if obj ~= actor then
                 local kind = worldObjectKind(obj)

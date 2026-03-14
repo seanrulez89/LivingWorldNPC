@@ -83,6 +83,17 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/DEBUG_DELETE_COMBAT_GUARD_2026-03-14.md`
 
+## 2026-03-14 log quality tuning pass
+- Applied a small log-only cleanup pass after delete behavior stabilized.
+- Changes made:
+  - throttled repeated `death.awaiting_corpse` cleanup traces
+  - suppressed `leftover.snapshot` when the only leftover is the same detached actor already out of world
+- Intent:
+  - reduce noise
+  - preserve the more meaningful cleanup traces
+- New document:
+  - `docs/LOG_QUALITY_TUNING_2026-03-14.md`
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate

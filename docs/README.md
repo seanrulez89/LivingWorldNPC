@@ -19,6 +19,8 @@ This directory contains research notes, audits, workflow references, and experim
   - safety hardening for live `IsoPlayer` debug cleanup after a `getCurrentSquare()==nil` crash during deletion
 - `DEBUG_DELETE_COMBAT_GUARD_2026-03-14.md`
   - simplified delete contract: block debug delete during combat, allow immediate delete only outside combat
+- `LOG_QUALITY_TUNING_2026-03-14.md`
+  - small trace-noise cleanup for death waiting and trivial detached-self leftover snapshots
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`
