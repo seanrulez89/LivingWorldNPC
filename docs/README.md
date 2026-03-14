@@ -37,6 +37,8 @@ This directory contains research notes, audits, workflow references, and experim
   - first implementation pass for the `IsoZombie` proof-of-life carrier experiment
 - `CARRIER_ISOZOMBIE_RESOLVE_HARDENING_2026-03-14.md`
   - hardening pass for `IsoZombie` continuity: longer grace, carrier-aware resolve, and recovery from the carrier handle
+- `CARRIER_ISOZOMBIE_SYNC_UI_BRANCHING_2026-03-14.md`
+  - carrier-aware sync and UI targeting changes for `IsoZombie`, removing human-only setter assumptions and allowing managed zombie carriers through context targeting
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`

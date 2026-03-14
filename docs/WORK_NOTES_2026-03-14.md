@@ -194,6 +194,14 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/CARRIER_ISOZOMBIE_RESOLVE_HARDENING_2026-03-14.md`
 
+## 2026-03-14 IsoZombie sync/UI branching pass
+- After `IsoZombie` finally stayed visible in-world, the main blockers shifted to sync and interaction layers.
+- Main fixes:
+  - `ActorSync.enforceEmbodiedFlags()` now branches for `carrierKind == isozombie` and skips human/player-specific setters like `setNPC()` that were causing repeated NPEs
+  - context-menu targeting now distinguishes ordinary zombies from `LWN`-managed zombie carriers and can allow the managed carrier through the targetable-NPC path
+- New document:
+  - `docs/CARRIER_ISOZOMBIE_SYNC_UI_BRANCHING_2026-03-14.md`
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate
