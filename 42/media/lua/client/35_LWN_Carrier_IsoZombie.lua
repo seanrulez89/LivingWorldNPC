@@ -113,7 +113,45 @@ local function relationshipCombatPolicy(record)
     }
 end
 
-local function applyBasicZombieCarrierFlags(record, actor)
+local function getPrimaryPlayer(options)
+    local player = options and options.player or nil
+    if player then return player end
+    if getSpecificPlayer then
+        return getSpecificPlayer(0)
+    end
+    return nil
+end
+
+local function applyRelationshipCombatState(record, actor, options)
+    if not actor then return nil end
+    local policy = relationshipCombatPolicy(record)
+    local player = getPrimaryPlayer(options)
+
+    if policy.shouldNeutralizeCarrier == true then
+        protectedCall(actor, "setUseless", true)
+        protectedCall(actor, "setTargetSeenTime", 0)
+        protectedCall(actor, "setCanWalk", false)
+        protectedCall(actor, "setNoTeeth", true)
+        protectedCall(actor, "setTarget", nil)
+        protectedCall(actor, "setAttackedBy", nil)
+    else
+        protectedCall(actor, "setUseless", false)
+        protectedCall(actor, "setCanWalk", true)
+        protectedCall(actor, "setNoTeeth", policy.allowCarrierAttackPlayer ~= true)
+        if policy.allowCarrierAttackPlayer == true and player then
+            protectedCall(actor, "setTarget", player)
+            protectedCall(actor, "faceThisObject", player)
+            protectedCall(actor, "pathToCharacter", player)
+        else
+            protectedCall(actor, "setTarget", nil)
+            protectedCall(actor, "setTargetSeenTime", 0)
+        end
+    end
+
+    return policy
+end
+
+local function applyBasicZombieCarrierFlags(record, actor, options)
     if not actor then return end
     local modData = protectedCall(actor, "getModData")
     local policy = relationshipCombatPolicy(record)
@@ -128,14 +166,7 @@ local function applyBasicZombieCarrierFlags(record, actor)
         modData.LWN_HostilityReason = policy.reason
     end
 
-    if policy.shouldNeutralizeCarrier == true then
-        protectedCall(actor, "setUseless", true)
-        protectedCall(actor, "setTargetSeenTime", 0)
-        protectedCall(actor, "setCanWalk", false)
-    else
-        protectedCall(actor, "setUseless", false)
-        protectedCall(actor, "setCanWalk", true)
-    end
+    applyRelationshipCombatState(record, actor, options)
 
     protectedCall(actor, "setFakeDead", false)
     protectedCall(actor, "setCrawler", false)
@@ -268,7 +299,7 @@ function Carrier.spawn(record, options)
         }
     end
 
-    applyBasicZombieCarrierFlags(record, actor)
+    applyBasicZombieCarrierFlags(record, actor, options)
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
     local spawnedAt = worldAgeHours()
     trace(runtimeOk and "spawn.runtime_ready" or "spawn.pending_settle", record, string.format("spawn=%s | %s", tostring(spawnDetail), tostring(runtimeDetail)))
@@ -340,7 +371,7 @@ function Carrier.sync(record, handle, options)
 
     handle.runtime.settlePending = false
     handle.runtime.runtimeDetail = runtimeDetail
-    applyBasicZombieCarrierFlags(record, actor)
+    applyBasicZombieCarrierFlags(record, actor, options)
 
     local anchor = record and record.anchor or nil
     if anchor then
