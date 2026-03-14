@@ -194,9 +194,19 @@ end
 
 local function isManagedActor(obj)
     if not obj then return false end
-    if getNpcIdFromActor(obj) == nil then return false end
+    local npcId = getNpcIdFromActor(obj)
+    if npcId == nil then return false end
     if protectedCall(obj, "isDestroyed") == true then return false end
     if protectedCall(obj, "isExistInTheWorld") == false then return false end
+
+    local modData = protectedCall(obj, "getModData")
+    local carrierKind = modData and modData.LWN_CarrierKind or nil
+    if carrierKind == "isozombie" then
+        return protectedCall(obj, "isZombie") == true
+            and (protectedCall(obj, "getCurrentSquare") or protectedCall(obj, "getSquare")) ~= nil
+            and protectedCall(obj, "getStats") ~= nil
+    end
+
     return protectedCall(obj, "getBodyDamage") ~= nil
         and protectedCall(obj, "getStats") ~= nil
         and protectedCall(obj, "getInventory") ~= nil

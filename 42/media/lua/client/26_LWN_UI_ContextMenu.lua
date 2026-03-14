@@ -191,7 +191,14 @@ local function isTargetableNpcActor(actor)
     end
 
     if not isManagedActor(actor) then
-        local reason = kind == "player" and "stale_player_actor" or "not_managed_actor"
+        local reason
+        if kind == "player" then
+            reason = "stale_player_actor"
+        elseif kind == "zombie" and isManagedZombieCarrier(actor) then
+            reason = "managed_zombie_not_finalized"
+        else
+            reason = "not_managed_actor"
+        end
         traceContextCandidate("candidate.rejected", actor, reason, nil)
         return false
     end
