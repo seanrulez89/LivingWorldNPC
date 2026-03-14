@@ -880,6 +880,13 @@ function Embody.getUsableActorByNpcId(npcId)
     if getActorCleanupState(actor) then
         return nil, record
     end
+    local handle = Embody.getCarrierHandle(record)
+    if handle and LWN.CarrierAdapter and LWN.CarrierAdapter.isUsable then
+        handle.actor = handle.actor or actor
+        if LWN.CarrierAdapter.isUsable(handle) then
+            return actor, record
+        end
+    end
     if LWN.ActorFactory and LWN.ActorFactory.isManagedActor and not LWN.ActorFactory.isManagedActor(actor) then
         return nil, record
     end

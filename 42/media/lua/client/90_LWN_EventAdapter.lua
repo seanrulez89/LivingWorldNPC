@@ -793,6 +793,45 @@ getAnchorSquare = function(record)
     return cell:getGridSquare(cx, cy, cz)
 end
 
+local function getCarrierHandle(record)
+    if not record or not LWN.EmbodimentManager or not LWN.EmbodimentManager.getCarrierHandle then
+        return nil
+    end
+    return LWN.EmbodimentManager.getCarrierHandle(record)
+end
+
+local function getCarrierKind(record)
+    local handle = getCarrierHandle(record)
+    return handle and handle.kind or record and record.embodiment and record.embodiment.carrierKind or nil
+end
+
+local function isCarrierActorUsable(record, actor)
+    if not actor then return false end
+
+    local handle = getCarrierHandle(record)
+    if handle and LWN.CarrierAdapter and LWN.CarrierAdapter.isUsable then
+        handle.actor = handle.actor or actor
+        if LWN.CarrierAdapter.isUsable(handle) then
+            return true
+        end
+    end
+
+    if getActiveNpcId(actor) ~= record.id then
+        return false
+    end
+
+    return (not actor.isExistInTheWorld or actor:isExistInTheWorld() ~= false)
+        and (not LWN.ActorFactory or not LWN.ActorFactory.hasRuntimeCore or LWN.ActorFactory.hasRuntimeCore(actor))
+end
+
+local function missingActorThreshold(record)
+    local carrierKind = getCarrierKind(record)
+    if carrierKind == "isozombie" then
+        return 40
+    end
+    return 10
+end
+
 local function resolveEmbodiedActor(record)
     if not record then
         traceStage("resolveEmbodiedActor.lifecycle_blocked", record, nil, {
@@ -859,11 +898,7 @@ local function resolveEmbodiedActor(record)
             end
         end
     end
-    if actor
-        and getActiveNpcId(actor) == record.id
-        and (not actor.isExistInTheWorld or actor:isExistInTheWorld() ~= false)
-        and (not LWN.ActorFactory or not LWN.ActorFactory.hasRuntimeCore or LWN.ActorFactory.hasRuntimeCore(actor))
-    then
+    if actor and isCarrierActorUsable(record, actor) then
         return actor
     end
 
@@ -871,10 +906,14 @@ local function resolveEmbodiedActor(record)
     if actor then
         local registered = LWN.EmbodimentManager.registerActor(record, actor)
         if registered ~= false then
+            if LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
+                LWN.EmbodimentManager.touchGrace(record)
+            end
             traceEmbodiedDeathLike(record, actor, "resolveEmbodiedActor.relinked")
             traceStage("resolveEmbodiedActor.relinked_near_anchor", record, actor, {
                 source = "resolveEmbodiedActor",
                 square = getAnchorSquare(record),
+                detail = string.format("carrierKind=%s", tostring(getCarrierKind(record))),
             })
         else
             traceStage("resolveEmbodiedActor.relink_rejected", record, actor, {
@@ -1269,17 +1308,32 @@ function Adapter.onTick()
                 end
             else
                 record.embodiment.missingTicks = (record.embodiment.missingTicks or 0) + 1
+                local threshold = missingActorThreshold(record)
                 if record.embodiment.missingTicks == 1 then
                     traceStage("onTick.actor_missing", record, nil, {
                         source = "onTick",
-                        detail = "missingTicks=1",
+                        detail = string.format("missingTicks=1 carrierKind=%s threshold=%s", tostring(getCarrierKind(record)), tostring(threshold)),
                     })
                     probeDeathObjects(record, nil, "onTick.actor_missing")
                 end
-                if record.embodiment.missingTicks >= 10 then
+                local carrierHandle = getCarrierHandle(record)
+                local carrierActor = carrierHandle and carrierHandle.actor or nil
+                if carrierActor and getActiveNpcId(carrierActor) == record.id and protectedCall(carrierActor, "isExistInTheWorld") == true then
+                    if LWN.EmbodimentManager and LWN.EmbodimentManager.registerActor then
+                        LWN.EmbodimentManager.registerActor(record, carrierActor)
+                    end
+                    if LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
+                        LWN.EmbodimentManager.touchGrace(record)
+                    end
+                    record.embodiment.missingTicks = 0
+                    traceStage("onTick.actor_missing_recovered_from_handle", record, carrierActor, {
+                        source = "onTick",
+                        detail = string.format("carrierKind=%s", tostring(getCarrierKind(record))),
+                    })
+                elseif record.embodiment.missingTicks >= threshold then
                     traceStage("onTick.actor_missing_threshold", record, nil, {
                         source = "onTick",
-                        detail = "missingTicks=" .. tostring(record.embodiment.missingTicks),
+                        detail = string.format("missingTicks=%s carrierKind=%s threshold=%s", tostring(record.embodiment.missingTicks), tostring(getCarrierKind(record)), tostring(threshold)),
                     })
                     hideEmbodiedRecord(record, nil, "actor_lost", "resolveEmbodiedActor returned nil")
                 end
