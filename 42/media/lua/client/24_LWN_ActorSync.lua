@@ -190,7 +190,23 @@ local function settlePendingPresentation(record, actor, source)
     if not actor then return end
 
     local modData = protectedCall(actor, "getModData")
-    if not modData or modData.LWN_PresentationPending ~= true then
+    if not modData then
+        return
+    end
+
+    if modData.LWN_PostCreateHeavyPending == true
+        and LWN.ActorFactory
+        and LWN.ActorFactory.finalizePostCreatePresentation
+    then
+        LWN.ActorFactory.finalizePostCreatePresentation(record, actor, protectedCall(actor, "getDescriptor"), source .. ".heavy_fallback")
+        traceStage(source .. ".presentation_heavy_fallback", record, actor, {
+            source = source,
+            detail = "postCreateHookMissingOrLate=true",
+        })
+        return
+    end
+
+    if modData.LWN_PresentationPending ~= true then
         return
     end
 

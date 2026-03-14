@@ -8,11 +8,13 @@ This directory contains research notes, audits, workflow references, and experim
 - the strongest current unverified hypothesis is an `IsoPlayer` carrier / actor-class mismatch in the alive presentation path
 - recommended next manual experiments:
   1. A/B test a carrier path away from `IsoPlayer`
-  2. move the first full presentation build to the post-create hook only
-  3. force an explicit alive-state animator/state reset after refresh
+  2. evaluate the new post-create-only heavy presentation path added on 2026-03-14
+  3. verify whether the explicit alive-state animator/state reset pass changes visible embodiment results
 
 ## Start here
 
+- `ISO_PLAYER_HARDENING_2026-03-14.md`
+  - concrete code-level hardening pass for the current `IsoPlayer` route and what result should trigger abandonment
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`

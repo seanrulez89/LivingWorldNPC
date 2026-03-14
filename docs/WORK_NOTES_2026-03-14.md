@@ -37,10 +37,23 @@ This file is for work performed on 2026-03-14 only.
 - Updated `AGENTS.md` wording so the repo root guidance is tooling/agent-neutral instead of Codex-specific.
 - Updated `docs/GIT_WORKFLOW_2026-03-11.md` wording so the workflow rule reads as a general project rule rather than a Codex-only one.
 
+## 2026-03-14 IsoPlayer hardening pass
+- Performed a direct code pass focused on whether the current `IsoPlayer` route deserves one more serious attempt before abandonment.
+- Changes made:
+  - deferred the heavy presentation build from `createActor()` to the post-create hook path
+  - added `finalizePostCreatePresentation(...)` as the single heavy finalization stage
+  - added an explicit alive-state animation/model rebuild pass using outfit reload, animation-player release, state reset attempt, and model-manager refresh
+  - added an `ActorSync` fallback when post-create heavy finalization is still pending
+- Validation performed:
+  - `./scripts/validate-wsl.sh`
+  - `luac -p` passed for all changed Lua files
+- New document:
+  - `docs/ISO_PLAYER_HARDENING_2026-03-14.md`
+
 ## Recommended next direct coding focus
-1. A/B test a carrier path away from `IsoPlayer`.
-2. If the carrier stays the same, move the first full presentation build to the post-create hook only.
-3. If that still fails, add one explicit alive-state animator/state reset pass after refresh.
+1. Run the next in-game verdict pass against the hardened path.
+2. If alive NPCs are still transparent after `finalizePostCreatePresentation.ready` and `action=alive_state_rebuild`, treat that as strong evidence against the current `IsoPlayer` route.
+3. If visibility improves, keep the post-create finalization contract and continue narrowing any remaining edge cases.
 
 ## Git note
 - At the start of this audit, `git status --short --branch` reported a clean working tree on `master` tracking `origin/master`.

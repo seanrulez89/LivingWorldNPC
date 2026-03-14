@@ -14,9 +14,11 @@ Use one evening test pass to decide whether the current LWN architecture is stil
 
 Watch for:
 
-- `createActor.presentation_ready`
+- `createActor.await_post_create`
+- `finalizePostCreatePresentation.ready`
 - `refreshEmbodiedPresentation.ready`
 - `onCreateLivingCharacter.*`
+- `action=alive_state_rebuild`
 - absence of repeated alpha-repair spam
 
 ### 2. Rapid spawn / despawn stability

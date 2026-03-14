@@ -1160,6 +1160,55 @@ local function refreshModelManager(actor, reason)
     return after
 end
 
+local function rebuildAliveAnimationState(actor, reason)
+    if not actor then return false end
+
+    local modData = protectedCall(actor, "getModData")
+    local touched = false
+
+    if protectedCall(actor, "hasAnimationPlayer") == true then
+        protectedCall(actor, "releaseAnimationPlayer")
+        touched = true
+    end
+
+    protectedCall(actor, "setForceOverrideAnim", false)
+    protectedCall(actor, "setAnimForecasted", 0)
+    protectedCall(actor, "checkUpdateModelTextures")
+    protectedCall(actor, "reloadOutfit")
+
+    local defaultState = protectedCall(actor, "getDefaultState")
+    local currentState = protectedCall(actor, "getCurrentState")
+    if defaultState and currentState ~= defaultState then
+        protectedCall(actor, "changeState", defaultState)
+        touched = true
+    end
+
+    protectedCall(actor, "resetModel")
+    protectedCall(actor, "resetModelNextFrame")
+    refreshModelManager(actor, reason or "alive_state_rebuild")
+
+    if modData then
+        modData.LWN_LastAliveStateRebuildReason = reason
+        modData.LWN_LastAliveStateRebuildAt = worldAgeHours()
+        modData.LWN_AliveStateRebuildCount = (tonumber(modData.LWN_AliveStateRebuildCount) or 0) + 1
+    end
+
+    if isDebugModeEnabled() then
+        print(string.format(
+            "[LWN][PresentationWatch] action=alive_state_rebuild | reason=%s | npcId=%s | objectRef=%s | touched=%s | currentState=%s | defaultState=%s | hasAnimationPlayer=%s",
+            safeText(reason),
+            safeText(getKnownNpcIdFromActor(actor)),
+            safeText(objectRef(actor)),
+            safeText(touched),
+            safeText(protectedCall(actor, "getCurrentStateName")),
+            safeText(defaultState),
+            safeText(protectedCall(actor, "hasAnimationPlayer"))
+        ))
+    end
+
+    return touched
+end
+
 local function repairVisibleAlpha(actor, reason)
     if not actor then return false end
 
@@ -2215,7 +2264,7 @@ function Factory.applyTraits(record, actor)
     end
 end
 
-function Factory.applyLoadout(record, actor, descriptor)
+local function seedLoadoutItems(record, actor)
     ensureVisibleClothing(actor)
 
     local primaryWeapon = record.inventory
@@ -2224,6 +2273,10 @@ function Factory.applyLoadout(record, actor, descriptor)
         or nil
 
     ensurePrimaryWeapon(actor, primaryWeapon)
+end
+
+function Factory.applyLoadout(record, actor, descriptor)
+    seedLoadoutItems(record, actor)
     local desc, detail = materializeDescriptorVisual(record or {}, actor, descriptor, "apply_loadout", {
         dressup = false,
         initSpriteParts = true,
@@ -2241,6 +2294,38 @@ function Factory.applyLoadout(record, actor, descriptor)
     })
     refreshActorPresentation(actor)
     touchPresentationStage(record, "ready", "applyLoadout", true)
+end
+
+function Factory.finalizePostCreatePresentation(record, actor, descriptor, source)
+    if not actor then return end
+
+    local finalizeSource = source or "finalizePostCreatePresentation"
+    touchRecordStage(record, "presenting", finalizeSource)
+    touchPresentationStage(record, "refreshing", finalizeSource, false)
+    Factory.refreshEmbodiedPresentation(record, actor, descriptor)
+    Factory.applyLoadout(record, actor, descriptor)
+    rebuildAliveAnimationState(actor, finalizeSource)
+    protectedCall(actor, "setHealth", record and record.stats and record.stats.health or protectedCall(actor, "getHealth"))
+    refreshActorPresentation(actor)
+    touchRecordStage(record, "active", finalizeSource)
+    touchPresentationStage(record, "ready", finalizeSource, true)
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_PostCreateHeavyPending = false
+        modData.LWN_PostCreateHeavyAppliedBy = finalizeSource
+        modData.LWN_PostCreateHeavyAppliedAt = worldAgeHours()
+    end
+
+    stageTrace("ActorFactory", "finalizePostCreatePresentation.ready", record, actor, descriptor or protectedCall(actor, "getDescriptor"), {
+        source = finalizeSource,
+        detail = string.format(
+            "currentState=%s modelRegistered=%s aliveStateRebuilds=%s",
+            safeText(protectedCall(actor, "getCurrentStateName")),
+            safeText(isModelRegistered(actor)),
+            safeText(modData and modData.LWN_AliveStateRebuildCount or 0)
+        ),
+    })
 end
 
 function Factory.createActor(record, player)
@@ -2394,24 +2479,30 @@ function Factory.createActor(record, player)
     end
 
     Factory.applyTraits(record, actor)
-    Factory.refreshEmbodiedPresentation(record, actor, desc)
-    Factory.applyLoadout(record, actor, desc)
+    seedLoadoutItems(record, actor)
     protectedCall(actor, "setHealth", record.stats and record.stats.health or 100)
-    refreshActorPresentation(actor)
-    touchRecordStage(record, "active", "createActor.presentation_ready")
-    touchPresentationStage(record, "ready", "createActor.presentation_ready", true)
-    stageTrace("ActorFactory", "createActor.presentation_ready", record, actor, desc, {
+
+    if modData then
+        modData.LWN_PostCreateHeavyPending = true
+        modData.LWN_PostCreateHeavyAppliedBy = nil
+        modData.LWN_PostCreateHeavyAppliedAt = nil
+    end
+
+    touchRecordStage(record, "presenting", "createActor.await_post_create")
+    touchPresentationStage(record, "pending_post_create", "createActor.await_post_create", false)
+    stageTrace("ActorFactory", "createActor.await_post_create", record, actor, desc, {
         source = "createActor",
         square = square,
         spawnSource = spawnSource,
         descriptorMode = descriptorMode,
+        detail = "heavy_presentation_deferred_to_post_create_hook",
     })
 
     logInfo("created embodied npc", record, actor, {
         source = "createActor",
         square = square,
         spawnSource = spawnSource,
-        detail = descriptorMode,
+        detail = descriptorMode .. ":post_create_deferred",
     })
 
     return actor

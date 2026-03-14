@@ -1109,7 +1109,9 @@ local function handleCreatedCharacter(actor, hookName)
         square = anchorSquare,
         detail = createHookComparisonDetail(record, actor, hookName, modData, "phase=world_ready"),
     })
-    if LWN.ActorFactory and LWN.ActorFactory.refreshEmbodiedPresentation then
+    if LWN.ActorFactory and LWN.ActorFactory.finalizePostCreatePresentation then
+        LWN.ActorFactory.finalizePostCreatePresentation(record, actor, protectedCall(actor, "getDescriptor"), hookName)
+    elseif LWN.ActorFactory and LWN.ActorFactory.refreshEmbodiedPresentation then
         LWN.ActorFactory.refreshEmbodiedPresentation(record, actor, protectedCall(actor, "getDescriptor"))
     end
     traceStage(stageBase .. ".presentation_refreshed", record, actor, {
