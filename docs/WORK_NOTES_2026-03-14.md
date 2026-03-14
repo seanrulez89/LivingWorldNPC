@@ -202,6 +202,15 @@ This file is for work performed on 2026-03-14 only.
 - New document:
   - `docs/CARRIER_ISOZOMBIE_SYNC_UI_BRANCHING_2026-03-14.md`
 
+## 2026-03-14 IsoZombie managed-target finalization
+- After `IsoZombie` became visible, persistent, and error-light, the remaining blocker for interaction was the final managed-actor check.
+- Main fixes:
+  - `ActorFactory.isManagedActor()` is now carrier-aware for `isozombie`
+  - managed zombie carriers are no longer required to satisfy human body/inventory assumptions just to be considered valid managed actors
+  - context-target rejection reason for managed zombies is now more specific when they still fail finalization
+- New document:
+  - `docs/CARRIER_ISOZOMBIE_MANAGED_TARGET_FINALIZATION_2026-03-14.md`
+
 ## Recommended next direct coding focus
 1. Re-test both cases explicitly:
    - non-combat delete should be immediate

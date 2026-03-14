@@ -39,6 +39,8 @@ This directory contains research notes, audits, workflow references, and experim
   - hardening pass for `IsoZombie` continuity: longer grace, carrier-aware resolve, and recovery from the carrier handle
 - `CARRIER_ISOZOMBIE_SYNC_UI_BRANCHING_2026-03-14.md`
   - carrier-aware sync and UI targeting changes for `IsoZombie`, removing human-only setter assumptions and allowing managed zombie carriers through context targeting
+- `CARRIER_ISOZOMBIE_MANAGED_TARGET_FINALIZATION_2026-03-14.md`
+  - final managed-actor/targetability adjustment so `IsoZombie` carriers are no longer judged by human runtime-core rules
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`
