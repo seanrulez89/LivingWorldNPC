@@ -537,6 +537,7 @@ function Embody.tryRearmHidden(record, player)
     if not companion.recruited and not record.debugSpawnOnly then return false end
 
     local now = getGameTime() and getGameTime():getWorldAgeHours() or 0
+    if record.embodiment.noAutoRearm == true then return false end
     if (record.embodiment.cooldownUntilHour or 0) > now then return false end
 
     local radius = Embody._activationRadiusFor(record)
@@ -624,7 +625,7 @@ function Embody.tryEmbody(record, player)
             source = "tryEmbody",
             detail = string.format("carrierKind=%s spawnDetail=%s", tostring(handle and handle.kind or nil), tostring(spawnResult and spawnResult.detail or nil)),
         })
-        local ok, syncErr = pcall(function()
+        local ok, syncResult = pcall(function()
             if LWN.CarrierAdapter and LWN.CarrierAdapter.sync then
                 return LWN.CarrierAdapter.sync(record, handle, {
                     mode = "full",
@@ -633,7 +634,9 @@ function Embody.tryEmbody(record, player)
             end
             return LWN.ActorSync.pushRecordToActor(record, actor)
         end)
-        if not ok then
+        local syncFailed = not ok or (type(syncResult) == "table" and syncResult.ok == false)
+        local syncErr = not ok and syncResult or (type(syncResult) == "table" and syncResult.detail or nil)
+        if syncFailed then
             print(string.format("[LWN][Embodiment] initial sync failed for %s :: %s", tostring(record.id), tostring(syncErr)))
             if LWN.CarrierAdapter and LWN.CarrierAdapter.retire then
                 LWN.CarrierAdapter.retire(record, handle, {
@@ -673,6 +676,7 @@ function Embody.tryEmbody(record, player)
         record.embodiment.missingTicks = 0
         record.embodiment.lastFailureReason = nil
         record.embodiment.lastFailureDetail = nil
+        record.embodiment.noAutoRearm = false
         touchRecordStage(record, "active", "tryEmbody.initial_sync_ok")
         Embody.touchGrace(record)
         if Embody.registerActor(record, actor) == false then

@@ -156,8 +156,8 @@ local function markManaged(record, actor)
         modData.LWN_CarrierSpike = true
     end
 
-    protectedCall(actor, "setNPC", true)
-    protectedCall(actor, "setIsNPC", true)
+    -- Avoid player-specific NPC setters here. Some IsoSurvivor instances appear to
+    -- carry a null internal `player` and throw engine-side NPEs when those setters run.
     protectedCall(actor, "setVisibleToNPCs", true)
     protectedCall(actor, "setSceneCulled", false)
     protectedCall(actor, "setInvisible", false)
@@ -167,6 +167,79 @@ local function markManaged(record, actor)
     protectedCall(actor, "reloadOutfit")
     protectedCall(actor, "checkUpdateModelTextures")
     protectedCall(actor, "onWornItemsChanged")
+end
+
+local function assessRuntimeReadiness(actor)
+    if not actor then
+        return false, "actor=nil"
+    end
+
+    local bodyDamage = protectedCall(actor, "getBodyDamage")
+    local stats = protectedCall(actor, "getStats")
+    local inventory = protectedCall(actor, "getInventory")
+    local square = protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare")
+    local inWorld = protectedCall(actor, "isExistInTheWorld") == true
+    local descriptor = protectedCall(actor, "getDescriptor")
+
+    if not bodyDamage then
+        return false, string.format(
+            "runtime_core_missing bodyDamage=nil stats=%s inventory=%s inWorld=%s squarePresent=%s descriptor=%s",
+            tostring(stats ~= nil),
+            tostring(inventory ~= nil),
+            tostring(inWorld),
+            tostring(square ~= nil),
+            tostring(descriptor ~= nil)
+        )
+    end
+
+    return true, string.format(
+        "runtime_ready bodyDamage=%s stats=%s inventory=%s inWorld=%s squarePresent=%s descriptor=%s",
+        tostring(bodyDamage ~= nil),
+        tostring(stats ~= nil),
+        tostring(inventory ~= nil),
+        tostring(inWorld),
+        tostring(square ~= nil),
+        tostring(descriptor ~= nil)
+    )
+end
+
+local function shallowRetireRejectedSurvivor(record, actor, reason)
+    if not actor then
+        return {
+            ok = true,
+            status = "retired",
+            detail = "isosurvivor_shallow_retire_actor=nil",
+        }
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_NpcId = nil
+    end
+
+    protectedCall(actor, "setInvisible", true)
+    protectedCall(actor, "removeFromSquare")
+    protectedCall(actor, "removeFromWorld")
+
+    if record and record.embodiment then
+        record.embodiment.noAutoRearm = true
+        record.embodiment.state = "hidden"
+        record.embodiment.actorId = nil
+        record.embodiment.cooldownUntilHour = worldAgeHours() + 24
+    end
+
+    trace("retire.shallow", record, string.format(
+        "reason=%s world=%s squarePresent=%s",
+        tostring(reason),
+        tostring(protectedCall(actor, "isExistInTheWorld")),
+        tostring((protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare")) ~= nil)
+    ))
+
+    return {
+        ok = true,
+        status = "retired",
+        detail = string.format("isosurvivor_shallow_retire reason=%s", tostring(reason)),
+    }
 end
 
 function Carrier.kind()
@@ -225,7 +298,32 @@ function Carrier.spawn(record, options)
     end
 
     markManaged(record, actor)
-    trace("spawn.ok", record, constructorLabel)
+    local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
+    trace(runtimeOk and "spawn.runtime_ready" or "spawn.runtime_rejected", record, string.format("constructor=%s | %s", tostring(constructorLabel), tostring(runtimeDetail)))
+
+    if runtimeOk ~= true then
+        shallowRetireRejectedSurvivor(record, actor, "isosurvivor_runtime_core_missing")
+
+        local detailText = string.format("runtime_rejected via=%s | %s", tostring(constructorLabel), tostring(runtimeDetail))
+        return {
+            ok = false,
+            actor = nil,
+            detail = detailText,
+            handle = {
+                kind = "isosurvivor",
+                actor = nil,
+                status = "failed",
+                spawnedAt = worldAgeHours(),
+                detail = detailText,
+                runtime = {
+                    constructor = constructorLabel,
+                    runtimeDetail = runtimeDetail,
+                },
+            },
+        }
+    end
+
+    trace("spawn.ok", record, string.format("constructor=%s | %s", tostring(constructorLabel), tostring(runtimeDetail)))
     return {
         ok = true,
         actor = actor,
@@ -239,6 +337,7 @@ function Carrier.spawn(record, options)
             runtime = {
                 constructor = constructorLabel,
                 square = square,
+                runtimeDetail = runtimeDetail,
             },
         },
     }
@@ -252,6 +351,16 @@ function Carrier.sync(record, handle, options)
             ok = false,
             status = "failed",
             detail = "isosurvivor_handle_actor=nil",
+        }
+    end
+
+    local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
+    if runtimeOk ~= true then
+        trace("sync.runtime_rejected", record, runtimeDetail)
+        return {
+            ok = false,
+            status = "failed",
+            detail = string.format("isosurvivor_runtime_rejected=%s", tostring(runtimeDetail)),
         }
     end
 
@@ -279,6 +388,7 @@ end
 function Carrier.retire(record, handle, options)
     record = ensureRecordShape(record)
     local actor = handle and handle.actor or nil
+    local reason = options and options.reason or "carrier_retire"
     if not actor then
         return {
             ok = true,
@@ -287,12 +397,16 @@ function Carrier.retire(record, handle, options)
         }
     end
 
+    if reason == "isosurvivor_runtime_core_missing" or reason == "tryEmbody.initial_sync_failed" then
+        return shallowRetireRejectedSurvivor(record, actor, reason)
+    end
+
     if LWN.ActorFactory and LWN.ActorFactory.cleanupActor then
-        local result = LWN.ActorFactory.cleanupActor(actor, options and options.reason or "carrier_retire") or {}
+        local result = LWN.ActorFactory.cleanupActor(actor, reason) or {}
         return {
             ok = result.completed ~= false,
             status = result.completed == false and (result.deferred and "retiring" or "retire_blocked") or "retired",
-            detail = result.detail or options and options.reason or "carrier_retire",
+            detail = result.detail or reason,
         }
     end
 
@@ -301,7 +415,7 @@ function Carrier.retire(record, handle, options)
     return {
         ok = true,
         status = "retired",
-        detail = options and options.reason or "isosurvivor_removed_directly",
+        detail = reason,
     }
 end
 
