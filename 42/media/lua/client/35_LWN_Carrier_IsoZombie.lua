@@ -36,12 +36,64 @@ local function safeText(value)
     return text
 end
 
+local function normalizeSampleValue(value)
+    local text = safeText(value)
+    text = text:gsub("%-?%d+%.%d+", "#")
+    text = text:gsub("%-?%d+", "#")
+    text = text:gsub("%s+", " ")
+    return text
+end
+
+local function sampleDebugEvent(bucketName, key, signature, options)
+    if LWN.ActorFactory and LWN.ActorFactory.sampleDebugEvent then
+        return LWN.ActorFactory.sampleDebugEvent(bucketName, key, signature, options)
+    end
+    return {
+        emit = true,
+        reason = "local_fallback",
+        seenCount = 1,
+        suppressedCount = 0,
+    }
+end
+
+local function sampleSuffix(sample)
+    if not sample then return "" end
+
+    local parts = {}
+    if sample.reason and sample.reason ~= "new" then
+        parts[#parts + 1] = "sample=" .. safeText(sample.reason)
+    end
+    if (sample.suppressedCount or 0) > 0 then
+        parts[#parts + 1] = "suppressed=" .. safeText(sample.suppressedCount)
+    end
+    if #parts == 0 then
+        return ""
+    end
+    return " | " .. table.concat(parts, " | ")
+end
+
 local function trace(stage, record, detail)
+    local sample = sampleDebugEvent(
+        "carrier_isozombie_trace",
+        table.concat({
+            safeText(record and record.id or nil),
+            safeText(stage),
+        }, "|"),
+        table.concat({
+            safeText(stage),
+            normalizeSampleValue(detail),
+        }, "|")
+    )
+    if sample.emit ~= true then
+        return
+    end
+
     print(string.format(
-        "[LWN][CarrierIsoZombie] stage=%s | npcId=%s | detail=%s",
+        "[LWN][CarrierIsoZombie] stage=%s | npcId=%s | detail=%s%s",
         safeText(stage),
         safeText(record and record.id or nil),
-        safeText(detail)
+        safeText(detail),
+        sampleSuffix(sample)
     ))
 end
 
@@ -204,6 +256,27 @@ local function applyBasicZombieCarrierFlags(record, actor, options)
         modData.LWN_FriendlySuppression = friendlySuppressionSummary(policy)
         modData.LWN_HostilityReason = policy.reason
         modData.LWN_RelationshipPolicyAppliedAt = worldAgeHours()
+    end
+
+    local hybridSources = LWN.ActorFactory
+        and LWN.ActorFactory.stampHybridDebugMetadata
+        and LWN.ActorFactory.stampHybridDebugMetadata(record, actor, nil, {
+            descriptorSource = "npc_record_survivor_desc_planned",
+            relationPolicy = summary,
+        })
+        or nil
+    if modData and hybridSources then
+        local previousSummary = modData.LWN_LastHybridSummaryLogged
+        if previousSummary ~= hybridSources.summary
+            and LWN.ActorFactory
+            and LWN.ActorFactory.debugStage
+        then
+            modData.LWN_LastHybridSummaryLogged = hybridSources.summary
+            LWN.ActorFactory.debugStage("CarrierIsoZombie", "hybrid.summary", record, actor, nil, {
+                source = "Carrier_IsoZombie",
+                detail = hybridSources.summary,
+            })
+        end
     end
 
     applyRelationshipCombatState(record, actor, options, policy)

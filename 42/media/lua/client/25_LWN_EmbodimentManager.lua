@@ -41,6 +41,42 @@ local function safeText(value)
     return text
 end
 
+local function normalizeSampleValue(value)
+    local text = safeText(value)
+    text = text:gsub("%-?%d+%.%d+", "#")
+    text = text:gsub("%-?%d+", "#")
+    text = text:gsub("%s+", " ")
+    return text
+end
+
+local function sampleDebugEvent(bucketName, key, signature, options)
+    if LWN.ActorFactory and LWN.ActorFactory.sampleDebugEvent then
+        return LWN.ActorFactory.sampleDebugEvent(bucketName, key, signature, options)
+    end
+    return {
+        emit = true,
+        reason = "local_fallback",
+        seenCount = 1,
+        suppressedCount = 0,
+    }
+end
+
+local function sampleSuffix(sample)
+    if not sample then return "" end
+
+    local parts = {}
+    if sample.reason and sample.reason ~= "new" then
+        parts[#parts + 1] = "sample=" .. safeText(sample.reason)
+    end
+    if (sample.suppressedCount or 0) > 0 then
+        parts[#parts + 1] = "suppressed=" .. safeText(sample.suppressedCount)
+    end
+    if #parts == 0 then
+        return ""
+    end
+    return " | " .. table.concat(parts, " | ")
+end
+
 local function objectRef(value)
     if value == nil then return "nil" end
     return safeText(tostring(value))
@@ -252,8 +288,31 @@ end
 
 local function traceCleanup(stage, npcId, record, actor, extra)
     local cleanupState = getCleanupState(npcId)
+    local sample = sampleDebugEvent(
+        "cleanup_trace",
+        table.concat({
+            safeText(stage),
+            safeText(npcId),
+            safeText(objectRef(actor)),
+        }, "|"),
+        table.concat({
+            safeText(stage),
+            safeText(record and record.embodiment and record.embodiment.state or nil),
+            safeText(worldObjectKind(actor)),
+            safeText(actor and protectedCall(actor, "isExistInTheWorld") or nil),
+            safeText(Embody._cleanupBlocklist and Embody._cleanupBlocklist[npcId] ~= nil or false),
+            safeText(cleanupState and cleanupState.stage or nil),
+            safeText(cleanupState and cleanupState.reason or nil),
+            normalizeSampleValue(extra and extra.reason or nil),
+            normalizeSampleValue(extra and extra.detail or nil),
+        }, "|")
+    )
+    if sample.emit ~= true then
+        return
+    end
+
     print(string.format(
-        "[LWN][CleanupTrace] stage=%s | npcId=%s | recordExists=%s | recordState=%s | actorRef=%s | actorKind=%s | actorWorld=%s | blocked=%s | cleanupStage=%s | cleanupReason=%s | reason=%s | detail=%s",
+        "[LWN][CleanupTrace] stage=%s | npcId=%s | recordExists=%s | recordState=%s | actorRef=%s | actorKind=%s | actorWorld=%s | blocked=%s | cleanupStage=%s | cleanupReason=%s | reason=%s | detail=%s%s",
         safeText(stage),
         safeText(npcId),
         safeText(record ~= nil),
@@ -265,7 +324,8 @@ local function traceCleanup(stage, npcId, record, actor, extra)
         safeText(cleanupState and cleanupState.stage or nil),
         safeText(cleanupState and cleanupState.reason or nil),
         safeText(extra and extra.reason or nil),
-        safeText(extra and extra.detail or nil)
+        safeText(extra and extra.detail or nil),
+        sampleSuffix(sample)
     ))
 end
 

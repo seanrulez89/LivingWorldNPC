@@ -259,6 +259,138 @@ local function isDebugModeEnabled()
     return false
 end
 
+local function normalizeSampleValue(value)
+    local text = safeText(value)
+    text = text:gsub("%-?%d+%.%d+", "#")
+    text = text:gsub("%-?%d+", "#")
+    text = text:gsub("%s+", " ")
+    return text
+end
+
+local function repeatSampleReason(seenCount)
+    if seenCount == 4 then
+        return "repeat_4"
+    end
+    if seenCount == 16 then
+        return "repeat_16"
+    end
+    return "repeat_" .. tostring(seenCount)
+end
+
+local function shouldEmitRepeatSample(seenCount)
+    if seenCount == 4 or seenCount == 16 then
+        return true
+    end
+    return seenCount > 16 and (seenCount % 64) == 0
+end
+
+local function getDebugSampleBucket(bucketName)
+    Factory._debugSampleBuckets = Factory._debugSampleBuckets or {}
+    Factory._debugSampleBuckets[bucketName] = Factory._debugSampleBuckets[bucketName] or {}
+    return Factory._debugSampleBuckets[bucketName]
+end
+
+local function sampleDebugEvent(bucketName, key, signature, options)
+    local bucket = getDebugSampleBucket(bucketName)
+    local state = bucket[key]
+    local force = options and options.force == true
+
+    if not state or state.signature ~= signature then
+        local suppressedCount = state and state.suppressedCount or 0
+        bucket[key] = {
+            signature = signature,
+            seenCount = 1,
+            suppressedCount = 0,
+        }
+        return {
+            emit = true,
+            reason = state and "signature_changed" or "new",
+            seenCount = 1,
+            suppressedCount = suppressedCount,
+        }
+    end
+
+    state.seenCount = (state.seenCount or 1) + 1
+    if force or shouldEmitRepeatSample(state.seenCount) then
+        local suppressedCount = state.suppressedCount or 0
+        state.suppressedCount = 0
+        return {
+            emit = true,
+            reason = force and "forced_repeat" or repeatSampleReason(state.seenCount),
+            seenCount = state.seenCount,
+            suppressedCount = suppressedCount,
+        }
+    end
+
+    state.suppressedCount = (state.suppressedCount or 0) + 1
+    return {
+        emit = false,
+        reason = "suppressed",
+        seenCount = state.seenCount,
+        suppressedCount = state.suppressedCount,
+    }
+end
+
+local function appendSampleMeta(parts, sample)
+    if not sample then return end
+    if sample.reason ~= "new" then
+        appendPart(parts, "sample", sample.reason)
+    end
+    if (sample.suppressedCount or 0) > 0 then
+        appendPart(parts, "suppressed", sample.suppressedCount)
+    end
+end
+
+local function hybridSourceTable(record, actor, descriptor, options)
+    local modData = actor and protectedCall(actor, "getModData") or nil
+    local carrierKind = modData and modData.LWN_CarrierKind
+        or record and record.embodiment and record.embodiment.carrierKind
+        or nil
+    local outfit = record and record.appearance and record.appearance.outfit or nil
+    local descriptorSource = options and options.descriptorSource or nil
+    if not descriptorSource then
+        if descriptor then
+            descriptorSource = "npc_record_survivor_desc_bound"
+        elseif outfit and outfit ~= "" then
+            descriptorSource = "npc_record_identity_outfit_seed"
+        else
+            descriptorSource = "npc_record_identity_seed"
+        end
+    end
+
+    local shellVisualSource
+    if carrierKind == "isozombie" then
+        shellVisualSource = "IsoZombie_shell"
+    elseif carrierKind == "isoplayer" then
+        shellVisualSource = "IsoPlayer_actor"
+    else
+        shellVisualSource = safeText(carrierKind or protectedCall(actor, "getObjectName") or "unknown_shell")
+    end
+
+    local relationPolicy = options and options.relationPolicy
+        or modData and modData.LWN_RelationshipPolicySummary
+        or nil
+
+    local sources = {
+        carrierKind = carrierKind or "unknown",
+        shellVisualSource = shellVisualSource,
+        descriptorSource = descriptorSource,
+        outfitSource = outfit and outfit ~= "" and "record.appearance.outfit" or "none",
+        safeStateSource = "canonical_record_identity_stats_equipment",
+        relationPolicy = relationPolicy or "none",
+    }
+
+    sources.summary = string.format(
+        "shell=%s descriptor=%s outfit=%s safeState=%s relation=%s",
+        tostring(sources.shellVisualSource),
+        tostring(sources.descriptorSource),
+        tostring(sources.outfitSource),
+        tostring(sources.safeStateSource),
+        tostring(sources.relationPolicy)
+    )
+    return sources
+end
+
 local function isVisualProbeEnabled(record)
     if not isDebugModeEnabled() then
         return false
@@ -795,15 +927,19 @@ local function tracePresentationGuard(actor, action, status, reason, source, bef
         safeText(before and before.invisible or nil),
         safeText(before and before.sceneCulled or nil),
     }, "|")
+    local sampleKey = table.concat({
+        safeText(getKnownNpcIdFromActor(actor)),
+        safeText(objectRef(actor)),
+        safeText(action),
+        safeText(source),
+    }, "|")
+
     if modData then
         modData.LWN_LastPresentationGuardAction = action
         modData.LWN_LastPresentationGuardStatus = status
         modData.LWN_LastPresentationGuardReason = reason
         modData.LWN_LastPresentationGuardSource = source
         modData.LWN_LastPresentationGuardAt = worldAgeHours()
-        if modData.LWN_LastPresentationGuardSignature == signature then
-            return
-        end
         modData.LWN_LastPresentationGuardSignature = signature
     elseif not isDebugModeEnabled() then
         return
@@ -813,29 +949,37 @@ local function tracePresentationGuard(actor, action, status, reason, source, bef
         return
     end
 
-    print(string.format(
-        "[LWN][PresentationGuard] action=%s | status=%s | reason=%s | source=%s | npcId=%s | objectRef=%s | role=%s | world=%s | squarePresent=%s | dead=%s | deathLike=%s | zombie=%s | reanimated=%s | ghost=%s | invisible=%s | sceneCulled=%s | beforeAlpha=%s | beforeTargetAlpha=%s | afterAlpha=%s | afterTargetAlpha=%s",
-        safeText(action),
-        safeText(status),
-        safeText(reason),
-        safeText(source),
-        safeText(getKnownNpcIdFromActor(actor)),
-        safeText(before and before.objectRef or objectRef(actor)),
-        safeText(before and before.presentationRole or nil),
-        safeText(before and before.world or nil),
-        safeText(before and before.squarePresent or nil),
-        safeText(before and before.dead or nil),
-        safeText(before and before.deathLike or nil),
-        safeText(before and before.zombie or nil),
-        safeText(before and before.reanimated or nil),
-        safeText(before and before.ghost or nil),
-        safeText(before and before.invisible or nil),
-        safeText(before and before.sceneCulled or nil),
-        safeNumber(before and before.alpha or nil),
-        safeNumber(before and before.targetAlpha or nil),
-        safeNumber(after and after.alpha or nil),
-        safeNumber(after and after.targetAlpha or nil)
-    ))
+    local sample = sampleDebugEvent("presentation_guard", sampleKey, signature)
+    if sample.emit ~= true then
+        return
+    end
+
+    local parts = {
+        "[LWN][PresentationGuard]",
+    }
+
+    appendPart(parts, "action", action)
+    appendPart(parts, "status", status)
+    appendPart(parts, "reason", reason)
+    appendPart(parts, "source", source)
+    appendPart(parts, "npcId", getKnownNpcIdFromActor(actor))
+    appendPart(parts, "objectRef", before and before.objectRef or objectRef(actor))
+    appendPart(parts, "role", before and before.presentationRole or nil)
+    appendPart(parts, "world", before and before.world or nil)
+    appendPart(parts, "squarePresent", before and before.squarePresent or nil)
+    appendPart(parts, "dead", before and before.dead or nil)
+    appendPart(parts, "deathLike", before and before.deathLike or nil)
+    appendPart(parts, "zombie", before and before.zombie or nil)
+    appendPart(parts, "reanimated", before and before.reanimated or nil)
+    appendPart(parts, "ghost", before and before.ghost or nil)
+    appendPart(parts, "invisible", before and before.invisible or nil)
+    appendPart(parts, "sceneCulled", before and before.sceneCulled or nil)
+    appendPart(parts, "beforeAlpha", safeNumber(before and before.alpha or nil))
+    appendPart(parts, "beforeTargetAlpha", safeNumber(before and before.targetAlpha or nil))
+    appendPart(parts, "afterAlpha", safeNumber(after and after.alpha or nil))
+    appendPart(parts, "afterTargetAlpha", safeNumber(after and after.targetAlpha or nil))
+    appendSampleMeta(parts, sample)
+    print(table.concat(parts, " | "))
 end
 
 local function traceCleanupContract(actor, stage, reason, detail)
@@ -970,6 +1114,48 @@ local function extraSummary(extra)
     return table.concat(parts, " | ")
 end
 
+local function stageTraceKey(moduleName, stage, record, actor, extra)
+    return table.concat({
+        safeText(moduleName),
+        safeText(stage),
+        safeText(record and record.id or extra and extra.npcId or getKnownNpcIdFromActor(actor)),
+        safeText(actor and objectRef(actor) or nil),
+        safeText(extra and extra.source or nil),
+    }, "|")
+end
+
+local function stageTraceSignature(moduleName, stage, record, actor, descriptor, extra, presentation)
+    return table.concat({
+        safeText(moduleName),
+        safeText(stage),
+        safeText(record and record.embodiment and record.embodiment.state or nil),
+        safeText(record and record.embodiment and record.embodiment.carrierKind or nil),
+        safeText(record and record.status and record.status.life or nil),
+        safeText(actor and objectRef(actor) or nil),
+        safeText(presentation and presentation.object or nil),
+        safeText(presentation and presentation.actorKind or nil),
+        safeText(presentation and presentation.zombie or nil),
+        safeText(presentation and presentation.reanimated or nil),
+        safeText(presentation and presentation.dead or nil),
+        safeText(presentation and presentation.downed or nil),
+        safeText(presentation and presentation.deathLike or nil),
+        safeText(presentation and presentation.presentationRole or nil),
+        safeText(presentation and presentation.world or nil),
+        safeText(presentation and presentation.squarePresent or nil),
+        safeText(presentation and presentation.ghost or nil),
+        safeText(presentation and presentation.invisible or nil),
+        safeText(presentation and presentation.sceneCulled or nil),
+        safeText(descriptor ~= nil),
+        safeText(presentation and presentation.actorDescriptor or nil),
+        safeText(presentation and presentation.humanVisual or nil),
+        safeText(extra and extra.source or nil),
+        normalizeSampleValue(extra and extra.spawnSource or nil),
+        normalizeSampleValue(extra and extra.detail or nil),
+        normalizeSampleValue(extra and extra.reason or nil),
+        normalizeSampleValue(extra and extra.descriptorMode or nil),
+    }, "|")
+end
+
 local function stageTrace(moduleName, stage, record, actor, descriptor, extra)
     if not isDebugModeEnabled() then return end
 
@@ -980,6 +1166,19 @@ local function stageTrace(moduleName, stage, record, actor, descriptor, extra)
     local visual = actor and protectedCall(actor, "getHumanVisual") or nil
     local itemVisuals = actor and protectedCall(actor, "getItemVisuals") or nil
     local wornItems = actor and protectedCall(actor, "getWornItems") or nil
+    local sample = sampleDebugEvent(
+        "embodiment_trace",
+        stageTraceKey(moduleName, stage, record, actor, extra),
+        stageTraceSignature(moduleName, stage, record, actor, descriptor, extra, presentation),
+        {
+            force = extra and extra.force == true,
+        }
+    )
+
+    tracePresentationWatch(moduleName, stage, record, actor, extra)
+    if sample.emit ~= true then
+        return
+    end
 
     local parts = {
         "[LWN][EmbodimentTrace]",
@@ -1034,9 +1233,9 @@ local function stageTrace(moduleName, stage, record, actor, descriptor, extra)
     if extra and extra.detail then
         appendPart(parts, "detail", extra.detail)
     end
+    appendSampleMeta(parts, sample)
 
     print(table.concat(parts, " | "))
-    tracePresentationWatch(moduleName, stage, record, actor, extra)
 
     if isVisualProbeEnabled(record) then
         if record then
@@ -1078,6 +1277,7 @@ local function logFailure(reason, record, actor, descriptor, descriptorMode, ext
         detail = reason,
         descriptorMode = descriptorMode,
         npcId = snapshot.npcId,
+        force = true,
     })
 
     print("[LWN][ActorFactory] " .. safeText(reason) .. " for " .. safeText(snapshot.npcId))
@@ -2090,6 +2290,31 @@ function Factory.presentationStateSummary(actor)
     return presentationStateSummary(actor)
 end
 
+function Factory.sampleDebugEvent(bucketName, key, signature, options)
+    return sampleDebugEvent(bucketName, key, signature, options)
+end
+
+function Factory.hybridSourceTable(record, actor, descriptor, options)
+    return hybridSourceTable(record, actor, descriptor, options)
+end
+
+function Factory.stampHybridDebugMetadata(record, actor, descriptor, options)
+    if not actor then return nil end
+
+    local modData = protectedCall(actor, "getModData")
+    if not modData then return nil end
+
+    local sources = hybridSourceTable(record, actor, descriptor, options)
+    modData.LWN_HybridShellVisualSource = sources.shellVisualSource
+    modData.LWN_HybridDescriptorSource = sources.descriptorSource
+    modData.LWN_HybridOutfitSource = sources.outfitSource
+    modData.LWN_HybridSafeStateSource = sources.safeStateSource
+    modData.LWN_HybridRelationPolicy = sources.relationPolicy
+    modData.LWN_HybridSummary = sources.summary
+    modData.LWN_HybridSummaryUpdatedAt = worldAgeHours()
+    return sources
+end
+
 function Factory.debugStage(moduleName, stage, record, actor, descriptor, extra)
     stageTrace(moduleName, stage, record, actor, descriptor, extra)
 end
@@ -2564,6 +2789,7 @@ function Factory.createActor(record, player)
     if modData then
         modData.LWN_NpcId = record.id
         modData.LWN_ActorKind = "IsoPlayer"
+        modData.LWN_CarrierKind = modData.LWN_CarrierKind or "isoplayer"
         modData.LWN_SpawnSource = spawnSource
         modData.LWN_SessionId = record.embodiment.sessionId
         modData.LWN_CreateHookPending = true
@@ -2583,6 +2809,9 @@ function Factory.createActor(record, player)
         modData.LWN_LastAlphaZeroRequestReason = nil
         modData.LWN_LastAlphaZeroRequestAt = nil
     end
+    Factory.stampHybridDebugMetadata(record, actor, desc, {
+        descriptorSource = string.format("npc_record_survivor_desc_%s", tostring(descriptorMode or "unknown")),
+    })
 
     if not ensureActorRegisteredInWorld(actor, square) then
         Factory.rejectActor(actor, "createActor rejected actor not registered in world", record.id, record, desc, descriptorMode, {
