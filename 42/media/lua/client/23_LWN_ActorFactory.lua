@@ -383,6 +383,12 @@ local function hybridSourceTable(record, actor, descriptor, options)
     local appearanceBridge = options and options.appearanceBridge
         or modData and modData.LWN_HybridAppearanceBridge
         or nil
+    local appearanceStage = options and options.appearanceStage
+        or modData and modData.LWN_HybridAppearanceStage
+        or nil
+    local appearanceStatus = options and options.appearanceStatus
+        or modData and modData.LWN_HybridAppearanceStatus
+        or nil
 
     local sources = {
         carrierKind = carrierKind or "unknown",
@@ -395,11 +401,19 @@ local function hybridSourceTable(record, actor, descriptor, options)
         appearanceApplied = appearanceApplied == true,
         appearanceReuse = appearanceReuse or "none",
         appearanceBridge = appearanceBridge or "none",
+        appearanceStage = appearanceStage or "none",
+        appearanceStatus = appearanceStatus or "none",
     }
 
     local experimentSummary = sources.appearanceExperiment
     if experimentSummary ~= "none" then
-        experimentSummary = experimentSummary .. ":" .. (sources.appearanceApplied == true and "applied" or "pending")
+        if sources.appearanceStatus == "none" then
+            sources.appearanceStatus = sources.appearanceApplied == true and "applied" or "pending"
+        end
+        experimentSummary = experimentSummary .. ":" .. tostring(sources.appearanceStatus)
+        if sources.appearanceStage ~= "none" then
+            experimentSummary = experimentSummary .. "@" .. tostring(sources.appearanceStage)
+        end
     end
 
     sources.debugLine = string.format(
@@ -2343,6 +2357,8 @@ function Factory.stampHybridDebugMetadata(record, actor, descriptor, options)
     modData.LWN_HybridAppearanceApplied = sources.appearanceApplied == true
     modData.LWN_HybridAppearanceReuse = sources.appearanceReuse
     modData.LWN_HybridAppearanceBridge = sources.appearanceBridge
+    modData.LWN_HybridAppearanceStage = sources.appearanceStage
+    modData.LWN_HybridAppearanceStatus = sources.appearanceStatus
     modData.LWN_HybridDebugLine = sources.debugLine
     modData.LWN_HybridSummary = sources.summary
     modData.LWN_HybridSummaryUpdatedAt = worldAgeHours()

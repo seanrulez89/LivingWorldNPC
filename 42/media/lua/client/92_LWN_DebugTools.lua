@@ -23,6 +23,17 @@ local function clamp(value, minValue, maxValue)
     return value
 end
 
+local function protectedCall(obj, methodName, ...)
+    if not obj then return nil end
+    local fn = obj[methodName]
+    if not fn then return nil end
+    local ok, result = pcall(fn, obj, ...)
+    if ok then
+        return result
+    end
+    return nil
+end
+
 local function sayInfo(player, text)
     if player and player.Say then
         player:Say(text)
@@ -216,12 +227,28 @@ local function actorDebugLine(actor)
     )
 end
 
-local function hybridDebugLine(record, actor)
-    if LWN.ActorFactory and LWN.ActorFactory.hybridSummaryLine then
-        return LWN.ActorFactory.hybridSummaryLine(record, actor, protectedCall(actor, "getDescriptor"))
+local function cachedHybridDebugLine(actor)
+    local modData = protectedCall(actor, "getModData")
+    if not modData then
+        return nil
     end
-    local modData = actor and actor.getModData and actor:getModData() or nil
-    return modData and (modData.LWN_HybridDebugLine or modData.LWN_HybridSummary) or nil
+
+    return modData.LWN_HybridDebugLine
+        or modData.LWN_HybridSummary
+        or modData.LWN_HybridAppearanceDebugLine
+        or nil
+end
+
+local function hybridDebugLine(record, actor)
+    local cached = cachedHybridDebugLine(actor)
+    if LWN.ActorFactory and LWN.ActorFactory.hybridSummaryLine then
+        local descriptor = protectedCall(actor, "getDescriptor")
+        local ok, line = pcall(LWN.ActorFactory.hybridSummaryLine, record, actor, descriptor)
+        if ok and line then
+            return line
+        end
+    end
+    return cached
 end
 
 local function dumpRecordSummary(record, actor, player)

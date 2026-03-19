@@ -24,6 +24,8 @@ end
 
 local ISOZOMBIE_SETTLE_MAX_SYNC_ATTEMPTS = 12
 local ISOZOMBIE_SETTLE_MAX_HOURS = 0.0015
+local ISOZOMBIE_APPEARANCE_EXPERIMENT = "isozombie_shared_desc_visual_v1"
+local ISOZOMBIE_APPEARANCE_REUSE = "desc+baseline+clothes+bridge"
 
 local function worldAgeHours()
     return getGameTime() and getGameTime():getWorldAgeHours() or 0
@@ -207,10 +209,16 @@ local function stampHybridSummary(record, actor, relationSummary, descriptor, ap
         metadataOptions.appearanceApplied = appearanceDetail.applied == true
         metadataOptions.appearanceReuse = appearanceDetail.reuse
         metadataOptions.appearanceBridge = appearanceDetail.bridgeMode
+        metadataOptions.appearanceStage = appearanceDetail.stage
+        metadataOptions.appearanceStatus = appearanceDetail.status
     end
 
     local modData = protectedCall(actor, "getModData")
-    local hybridSources = LWN.ActorFactory.stampHybridDebugMetadata(record, actor, descriptor, metadataOptions)
+    local ok, hybridSources = pcall(LWN.ActorFactory.stampHybridDebugMetadata, record, actor, descriptor, metadataOptions)
+    if not ok then
+        trace("hybrid.summary.error", record, tostring(hybridSources))
+        return nil
+    end
     if modData and hybridSources then
         local previousSummary = modData.LWN_LastHybridSummaryLogged
         if previousSummary ~= hybridSources.summary
@@ -218,7 +226,15 @@ local function stampHybridSummary(record, actor, relationSummary, descriptor, ap
             and LWN.ActorFactory.debugStage
         then
             modData.LWN_LastHybridSummaryLogged = hybridSources.summary
-            LWN.ActorFactory.debugStage("CarrierIsoZombie", "hybrid.summary", record, actor, descriptor, {
+            local summaryStage = "hybrid.summary"
+            if appearanceDetail and appearanceDetail.status == "pending" then
+                summaryStage = "hybrid.summary.pre_appearance"
+            elseif appearanceDetail and appearanceDetail.status == "applied" then
+                summaryStage = "hybrid.summary.post_appearance"
+            elseif appearanceDetail and appearanceDetail.status == "skipped" then
+                summaryStage = "hybrid.summary.skipped"
+            end
+            LWN.ActorFactory.debugStage("CarrierIsoZombie", summaryStage, record, actor, descriptor, {
                 source = "Carrier_IsoZombie",
                 detail = hybridSources.summary,
             })
@@ -228,13 +244,46 @@ local function stampHybridSummary(record, actor, relationSummary, descriptor, ap
     return hybridSources
 end
 
+local function normalizeAppearanceDetail(detail, overrides)
+    local normalized = {
+        applied = detail and detail.applied == true or false,
+        experiment = detail and detail.experiment or ISOZOMBIE_APPEARANCE_EXPERIMENT,
+        reuse = detail and detail.reuse or ISOZOMBIE_APPEARANCE_REUSE,
+        bridgeMode = detail and detail.bridgeMode or "pending",
+        descriptorMode = detail and detail.descriptorMode or "pending",
+        descriptorSource = detail and detail.descriptorSource or "pending",
+        stage = detail and detail.stage or nil,
+        status = detail and detail.status or nil,
+    }
+
+    if overrides then
+        for key, value in pairs(overrides) do
+            if value ~= nil then
+                normalized[key] = value
+            end
+        end
+    end
+
+    if normalized.applied == true and normalized.status == nil then
+        normalized.status = "applied"
+    end
+    if normalized.status == nil then
+        normalized.status = "pending"
+    end
+    if normalized.stage == nil then
+        normalized.stage = normalized.status
+    end
+
+    return normalized
+end
+
 local function cachedAppearanceDetail(actor)
     local modData = protectedCall(actor, "getModData")
     if not modData or modData.LWN_HybridAppearanceExperiment == nil then
         return nil
     end
 
-    return {
+    return normalizeAppearanceDetail({
         applied = modData.LWN_HybridAppearanceApplied == true,
         experiment = modData.LWN_HybridAppearanceExperiment,
         reuse = modData.LWN_HybridAppearanceReuse,
@@ -246,32 +295,66 @@ local function cachedAppearanceDetail(actor)
                 tostring(modData.LWN_HybridAppearanceDescriptorMode)
             ))
             or "npc_record_identity_seed",
-    }
+        stage = modData.LWN_HybridAppearanceStage,
+        status = modData.LWN_HybridAppearanceStatus,
+    })
 end
 
-local function applyAppearanceExperiment(record, actor)
+local function applyAppearanceExperiment(record, actor, stageBase)
     local cached = cachedAppearanceDetail(actor)
     if cached and cached.applied == true then
+        cached = normalizeAppearanceDetail(cached, {
+            stage = string.format("%s_cached", tostring(stageBase or "appearance")),
+            status = "applied",
+        })
+        trace("appearance.cached", record, string.format(
+            "stage=%s desc=%s mode=%s reuse=%s bridge=%s",
+            tostring(cached.stage),
+            tostring(cached.descriptorSource or "nil"),
+            tostring(cached.descriptorMode or "nil"),
+            tostring(cached.reuse or "nil"),
+            tostring(cached.bridgeMode or "nil")
+        ))
         return protectedCall(actor, "getDescriptor"), cached
     end
     if not (LWN.ActorFactory and LWN.ActorFactory.applySafeAppearanceShaping) then
-        return nil, {
-            applied = false,
-            experiment = "isozombie_shared_desc_visual_v1",
-            reuse = "desc+baseline+clothes+bridge",
+        trace("appearance.skipped", record, string.format("stage=%s reason=helper_missing", tostring(stageBase or "appearance")))
+        return nil, normalizeAppearanceDetail(nil, {
             bridgeMode = "helper_missing",
             descriptorMode = "unavailable",
             descriptorSource = "npc_record_identity_seed",
-        }
+            stage = string.format("%s_skipped", tostring(stageBase or "appearance")),
+            status = "skipped",
+        })
     end
 
-    local descriptor, detail = LWN.ActorFactory.applySafeAppearanceShaping(record, actor, {
+    local ok, descriptor, detail = pcall(LWN.ActorFactory.applySafeAppearanceShaping, record, actor, {
         source = "CarrierIsoZombie.applyAppearanceExperiment",
-        experimentName = "isozombie_shared_desc_visual_v1",
+        experimentName = ISOZOMBIE_APPEARANCE_EXPERIMENT,
+    })
+    if not ok then
+        trace("appearance.error", record, string.format("stage=%s error=%s", tostring(stageBase), tostring(descriptor)))
+        return nil, normalizeAppearanceDetail(nil, {
+            bridgeMode = "error",
+            descriptorMode = "error",
+            descriptorSource = "npc_record_identity_seed",
+            stage = string.format("%s_error", tostring(stageBase or "appearance")),
+            status = "skipped",
+        })
+    end
+
+    detail = normalizeAppearanceDetail(detail, {
+        stage = string.format(
+            "%s_%s",
+            tostring(stageBase or "appearance"),
+            detail and detail.applied == true and "applied" or "skipped"
+        ),
+        status = detail and detail.applied == true and "applied" or "skipped",
     })
 
     trace("appearance.experiment", record, string.format(
-        "applied=%s desc=%s mode=%s reuse=%s bridge=%s",
+        "stage=%s applied=%s desc=%s mode=%s reuse=%s bridge=%s",
+        tostring(detail and detail.stage or "nil"),
         tostring(detail and detail.applied == true),
         tostring(detail and detail.descriptorSource or "nil"),
         tostring(detail and detail.descriptorMode or "nil"),
@@ -280,6 +363,36 @@ local function applyAppearanceExperiment(record, actor)
     ))
 
     return descriptor, detail
+end
+
+local function assessAppearanceEligibility(actor)
+    if not actor then
+        return false, "appearance_ineligible actor=nil"
+    end
+
+    local square = protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare")
+    local inWorld = protectedCall(actor, "isExistInTheWorld") == true
+    local isZombie = protectedCall(actor, "isZombie") == true
+
+    if not inWorld or not square or not isZombie then
+        return false, string.format(
+            "appearance_ineligible inWorld=%s squarePresent=%s isZombie=%s",
+            tostring(inWorld),
+            tostring(square ~= nil),
+            tostring(isZombie)
+        )
+    end
+
+    return true, string.format(
+        "appearance_eligible inWorld=%s squarePresent=%s isZombie=%s",
+        tostring(inWorld),
+        tostring(square ~= nil),
+        tostring(isZombie)
+    )
+end
+
+local function stageBaseForAction(actionName, runtimeOk)
+    return string.format("%s_%s", tostring(actionName or "appearance"), runtimeOk == true and "ready" or "pending")
 end
 
 -- Friendly/neutral shells should drop any stale queued aggression as well as target refs.
@@ -391,6 +504,34 @@ local function assessRuntimeReadiness(actor)
     )
 end
 
+local function runAppearancePass(record, actor, options, actionName, runtimeOk)
+    local stageBase = stageBaseForAction(actionName, runtimeOk)
+    local appearanceOk, appearanceGateDetail = assessAppearanceEligibility(actor)
+
+    if appearanceOk ~= true then
+        local skippedDetail = normalizeAppearanceDetail(nil, {
+            bridgeMode = "ineligible",
+            descriptorMode = "ineligible",
+            descriptorSource = "ineligible",
+            stage = string.format("%s_ineligible", tostring(stageBase)),
+            status = "skipped",
+        })
+        trace("appearance.skipped", record, string.format("stage=%s | %s", tostring(stageBase), tostring(appearanceGateDetail)))
+        applyBasicZombieCarrierFlags(record, actor, options, nil, skippedDetail)
+        return nil, skippedDetail, false, appearanceGateDetail
+    end
+
+    local preAppearanceDetail = normalizeAppearanceDetail(nil, {
+        stage = string.format("%s_pre", tostring(stageBase)),
+        status = "pending",
+    })
+    applyBasicZombieCarrierFlags(record, actor, options, nil, preAppearanceDetail)
+
+    local descriptor, appearanceDetail = applyAppearanceExperiment(record, actor, stageBase)
+    applyBasicZombieCarrierFlags(record, actor, options, descriptor, appearanceDetail)
+    return descriptor, appearanceDetail, true, appearanceGateDetail
+end
+
 local function markNoAutoRearm(record)
     if record and record.embodiment then
         record.embodiment.noAutoRearm = true
@@ -482,16 +623,21 @@ function Carrier.spawn(record, options)
         }
     end
 
-    applyBasicZombieCarrierFlags(record, actor, options)
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
-    local appearanceDescriptor = nil
-    local appearanceDetail = nil
-    if runtimeOk == true then
-        appearanceDescriptor, appearanceDetail = applyAppearanceExperiment(record, actor)
-        applyBasicZombieCarrierFlags(record, actor, options, appearanceDescriptor, appearanceDetail)
-    end
+    local _, appearanceDetail, appearanceEligible, appearanceGateDetail = runAppearancePass(
+        record,
+        actor,
+        options,
+        "spawn",
+        runtimeOk
+    )
     local spawnedAt = worldAgeHours()
-    trace(runtimeOk and "spawn.runtime_ready" or "spawn.pending_settle", record, string.format("spawn=%s | %s", tostring(spawnDetail), tostring(runtimeDetail)))
+    trace(runtimeOk and "spawn.runtime_ready" or "spawn.pending_settle", record, string.format(
+        "spawn=%s | appearance=%s | %s",
+        tostring(spawnDetail),
+        appearanceEligible == true and tostring(appearanceDetail and appearanceDetail.stage or "eligible") or tostring(appearanceGateDetail),
+        tostring(runtimeDetail)
+    ))
 
     return {
         ok = true,
@@ -510,8 +656,12 @@ function Carrier.spawn(record, options)
             runtime = {
                 spawnDetail = spawnDetail,
                 runtimeDetail = runtimeDetail,
+                appearanceEligible = appearanceEligible == true,
+                appearanceEligibilityDetail = appearanceGateDetail,
                 appearanceExperiment = appearanceDetail and appearanceDetail.experiment or nil,
                 appearanceApplied = appearanceDetail and appearanceDetail.applied == true or false,
+                appearanceStatus = appearanceDetail and appearanceDetail.status or nil,
+                appearanceStage = appearanceDetail and appearanceDetail.stage or nil,
                 neutralized = true,
                 settlePending = runtimeOk ~= true,
                 settleAttempts = 0,
@@ -534,16 +684,38 @@ function Carrier.sync(record, handle, options)
 
     handle.runtime = handle.runtime or {}
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
+    local _, appearanceDetail, appearanceEligible, appearanceGateDetail = runAppearancePass(
+        record,
+        actor,
+        options,
+        "sync",
+        runtimeOk
+    )
+    handle.runtime.appearanceEligible = appearanceEligible == true
+    handle.runtime.appearanceEligibilityDetail = appearanceGateDetail
+    handle.runtime.appearanceExperiment = appearanceDetail and appearanceDetail.experiment or nil
+    handle.runtime.appearanceApplied = appearanceDetail and appearanceDetail.applied == true or false
+    handle.runtime.appearanceStatus = appearanceDetail and appearanceDetail.status or nil
+    handle.runtime.appearanceStage = appearanceDetail and appearanceDetail.stage or nil
+    handle.runtime.runtimeDetail = runtimeDetail
     if runtimeOk ~= true then
         local settleAttempts = (tonumber(handle.runtime.settleAttempts) or 0) + 1
         local settleStartedAt = tonumber(handle.runtime.settleStartedAt or handle.spawnedAt or worldAgeHours()) or worldAgeHours()
         local elapsed = math.max(0, worldAgeHours() - settleStartedAt)
+        handle.runtime.settlePending = true
         handle.runtime.settleAttempts = settleAttempts
         handle.runtime.settleStartedAt = settleStartedAt
-        handle.runtime.runtimeDetail = runtimeDetail
 
         if settleAttempts < ISOZOMBIE_SETTLE_MAX_SYNC_ATTEMPTS and elapsed < ISOZOMBIE_SETTLE_MAX_HOURS then
-            trace("sync.pending_settle", record, string.format("attempt=%s/%s elapsed=%.6f/%.6f | %s", settleAttempts, ISOZOMBIE_SETTLE_MAX_SYNC_ATTEMPTS, elapsed, ISOZOMBIE_SETTLE_MAX_HOURS, tostring(runtimeDetail)))
+            trace("sync.pending_settle", record, string.format(
+                "attempt=%s/%s elapsed=%.6f/%.6f | appearance=%s | %s",
+                settleAttempts,
+                ISOZOMBIE_SETTLE_MAX_SYNC_ATTEMPTS,
+                elapsed,
+                ISOZOMBIE_SETTLE_MAX_HOURS,
+                appearanceEligible == true and tostring(appearanceDetail and appearanceDetail.stage or "eligible") or tostring(appearanceGateDetail),
+                tostring(runtimeDetail)
+            ))
             return {
                 ok = true,
                 status = "pending_settle",
@@ -562,10 +734,6 @@ function Carrier.sync(record, handle, options)
 
     handle.runtime.settlePending = false
     handle.runtime.runtimeDetail = runtimeDetail
-    local appearanceDescriptor, appearanceDetail = applyAppearanceExperiment(record, actor)
-    handle.runtime.appearanceExperiment = appearanceDetail and appearanceDetail.experiment or nil
-    handle.runtime.appearanceApplied = appearanceDetail and appearanceDetail.applied == true or false
-    applyBasicZombieCarrierFlags(record, actor, options, appearanceDescriptor, appearanceDetail)
 
     local anchor = record and record.anchor or nil
     if anchor then
