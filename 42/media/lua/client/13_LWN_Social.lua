@@ -4,16 +4,41 @@ LWN.Social = LWN.Social or {}
 local Social = LWN.Social
 local Memory = LWN.Memory
 
+local function clamp(value, minValue, maxValue)
+    if type(value) ~= "number" then
+        value = minValue
+    end
+    if value < minValue then value = minValue end
+    if value > maxValue then value = maxValue end
+    return value
+end
+
+local function remember(record, reason, salience, data)
+    if Memory and Memory.add then
+        Memory.add(record, reason, salience, data)
+    end
+end
+
+local function ensureCombatPolicyTables(record)
+    if type(record) ~= "table" then
+        return {}, {}, {}
+    end
+    record.relationshipToPlayer = record.relationshipToPlayer or {}
+    record.drama = record.drama or {}
+    record.companion = record.companion or {}
+    return record.relationshipToPlayer, record.drama, record.companion
+end
+
 function Social.adjustTrust(record, delta, reason)
-    local rel = record.relationshipToPlayer
-    rel.trust = math.max(-1, math.min(1, rel.trust + delta))
-    Memory.add(record, reason or "trust_shift", math.abs(delta), { delta = delta })
+    local rel = ensureCombatPolicyTables(record)
+    rel.trust = clamp((tonumber(rel.trust or 0) or 0) + delta, -1, 1)
+    remember(record, reason or "trust_shift", math.abs(delta), { delta = delta })
 end
 
 function Social.adjustResentment(record, delta, reason)
-    local rel = record.relationshipToPlayer
-    rel.resentment = math.max(0, math.min(1.5, rel.resentment + delta))
-    Memory.add(record, reason or "resentment_shift", math.abs(delta), { delta = delta })
+    local rel = ensureCombatPolicyTables(record)
+    rel.resentment = clamp((tonumber(rel.resentment or 0) or 0) + delta, 0, 1.5)
+    remember(record, reason or "resentment_shift", math.abs(delta), { delta = delta })
 end
 
 function Social.commandResponse(record, command, context)
@@ -64,9 +89,7 @@ function Social.canRecruit(record)
 end
 
 function Social.relationshipCombatPolicy(record)
-    local rel = record.relationshipToPlayer or {}
-    local drama = record.drama or {}
-    local companion = record.companion or {}
+    local rel, drama, companion = ensureCombatPolicyTables(record)
     local trust = tonumber(rel.trust or 0) or 0
     local betrayalScore = Social.betrayalScore(record)
     local recruitFloor = LWN.Config.Social.RecruitTrustFloor or 0.45
@@ -99,6 +122,55 @@ function Social.relationshipCombatPolicy(record)
         shouldNeutralizeCarrier = true,
         reason = companion.recruited == true and "recruited_but_low_trust" or "not_recruited",
     }
+end
+
+function Social.combatPolicySummary(record, policy)
+    local rel = ensureCombatPolicyTables(record)
+    policy = policy or Social.relationshipCombatPolicy(record)
+    return string.format(
+        "%s/%s t=%.2f",
+        tostring(policy and policy.state or "unknown"),
+        tostring(policy and policy.reason or "unknown"),
+        tonumber(rel.trust or 0) or 0
+    )
+end
+
+function Social.forceRelationshipCombatPolicy(record, targetState, reason)
+    if type(record) ~= "table" then
+        return nil, "record=nil"
+    end
+
+    local rel, drama, companion = ensureCombatPolicyTables(record)
+    local recruitFloor = LWN.Config.Social.RecruitTrustFloor or 0.45
+    targetState = tostring(targetState or ""):lower()
+
+    if targetState == "friendly" then
+        companion.recruited = true
+        drama.pendingBetrayal = false
+        rel.trust = clamp(math.max(tonumber(rel.trust or 0) or 0, recruitFloor + 0.15), -1, 1)
+        rel.resentment = 0
+        rel.fear = 0
+    elseif targetState == "neutral" then
+        companion.recruited = false
+        drama.pendingBetrayal = false
+        rel.trust = clamp(math.min(recruitFloor - 0.10, 0.25), -1, 1)
+        rel.resentment = 0
+        rel.fear = 0
+    elseif targetState == "hostile" then
+        companion.recruited = false
+        drama.pendingBetrayal = true
+        rel.trust = clamp(-0.35, -1, 1)
+        rel.resentment = clamp(math.max(tonumber(rel.resentment or 0) or 0, 0.85), 0, 1.5)
+        rel.fear = clamp(math.max(tonumber(rel.fear or 0) or 0, 0.40), 0, 1.5)
+    else
+        return nil, "unknown_target_state"
+    end
+
+    remember(record, reason or "force_relationship_combat_policy", 0.15, {
+        state = targetState,
+    })
+
+    return Social.relationshipCombatPolicy(record), nil
 end
 
 function Social.maybeSuggest(record)

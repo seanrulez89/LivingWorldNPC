@@ -113,6 +113,42 @@ local function relationshipCombatPolicy(record)
     }
 end
 
+local function relationshipPolicySummary(record, policy)
+    if LWN.Social and LWN.Social.combatPolicySummary then
+        return LWN.Social.combatPolicySummary(record, policy)
+    end
+    policy = policy or relationshipCombatPolicy(record)
+    return string.format("%s/%s", tostring(policy.state), tostring(policy.reason))
+end
+
+local function carrierCombatMode(policy)
+    if policy.allowCarrierAttackPlayer == true then
+        return "hostile_player"
+    end
+    if policy.shouldNeutralizeCarrier == true then
+        return "neutralized"
+    end
+    return "idle"
+end
+
+local function friendlySuppressionSummary(policy)
+    if policy.allowPlayerAttack ~= true then
+        return "godmod+clearqueue"
+    end
+    if policy.shouldNeutralizeCarrier == true then
+        return "clearqueue"
+    end
+    return "attackable"
+end
+
+-- Friendly/neutral shells should drop any stale queued aggression as well as target refs.
+local function clearCombatIntent(actor)
+    protectedCall(actor, "StopAllActionQueue")
+    protectedCall(actor, "setTarget", nil)
+    protectedCall(actor, "setAttackedBy", nil)
+    protectedCall(actor, "setTargetSeenTime", 0)
+end
+
 local function getPrimaryPlayer(options)
     local player = options and options.player or nil
     if player then return player end
@@ -122,20 +158,18 @@ local function getPrimaryPlayer(options)
     return nil
 end
 
-local function applyRelationshipCombatState(record, actor, options)
+local function applyRelationshipCombatState(record, actor, options, policy)
     if not actor then return nil end
-    local policy = relationshipCombatPolicy(record)
+    policy = policy or relationshipCombatPolicy(record)
     local player = getPrimaryPlayer(options)
 
     protectedCall(actor, "setGodMod", policy.allowPlayerAttack ~= true)
 
     if policy.shouldNeutralizeCarrier == true then
         protectedCall(actor, "setUseless", true)
-        protectedCall(actor, "setTargetSeenTime", 0)
         protectedCall(actor, "setCanWalk", false)
         protectedCall(actor, "setNoTeeth", true)
-        protectedCall(actor, "setTarget", nil)
-        protectedCall(actor, "setAttackedBy", nil)
+        clearCombatIntent(actor)
     else
         protectedCall(actor, "setUseless", false)
         protectedCall(actor, "setCanWalk", true)
@@ -145,8 +179,7 @@ local function applyRelationshipCombatState(record, actor, options)
             protectedCall(actor, "faceThisObject", player)
             protectedCall(actor, "pathToCharacter", player)
         else
-            protectedCall(actor, "setTarget", nil)
-            protectedCall(actor, "setTargetSeenTime", 0)
+            clearCombatIntent(actor)
         end
     end
 
@@ -157,18 +190,23 @@ local function applyBasicZombieCarrierFlags(record, actor, options)
     if not actor then return end
     local modData = protectedCall(actor, "getModData")
     local policy = relationshipCombatPolicy(record)
+    local summary = relationshipPolicySummary(record, policy)
     if modData and record then
         modData.LWN_NpcId = record.id
         modData.LWN_LastNpcId = record.id
         modData.LWN_CarrierKind = "isozombie"
         modData.LWN_CarrierSpike = true
         modData.LWN_RelationState = policy.state
+        modData.LWN_RelationshipPolicySummary = summary
         modData.LWN_AllowPlayerAttack = policy.allowPlayerAttack == true
         modData.LWN_AllowCarrierAttackPlayer = policy.allowCarrierAttackPlayer == true
+        modData.LWN_CarrierCombatMode = carrierCombatMode(policy)
+        modData.LWN_FriendlySuppression = friendlySuppressionSummary(policy)
         modData.LWN_HostilityReason = policy.reason
+        modData.LWN_RelationshipPolicyAppliedAt = worldAgeHours()
     end
 
-    applyRelationshipCombatState(record, actor, options)
+    applyRelationshipCombatState(record, actor, options, policy)
 
     protectedCall(actor, "setFakeDead", false)
     protectedCall(actor, "setCrawler", false)

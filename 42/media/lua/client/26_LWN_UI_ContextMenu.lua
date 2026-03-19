@@ -388,6 +388,30 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
+    settingsSub:addOption("Debug: Lower Nearest NPC Trust", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.adjustNearestRelationship then
+            LWN.DebugTools.adjustNearestRelationship(p, "trust", -0.20)
+        end
+    end)
+
+    settingsSub:addOption("Debug: Force Nearest Friendly Policy", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.forceNearestRelationshipCombatPolicy then
+            LWN.DebugTools.forceNearestRelationshipCombatPolicy(p, "friendly")
+        end
+    end)
+
+    settingsSub:addOption("Debug: Force Nearest Neutral Policy", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.forceNearestRelationshipCombatPolicy then
+            LWN.DebugTools.forceNearestRelationshipCombatPolicy(p, "neutral")
+        end
+    end)
+
+    settingsSub:addOption("Debug: Force Nearest Hostile Policy", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.forceNearestRelationshipCombatPolicy then
+            LWN.DebugTools.forceNearestRelationshipCombatPolicy(p, "hostile")
+        end
+    end)
+
     settingsSub:addOption("Debug: Shared Food Beat (Nearest)", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.applyStoryBeat then
             LWN.DebugTools.applyStoryBeat(p, "shared_food")

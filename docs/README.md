@@ -49,6 +49,8 @@ This directory contains research notes, audits, workflow references, and experim
   - careful first pass applying relationship policy directly to zombie shell posture and hostile activation attempts
 - `CARRIER_ISOZOMBIE_FRIENDLY_ATTACK_SUPPRESSION_2026-03-14.md`
   - minimal friendly-shell suppression test using `setGodMod(true)` only when policy disallows player attack
+- `WORK_NOTES_2026-03-20.md`
+  - concise follow-up note for the next `IsoZombie` pass: debug policy forcing, shell policy observability, conservative suppression update, and test steps
 - `NEXT_SESSION_HANDOFF_2026-03-14.md`
   - practical restart guide for the next session: current branch, confirmed findings, unresolved blockers, and recommended next actions
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
@@ -82,7 +84,7 @@ These documents summarize what was learned from reference mods and how those les
 
 - `GIT_WORKFLOW_2026-03-11.md`
   - git hygiene, validation workflow, snapshot-commit rule
-- `WORK_NOTES_2026-03-11.md`, `WORK_NOTES_2026-03-13.md`, `WORK_NOTES_2026-03-14.md`, ...
+- `WORK_NOTES_2026-03-11.md`, `WORK_NOTES_2026-03-13.md`, `WORK_NOTES_2026-03-14.md`, `WORK_NOTES_2026-03-20.md`, ...
   - date-matched work notes; each file should only contain work from its own date
 - `TEST_LOG_HISTORY.md`
   - append-only in-game test history linking observation -> logs -> lesson -> fix -> next check

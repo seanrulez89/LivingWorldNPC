@@ -147,13 +147,61 @@ local function relationshipValue(record, key)
     return tonumber(rel[key] or 0) or 0
 end
 
+local function relationshipPolicy(record)
+    if LWN.Social and LWN.Social.relationshipCombatPolicy then
+        return LWN.Social.relationshipCombatPolicy(record)
+    end
+    return {
+        state = "unknown",
+        reason = "social_missing",
+    }
+end
+
+local function relationshipPolicySummary(record, policy)
+    if LWN.Social and LWN.Social.combatPolicySummary then
+        return LWN.Social.combatPolicySummary(record, policy)
+    end
+    policy = policy or relationshipPolicy(record)
+    return string.format("%s/%s", tostring(policy.state), tostring(policy.reason))
+end
+
+local function syncRecordCarrier(record, player, source)
+    if not record or not record.embodiment or record.embodiment.state ~= "embodied" then
+        return false, "record_not_embodied"
+    end
+    if not (LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle) then
+        return false, "carrier_handle_missing"
+    end
+
+    local handle = LWN.EmbodimentManager.getCarrierHandle(record)
+    if not handle then
+        return false, "carrier_handle=nil"
+    end
+    if not (LWN.CarrierAdapter and LWN.CarrierAdapter.sync) then
+        return false, "carrier_sync_missing"
+    end
+
+    local result = LWN.CarrierAdapter.sync(record, handle, {
+        mode = "full",
+        player = player,
+        source = source or "DebugTools",
+    }) or {}
+
+    if result.ok == false then
+        return false, result.detail or "carrier_sync_failed"
+    end
+    return true, result.detail or "carrier_synced"
+end
+
 local function actorDebugLine(actor)
     if not actor then
         return "actor=nil"
     end
 
+    local modData = actor.getModData and actor:getModData() or nil
+
     return string.format(
-        "actor=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f",
+        "actor=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f policy=%s stance=%s safety=%s",
         tostring(actor:getObjectName()),
         tostring(actor.isExistInTheWorld and actor:isExistInTheWorld() or nil),
         tostring(actor.isGhostMode and actor:isGhostMode() or nil),
@@ -161,7 +209,10 @@ local function actorDebugLine(actor)
         tostring(actor.isSceneCulled and actor:isSceneCulled() or nil),
         tonumber(actor:getX() or 0) or 0,
         tonumber(actor:getY() or 0) or 0,
-        tonumber(actor:getZ() or 0) or 0
+        tonumber(actor:getZ() or 0) or 0,
+        tostring(modData and (modData.LWN_RelationshipPolicySummary or modData.LWN_RelationState) or "unknown"),
+        tostring(modData and modData.LWN_CarrierCombatMode or "unknown"),
+        tostring(modData and modData.LWN_FriendlySuppression or "unknown")
     )
 end
 
@@ -173,16 +224,24 @@ local function dumpRecordSummary(record, actor, player)
 
     local currentIntent = record.goals and record.goals.currentIntent or nil
     local currentPlan = record.goals and record.goals.currentPlan or {}
+    local policy = relationshipPolicy(record)
+    local speechLine = string.format(
+        "NPC %s %s %s",
+        tostring(record.id),
+        tostring(record.embodiment and record.embodiment.state or "unknown"),
+        relationshipPolicySummary(record, policy)
+    )
     local summary = string.format(
-        "NPC %s %s state=%s goal=%s intent=%s",
+        "NPC %s %s state=%s policy=%s goal=%s intent=%s",
         tostring(record.id),
         tostring(record.identity and record.identity.firstName or "Unknown"),
         tostring(record.embodiment and record.embodiment.state or "unknown"),
+        relationshipPolicySummary(record, policy),
         tostring(record.goals and record.goals.longTerm and record.goals.longTerm.kind or "idle"),
         tostring(currentIntent or "none")
     )
 
-    sayInfo(player, summary)
+    sayInfo(player, speechLine)
     print("[LWN][Debug] npc summary :: " .. summary)
     print(string.format(
         "[LWN][Debug] npc relations :: trust=%.2f respect=%.2f fear=%.2f resentment=%.2f loyaltyShift=%.2f",
@@ -388,7 +447,47 @@ function DebugTools.adjustNearestRelationship(player, field, delta)
     end
 
     local value = tweakRelationshipField(record, field, delta)
-    sayInfo(player, string.format("%s %s %.2f", tostring(record.id), tostring(field), tonumber(value or 0) or 0))
+    local syncOk, syncDetail = syncRecordCarrier(record, player, "DebugTools.adjustNearestRelationship")
+    if syncOk ~= true and syncDetail ~= "record_not_embodied" and syncDetail ~= "carrier_handle=nil" then
+        print("[LWN][Debug] relationship sync skipped :: " .. tostring(syncDetail))
+    end
+    sayInfo(player, string.format(
+        "%s %s=%.2f %s",
+        tostring(record.id),
+        tostring(field),
+        tonumber(value or 0) or 0,
+        relationshipPolicySummary(record)
+    ))
+    return true, record
+end
+
+function DebugTools.forceNearestRelationshipCombatPolicy(player, targetState)
+    local record = findNearestRecord(player)
+    if not record then
+        sayInfo(player, "No NPCs found")
+        return false
+    end
+    if not (LWN.Social and LWN.Social.forceRelationshipCombatPolicy) then
+        sayInfo(player, "Policy forcing unavailable")
+        return false
+    end
+
+    local policy, err = LWN.Social.forceRelationshipCombatPolicy(
+        record,
+        targetState,
+        "debug_force_policy_" .. tostring(targetState)
+    )
+    if not policy then
+        sayInfo(player, string.format("Force %s failed (%s)", tostring(targetState), tostring(err)))
+        return false
+    end
+
+    local syncOk, syncDetail = syncRecordCarrier(record, player, "DebugTools.forceRelationshipCombatPolicy")
+    if syncOk ~= true and syncDetail ~= "record_not_embodied" and syncDetail ~= "carrier_handle=nil" then
+        print("[LWN][Debug] forced policy sync skipped :: " .. tostring(syncDetail))
+    end
+
+    sayInfo(player, string.format("%s -> %s", tostring(record.id), relationshipPolicySummary(record, policy)))
     return true, record
 end
 
