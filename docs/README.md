@@ -4,12 +4,16 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Current blocker / next spike
 
-- alive embodied NPCs are still invisible in-game despite healthy-looking runtime/debug state
-- the strongest current unverified hypothesis is an `IsoPlayer` carrier / actor-class mismatch in the alive presentation path
-- recommended next manual experiments:
-  1. A/B test a carrier path away from `IsoPlayer`
-  2. evaluate the new post-create-only heavy presentation path added on 2026-03-14
-  3. verify whether the explicit alive-state animator/state reset pass changes visible embodiment results
+- current active carrier direction is `IsoZombie`, not `IsoPlayer`
+- the hybrid appearance experiment now really runs on the live `IsoZombie` shell, but the shell still renders through zombie presentation (`reanimated_zombie`, zombie body skin)
+- relationship policy has started affecting live behavior: `hostile` can now provoke pursuit/attack intent, while `friendly` / `neutral` still suffer from movement-churn / partial-neutralization issues
+- the most immediate technical blocker is a repeatable Java-side exception during relationship/trust sync:
+  - `NullPointerException: Cannot assign field "isNpc" because "this.player" is null`
+  - current strongest local hypothesis: `refreshActorPresentation()` is calling `setNPC(true)` on an `IsoZombie` shell, which is unsafe
+- recommended next manual experiments / fixes:
+  1. remove or hard-gate `setNPC(true)` for zombie carriers and confirm the sync errors disappear
+  2. strengthen non-hostile movement suppression and trace the repeated `retreat` / deferred movement churn
+  3. probe the zombie presentation pipeline itself rather than only descriptor/human-visual shaping
 
 ## Start here
 

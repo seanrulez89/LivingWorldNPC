@@ -81,3 +81,44 @@ For every new test cycle, append a new section using this structure:
 - alive 상태의 `IsoPlayer` embodied actor가 실제 render/model registration에 올라가는지 별도 trace를 추가해 확인한다.
 - death 시점에 separate zombie가 확인되면 원래 death-like actor를 더 빨리 정리할 수 있는지 본다.
 - 다음 테스트에서는 생성 직후 `ActorFactory`와 `OnCreate*` 구간이 콘솔에 남도록 로그 보존 범위를 확보한다.
+
+## 2026-03-20 02:47 KST — Hybrid appearance runs, hostile wakes up, zombie shell still wins
+
+### In-game result
+- dump helpers no longer crashed.
+- visible shell still looked like an ordinary zombie.
+- `hostile` caused the shell to actively come after the player.
+- `friendly` / `neutral` did not obviously attack, but the player heard repeated tiny footstep sounds as if movement and pinning were fighting each other.
+- forcing relationship state and repeatedly adjusting trust produced intermittent errors.
+
+### Log signals
+- hybrid summary now shows the appearance experiment truly ran:
+  - `exp=isozombie_shared_desc_visual_v1:applied@sync_pending_applied`
+  - descriptor source moved to `npc_record_survivor_desc_*`
+  - bridge reported `item_visuals_present`
+- despite this, live actor visuals still reported zombie rendering state:
+  - `presentationRole=reanimated_zombie`
+  - zombie body skin such as `M_ZedBody04_level1`
+- every policy/trust-driven sync could throw the same Java exception:
+  - `NullPointerException: Cannot assign field "isNpc" because "this.player" is null`
+  - stack traced through `IsoGameCharacter.setNPC(...)`
+  - Lua entry point was `23_LWN_ActorFactory.lua -> refreshActorPresentation()`
+- hostile state clearly changed runtime posture:
+  - debug actor line showed `stance=hostile_player safety=attackable`
+  - logs also showed repeated path/movement warnings such as `WalkTowardState but path2 != null`
+  - debug action queue could fill with repeated `retreat`
+
+### Interpretation / lesson
+- the hybrid appearance experiment is now genuinely executing; the failure is no longer “experiment never ran”.
+- descriptor/human-visual reuse alone is not enough to beat the zombie presentation pipeline.
+- `setNPC(true)` is unsafe on the live `IsoZombie` carrier and is likely a direct source of the new error spam.
+- non-hostile suppression is incomplete because some movement/deferred-path state survives or gets re-enqueued after policy sync.
+- hostile behavior is now partially real, which is an important milestone: policy is affecting live behavior, not just metadata.
+
+### Code or document changes that followed
+- analysis and handoff docs were updated after the run so the next session can resume from the new blocker set instead of re-proving earlier findings.
+
+### Next thing to verify
+- remove or hard-gate `setNPC(true)` from zombie appearance refresh and confirm the relationship/trust sync errors disappear.
+- strengthen non-hostile movement suppression until repeated footstep/path churn stops.
+- probe whether zombie body/presentation-role overrides are the real limiting layer for human appearance on `IsoZombie`.
