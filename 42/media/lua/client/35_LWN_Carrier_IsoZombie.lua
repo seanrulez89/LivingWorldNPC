@@ -193,6 +193,95 @@ local function friendlySuppressionSummary(policy)
     return "attackable"
 end
 
+local function stampHybridSummary(record, actor, relationSummary, descriptor, appearanceDetail)
+    if not (actor and LWN.ActorFactory and LWN.ActorFactory.stampHybridDebugMetadata) then
+        return nil
+    end
+
+    local metadataOptions = {
+        relationPolicy = relationSummary,
+    }
+    if appearanceDetail then
+        metadataOptions.descriptorSource = appearanceDetail.descriptorSource
+        metadataOptions.appearanceExperiment = appearanceDetail.experiment
+        metadataOptions.appearanceApplied = appearanceDetail.applied == true
+        metadataOptions.appearanceReuse = appearanceDetail.reuse
+        metadataOptions.appearanceBridge = appearanceDetail.bridgeMode
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    local hybridSources = LWN.ActorFactory.stampHybridDebugMetadata(record, actor, descriptor, metadataOptions)
+    if modData and hybridSources then
+        local previousSummary = modData.LWN_LastHybridSummaryLogged
+        if previousSummary ~= hybridSources.summary
+            and LWN.ActorFactory
+            and LWN.ActorFactory.debugStage
+        then
+            modData.LWN_LastHybridSummaryLogged = hybridSources.summary
+            LWN.ActorFactory.debugStage("CarrierIsoZombie", "hybrid.summary", record, actor, descriptor, {
+                source = "Carrier_IsoZombie",
+                detail = hybridSources.summary,
+            })
+        end
+    end
+
+    return hybridSources
+end
+
+local function cachedAppearanceDetail(actor)
+    local modData = protectedCall(actor, "getModData")
+    if not modData or modData.LWN_HybridAppearanceExperiment == nil then
+        return nil
+    end
+
+    return {
+        applied = modData.LWN_HybridAppearanceApplied == true,
+        experiment = modData.LWN_HybridAppearanceExperiment,
+        reuse = modData.LWN_HybridAppearanceReuse,
+        bridgeMode = modData.LWN_HybridAppearanceBridge or "none",
+        descriptorMode = modData.LWN_HybridAppearanceDescriptorMode,
+        descriptorSource = modData.LWN_HybridDescriptorSource
+            or (modData.LWN_HybridAppearanceDescriptorMode and string.format(
+                "npc_record_survivor_desc_%s",
+                tostring(modData.LWN_HybridAppearanceDescriptorMode)
+            ))
+            or "npc_record_identity_seed",
+    }
+end
+
+local function applyAppearanceExperiment(record, actor)
+    local cached = cachedAppearanceDetail(actor)
+    if cached and cached.applied == true then
+        return protectedCall(actor, "getDescriptor"), cached
+    end
+    if not (LWN.ActorFactory and LWN.ActorFactory.applySafeAppearanceShaping) then
+        return nil, {
+            applied = false,
+            experiment = "isozombie_shared_desc_visual_v1",
+            reuse = "desc+baseline+clothes+bridge",
+            bridgeMode = "helper_missing",
+            descriptorMode = "unavailable",
+            descriptorSource = "npc_record_identity_seed",
+        }
+    end
+
+    local descriptor, detail = LWN.ActorFactory.applySafeAppearanceShaping(record, actor, {
+        source = "CarrierIsoZombie.applyAppearanceExperiment",
+        experimentName = "isozombie_shared_desc_visual_v1",
+    })
+
+    trace("appearance.experiment", record, string.format(
+        "applied=%s desc=%s mode=%s reuse=%s bridge=%s",
+        tostring(detail and detail.applied == true),
+        tostring(detail and detail.descriptorSource or "nil"),
+        tostring(detail and detail.descriptorMode or "nil"),
+        tostring(detail and detail.reuse or "nil"),
+        tostring(detail and detail.bridgeMode or "nil")
+    ))
+
+    return descriptor, detail
+end
+
 -- Friendly/neutral shells should drop any stale queued aggression as well as target refs.
 local function clearCombatIntent(actor)
     protectedCall(actor, "StopAllActionQueue")
@@ -238,7 +327,7 @@ local function applyRelationshipCombatState(record, actor, options, policy)
     return policy
 end
 
-local function applyBasicZombieCarrierFlags(record, actor, options)
+local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, appearanceDetail)
     if not actor then return end
     local modData = protectedCall(actor, "getModData")
     local policy = relationshipCombatPolicy(record)
@@ -258,26 +347,7 @@ local function applyBasicZombieCarrierFlags(record, actor, options)
         modData.LWN_RelationshipPolicyAppliedAt = worldAgeHours()
     end
 
-    local hybridSources = LWN.ActorFactory
-        and LWN.ActorFactory.stampHybridDebugMetadata
-        and LWN.ActorFactory.stampHybridDebugMetadata(record, actor, nil, {
-            descriptorSource = "npc_record_survivor_desc_planned",
-            relationPolicy = summary,
-        })
-        or nil
-    if modData and hybridSources then
-        local previousSummary = modData.LWN_LastHybridSummaryLogged
-        if previousSummary ~= hybridSources.summary
-            and LWN.ActorFactory
-            and LWN.ActorFactory.debugStage
-        then
-            modData.LWN_LastHybridSummaryLogged = hybridSources.summary
-            LWN.ActorFactory.debugStage("CarrierIsoZombie", "hybrid.summary", record, actor, nil, {
-                source = "Carrier_IsoZombie",
-                detail = hybridSources.summary,
-            })
-        end
-    end
+    stampHybridSummary(record, actor, summary, descriptor, appearanceDetail)
 
     applyRelationshipCombatState(record, actor, options, policy)
 
@@ -414,6 +484,12 @@ function Carrier.spawn(record, options)
 
     applyBasicZombieCarrierFlags(record, actor, options)
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
+    local appearanceDescriptor = nil
+    local appearanceDetail = nil
+    if runtimeOk == true then
+        appearanceDescriptor, appearanceDetail = applyAppearanceExperiment(record, actor)
+        applyBasicZombieCarrierFlags(record, actor, options, appearanceDescriptor, appearanceDetail)
+    end
     local spawnedAt = worldAgeHours()
     trace(runtimeOk and "spawn.runtime_ready" or "spawn.pending_settle", record, string.format("spawn=%s | %s", tostring(spawnDetail), tostring(runtimeDetail)))
 
@@ -434,6 +510,8 @@ function Carrier.spawn(record, options)
             runtime = {
                 spawnDetail = spawnDetail,
                 runtimeDetail = runtimeDetail,
+                appearanceExperiment = appearanceDetail and appearanceDetail.experiment or nil,
+                appearanceApplied = appearanceDetail and appearanceDetail.applied == true or false,
                 neutralized = true,
                 settlePending = runtimeOk ~= true,
                 settleAttempts = 0,
@@ -484,7 +562,10 @@ function Carrier.sync(record, handle, options)
 
     handle.runtime.settlePending = false
     handle.runtime.runtimeDetail = runtimeDetail
-    applyBasicZombieCarrierFlags(record, actor, options)
+    local appearanceDescriptor, appearanceDetail = applyAppearanceExperiment(record, actor)
+    handle.runtime.appearanceExperiment = appearanceDetail and appearanceDetail.experiment or nil
+    handle.runtime.appearanceApplied = appearanceDetail and appearanceDetail.applied == true or false
+    applyBasicZombieCarrierFlags(record, actor, options, appearanceDescriptor, appearanceDetail)
 
     local anchor = record and record.anchor or nil
     if anchor then

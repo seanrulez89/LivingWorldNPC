@@ -370,6 +370,19 @@ local function hybridSourceTable(record, actor, descriptor, options)
     local relationPolicy = options and options.relationPolicy
         or modData and modData.LWN_RelationshipPolicySummary
         or nil
+    local appearanceExperiment = options and options.appearanceExperiment
+        or modData and modData.LWN_HybridAppearanceExperiment
+        or nil
+    local appearanceApplied = options and options.appearanceApplied
+    if appearanceApplied == nil then
+        appearanceApplied = modData and modData.LWN_HybridAppearanceApplied == true or false
+    end
+    local appearanceReuse = options and options.appearanceReuse
+        or modData and modData.LWN_HybridAppearanceReuse
+        or nil
+    local appearanceBridge = options and options.appearanceBridge
+        or modData and modData.LWN_HybridAppearanceBridge
+        or nil
 
     local sources = {
         carrierKind = carrierKind or "unknown",
@@ -378,15 +391,31 @@ local function hybridSourceTable(record, actor, descriptor, options)
         outfitSource = outfit and outfit ~= "" and "record.appearance.outfit" or "none",
         safeStateSource = "canonical_record_identity_stats_equipment",
         relationPolicy = relationPolicy or "none",
+        appearanceExperiment = appearanceExperiment or "none",
+        appearanceApplied = appearanceApplied == true,
+        appearanceReuse = appearanceReuse or "none",
+        appearanceBridge = appearanceBridge or "none",
     }
 
-    sources.summary = string.format(
-        "shell=%s descriptor=%s outfit=%s safeState=%s relation=%s",
+    local experimentSummary = sources.appearanceExperiment
+    if experimentSummary ~= "none" then
+        experimentSummary = experimentSummary .. ":" .. (sources.appearanceApplied == true and "applied" or "pending")
+    end
+
+    sources.debugLine = string.format(
+        "HYBRID shell=%s | desc=%s | outfit=%s | reuse=%s | exp=%s | bridge=%s | relation=%s",
         tostring(sources.shellVisualSource),
         tostring(sources.descriptorSource),
         tostring(sources.outfitSource),
-        tostring(sources.safeStateSource),
+        tostring(sources.appearanceReuse),
+        tostring(experimentSummary),
+        tostring(sources.appearanceBridge),
         tostring(sources.relationPolicy)
+    )
+    sources.summary = string.format(
+        "%s | safeState=%s",
+        tostring(sources.debugLine),
+        tostring(sources.safeStateSource)
     )
     return sources
 end
@@ -2310,9 +2339,19 @@ function Factory.stampHybridDebugMetadata(record, actor, descriptor, options)
     modData.LWN_HybridOutfitSource = sources.outfitSource
     modData.LWN_HybridSafeStateSource = sources.safeStateSource
     modData.LWN_HybridRelationPolicy = sources.relationPolicy
+    modData.LWN_HybridAppearanceExperiment = sources.appearanceExperiment
+    modData.LWN_HybridAppearanceApplied = sources.appearanceApplied == true
+    modData.LWN_HybridAppearanceReuse = sources.appearanceReuse
+    modData.LWN_HybridAppearanceBridge = sources.appearanceBridge
+    modData.LWN_HybridDebugLine = sources.debugLine
     modData.LWN_HybridSummary = sources.summary
     modData.LWN_HybridSummaryUpdatedAt = worldAgeHours()
     return sources
+end
+
+function Factory.hybridSummaryLine(record, actor, descriptor, options)
+    local sources = hybridSourceTable(record, actor, descriptor, options)
+    return sources and sources.debugLine or nil
 end
 
 function Factory.debugStage(moduleName, stage, record, actor, descriptor, extra)
@@ -2609,6 +2648,97 @@ refreshActorPresentation = function(actor)
     protectedCall(actor, "resetModel")
     protectedCall(actor, "resetModelNextFrame")
     refreshModelManager(actor, "presentation")
+end
+
+function Factory.applySafeAppearanceShaping(record, actor, options)
+    local experimentName = options and options.experimentName or "isozombie_shared_desc_visual_v1"
+    local reuseSummary = "desc+baseline+clothes+bridge"
+    local source = options and options.source or "applySafeAppearanceShaping"
+    local modData = protectedCall(actor, "getModData")
+
+    if not actor then
+        return nil, {
+            applied = false,
+            experiment = experimentName,
+            reuse = reuseSummary,
+            bridgeMode = "actor=nil",
+            descriptorMode = "unavailable",
+            descriptorSource = "npc_record_identity_seed",
+        }
+    end
+
+    local descriptor, descriptorMode = Factory.buildDescriptor(record)
+    if not descriptor then
+        if modData then
+            modData.LWN_HybridAppearanceExperiment = experimentName
+            modData.LWN_HybridAppearanceApplied = false
+            modData.LWN_HybridAppearanceReuse = reuseSummary
+            modData.LWN_HybridAppearanceBridge = "descriptor=nil"
+            modData.LWN_HybridAppearanceSource = source
+            modData.LWN_HybridAppearanceAppliedAt = worldAgeHours()
+        end
+        stageTrace("ActorFactory", "applySafeAppearanceShaping.skipped", record, actor, nil, {
+            source = source,
+            detail = string.format("exp=%s descriptor=nil mode=%s", experimentName, tostring(descriptorMode)),
+            descriptorMode = descriptorMode,
+        })
+        return nil, {
+            applied = false,
+            experiment = experimentName,
+            reuse = reuseSummary,
+            bridgeMode = "descriptor=nil",
+            descriptorMode = descriptorMode,
+            descriptorSource = "npc_record_identity_seed",
+        }
+    end
+
+    -- This intentionally reuses only the player-era appearance shaping subset.
+    -- It keeps descriptor/body visual seeding, but does not try to make an
+    -- IsoZombie behave like a true IsoPlayer runtime.
+    local activeDescriptor, bound = materializeDescriptorVisual(record or {}, actor, descriptor, "hybrid_isozombie_pre_clothing", {
+        dressup = true,
+        initSpriteParts = true,
+    })
+    setBaselineHumanVisual(record or {}, actor, activeDescriptor)
+    ensureVisibleClothing(actor)
+    local finalizedDescriptor, finalized = materializeDescriptorVisual(record or {}, actor, activeDescriptor, "hybrid_isozombie_post_clothing", {
+        dressup = false,
+        initSpriteParts = true,
+    })
+    local bridge = bridgeWornItemsToItemVisuals(actor)
+    refreshActorPresentation(actor)
+
+    if modData then
+        modData.LWN_HybridAppearanceExperiment = experimentName
+        modData.LWN_HybridAppearanceApplied = true
+        modData.LWN_HybridAppearanceReuse = reuseSummary
+        modData.LWN_HybridAppearanceBridge = bridge and bridge.mode or "none"
+        modData.LWN_HybridAppearanceDescriptorMode = descriptorMode
+        modData.LWN_HybridAppearanceSource = source
+        modData.LWN_HybridAppearanceAppliedAt = worldAgeHours()
+    end
+
+    stageTrace("ActorFactory", "applySafeAppearanceShaping.ready", record, actor, finalizedDescriptor, {
+        source = source,
+        descriptorMode = descriptorMode,
+        detail = string.format(
+            "exp=%s reuse=%s preDress=%s postInit=%s bridge=%s",
+            experimentName,
+            reuseSummary,
+            tostring(bound and bound.dressup == true),
+            tostring(finalized and finalized.initSpriteParts == true),
+            tostring(bridge and bridge.mode or "none")
+        ),
+    })
+
+    return finalizedDescriptor, {
+        applied = true,
+        experiment = experimentName,
+        reuse = reuseSummary,
+        bridgeMode = bridge and bridge.mode or "none",
+        descriptorMode = descriptorMode,
+        descriptorSource = string.format("npc_record_survivor_desc_%s", tostring(descriptorMode or "unknown")),
+    }
 end
 
 function Factory.applyTraits(record, actor)

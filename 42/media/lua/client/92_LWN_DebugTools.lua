@@ -216,6 +216,14 @@ local function actorDebugLine(actor)
     )
 end
 
+local function hybridDebugLine(record, actor)
+    if LWN.ActorFactory and LWN.ActorFactory.hybridSummaryLine then
+        return LWN.ActorFactory.hybridSummaryLine(record, actor, protectedCall(actor, "getDescriptor"))
+    end
+    local modData = actor and actor.getModData and actor:getModData() or nil
+    return modData and (modData.LWN_HybridDebugLine or modData.LWN_HybridSummary) or nil
+end
+
 local function dumpRecordSummary(record, actor, player)
     if not record then
         sayInfo(player, "No NPC record to dump")
@@ -240,9 +248,14 @@ local function dumpRecordSummary(record, actor, player)
         tostring(record.goals and record.goals.longTerm and record.goals.longTerm.kind or "idle"),
         tostring(currentIntent or "none")
     )
+    local hybridLine = hybridDebugLine(record, actor)
 
     sayInfo(player, speechLine)
+    if hybridLine then
+        sayInfo(player, hybridLine)
+    end
     print("[LWN][Debug] npc summary :: " .. summary)
+    print("[LWN][Debug] npc hybrid :: " .. tostring(hybridLine or "HYBRID unavailable"))
     print(string.format(
         "[LWN][Debug] npc relations :: trust=%.2f respect=%.2f fear=%.2f resentment=%.2f loyaltyShift=%.2f",
         relationshipValue(record, "trust"),
@@ -426,6 +439,19 @@ function DebugTools.dumpNearestNpcSummary(player)
     end
 
     return dumpRecordSummary(record, findActorForRecord(record), player)
+end
+
+function DebugTools.dumpNearestNpcHybridSummary(player)
+    local record = findNearestRecord(player)
+    if not record then
+        sayInfo(player, "No NPCs found")
+        return false
+    end
+
+    local line = hybridDebugLine(record, findActorForRecord(record))
+    sayInfo(player, tostring(line or "HYBRID unavailable"))
+    print("[LWN][Debug] npc hybrid :: " .. tostring(line or "HYBRID unavailable"))
+    return line ~= nil
 end
 
 function DebugTools.dumpNpcById(npcId, player)

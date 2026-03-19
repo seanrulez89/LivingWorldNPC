@@ -370,9 +370,15 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
-    settingsSub:addOption("Debug: Dump Nearest NPC Summary", player, function(p)
+    settingsSub:addOption("Debug: Dump Nearest NPC Summary + Hybrid", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.dumpNearestNpcSummary then
             LWN.DebugTools.dumpNearestNpcSummary(p)
+        end
+    end)
+
+    settingsSub:addOption("Debug: Dump Nearest NPC Hybrid Line", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.dumpNearestNpcHybridSummary then
+            LWN.DebugTools.dumpNearestNpcHybridSummary(p)
         end
     end)
 
@@ -426,7 +432,7 @@ local function addDebugSubmenu(context, player, actor)
 
     local npcId = getNpcId(actor)
     if npcId then
-        settingsSub:addOption("Debug: Dump This NPC (" .. tostring(npcId) .. ")", player, function(p)
+        settingsSub:addOption("Debug: Dump This NPC (" .. tostring(npcId) .. ") + Hybrid", player, function(p)
             traceContextCandidate("debug.dump.request", actor, "dump_this_npc", nil)
             if LWN.DebugTools and LWN.DebugTools.dumpNpcById then
                 LWN.DebugTools.dumpNpcById(npcId, p)
