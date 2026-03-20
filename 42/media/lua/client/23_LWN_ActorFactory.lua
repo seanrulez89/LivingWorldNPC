@@ -212,6 +212,17 @@ local function isManagedActor(obj)
         and protectedCall(obj, "getInventory") ~= nil
 end
 
+local function isIsoZombieCarrierActor(actor)
+    if not actor then return false end
+
+    local modData = protectedCall(actor, "getModData")
+    if modData and modData.LWN_CarrierKind == "isozombie" then
+        return true
+    end
+
+    return protectedCall(actor, "isZombie") == true
+end
+
 local function squareSummary(square)
     if not square then return "square=nil" end
 
@@ -2649,9 +2660,13 @@ end
 refreshActorPresentation = function(actor)
     if not actor then return end
 
+    local isIsoZombieCarrier = isIsoZombieCarrierActor(actor)
+
     restoreEmbodiedPresentationFlags(actor, "refreshActorPresentation")
-    protectedCall(actor, "setNPC", true)
-    protectedCall(actor, "setIsNPC", true)
+    if not isIsoZombieCarrier then
+        protectedCall(actor, "setNPC", true)
+        protectedCall(actor, "setIsNPC", true)
+    end
     protectedCall(actor, "setVisibleToNPCs", true)
     repairVisibleAlpha(actor, "refreshActorPresentation")
 

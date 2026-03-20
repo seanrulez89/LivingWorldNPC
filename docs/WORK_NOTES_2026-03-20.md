@@ -111,3 +111,18 @@
 4. Start a focused presentation-pipeline probe.
    - because `descriptor=true` + `humanVisual=true` + `applied` still ends with `presentationRole=reanimated_zombie` and zombie skin
    - next appearance experiments should target zombie base skin / role override boundaries, not just more descriptor work
+
+## Stage-1 stabilization patch
+
+- `23_LWN_ActorFactory.lua` now treats `refreshActorPresentation()` as carrier-aware for the live `IsoZombie` shell.
+- The shared refresh helper still runs for:
+  - `refreshEmbodiedPresentation()`
+  - `applyLoadout()`
+  - `finalizePostCreatePresentation()`
+  - `applySafeAppearanceShaping()`
+- For `IsoZombie` carriers / zombie actors, it now skips `setNPC(true)` and `setIsNPC(true)` instead of calling the player-backed Java path during trust / relationship sync.
+- The rest of the refresh path stays intact so the current hybrid appearance experiment and hostile posture work can continue unchanged for this pass.
+- Next in-game verification:
+  - force trust / relationship changes on a live `IsoZombie` shell and confirm the Java `this.player is null` exception no longer appears
+  - confirm hostile shells still enter pursuit / attack posture
+  - leave friendly / neutral movement churn for the later pass
