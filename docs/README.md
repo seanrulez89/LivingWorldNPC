@@ -77,6 +77,8 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Reference-study documents
 
+- `REFERENCE_CORPUS_ISOZOMBIE_AUDIT_2026-03-20.md`
+  - full-corpus rescan focused on `IsoZombie` NPC-shell embodiment, human-presentation tricks, lifecycle patterns, and Build 41 -> 42 portability clues
 - `REFERENCE_STUDY_2026-03-11.md`
 - `REFERENCE_STUDY_2026-03-12_BUILD41_LESSONS.md`
 - `LUA_FLOW_AUDIT_2026-03-11.md`
