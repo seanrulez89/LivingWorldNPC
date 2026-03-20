@@ -18,6 +18,8 @@ This directory contains research notes, audits, workflow references, and experim
     - high-confidence safe-to-remove soon
     - likely removable but confirm first
     - suspicious but should not be removed yet
+- `LWN_BANDITS_1TO1_MINIMAL_COMPONENT_MAP_2026-03-21.md`
+  - detailed 1:1 structure map from Bandits into LWN, identifying the minimum missing orchestration components for a true `IsoZombie`-shell persistent-illusion architecture
 
 ## Current blocker / next spike
 
