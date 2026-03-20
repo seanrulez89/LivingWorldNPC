@@ -120,10 +120,6 @@ function Store.addWorldClue(clue)
     return clue
 end
 
-function Store.setLegacyCandidates(candidates)
-    Store.root().legacy.candidates = candidates or {}
-end
-
 function Store.setPendingLegacy(snapshot)
     Store.root().legacy.pending = snapshot
 end

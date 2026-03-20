@@ -596,11 +596,9 @@ function DebugTools.forceLegacyCandidate(player)
 
     record.companion = record.companion or {}
     record.companion.recruited = true
-    record.companion.canContinueAsLegacy = true
     record.companion.squadRole = record.companion.squadRole or "companion"
     record.relationshipToPlayer = record.relationshipToPlayer or {}
     record.relationshipToPlayer.trust = math.max(record.relationshipToPlayer.trust or 0, LWN.Config.Legacy.MinTrust)
-    Store.setLegacyCandidates(LWN.Legacy.collectCandidates())
     sayInfo(player, string.format("Forced legacy candidate %s", tostring(record.id)))
     return true, record
 end

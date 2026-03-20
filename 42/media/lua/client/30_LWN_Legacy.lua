@@ -18,7 +18,6 @@ end
 
 function Legacy.showDeathModal(player)
     local candidates = Legacy.collectCandidates()
-    LWN.PopulationStore.setLegacyCandidates(candidates)
 
     local modal = ModalDialog.new(
         LWN.Loc.text("LWN_Legacy_Title"),
@@ -33,15 +32,4 @@ function Legacy.showDeathModal(player)
             LWN.PopulationStore.setPendingLegacy(candidates[1])
         end
     end
-end
-
-function Legacy.applyPendingToPlayer(player)
-    local root = LWN.PopulationStore.root()
-    local snap = root.legacy.pending
-    if not snap then return end
-
-    -- This is snapshot promotion, not live possession.
-    -- Only safe, data-driven fields should be applied here.
-    -- Trait and profession application may require your own character-start flow depending on your final UX.
-    root.legacy.pending = nil
 end

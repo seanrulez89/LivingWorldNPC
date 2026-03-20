@@ -54,7 +54,6 @@ function Schema.newRoot()
         },
         legacy = {
             pending = nil,
-            candidates = {},
         },
         debug = {
             devToolsEnabled = false,
@@ -256,7 +255,6 @@ function Schema.newNPCRecord(id, seed)
         companion = {
             recruited = false,
             squadRole = nil,
-            canContinueAsLegacy = false,
         },
     }
 end
