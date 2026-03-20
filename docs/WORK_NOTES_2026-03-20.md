@@ -158,3 +158,40 @@
 - reduce repeated footstep/path churn in `friendly`/`neutral`
 - make "still zombie-looking" ceiling easier to see in one dump
 - make shell replacement/continuity issues easier to spot from logs
+
+## Phase-0 follow-up for max test yield (2026-03-21)
+
+### Additional observability added
+
+- `90_LWN_EventAdapter.lua`
+  - tick loop now stamps `record.embodiment.debug` with decision provenance:
+    - `source` (`combat`, `utility_behavior`, `utility_none`, `policy_suppressed`)
+    - `utility`
+    - `behavior`
+    - `chosen`
+    - `neutralized`
+    - `queueBefore`
+    - `worldAgeHours`
+- `92_LWN_DebugTools.lua`
+  - main dump now prints an extra `npc decision` line using the stamped fields above
+  - added `dumpNearestNpcMovementAudioState()` helper for a compact one-line readout of:
+    - current queue
+    - last decision source
+    - whether policy suppression was active
+    - actor moving/path2 state
+    - current movement/audio suppression hints
+- `26_LWN_UI_ContextMenu.lua`
+  - added `Debug: Dump Nearest NPC Movement/Audio`
+
+### Additional behavior change
+
+- `90_LWN_EventAdapter.lua`
+  - when relationship policy says the carrier should be neutralized and there is no queued action already, the tick loop now skips UtilityAI/BehaviorTree enqueue and stamps `policy_suppressed`
+  - goal: reduce fresh movement churn for `friendly`/`neutral` without interfering with existing hostile combat intent
+
+### What the next single test should answer
+
+1. Does `friendly` / `neutral` still accumulate movement churn after policy suppression now short-circuits utility enqueue?
+2. If churn remains, does `npc decision` show the source was still `combat`, leftover queue state, or something engine-side?
+3. Does `npc movement_audio` show `moving=true` or `path2=true` even while suppression says the shell should be quiet?
+4. Does hostile still produce pursuit while the new neutralized short-circuit leaves non-hostile shells calmer?

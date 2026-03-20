@@ -382,6 +382,12 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
+    settingsSub:addOption("Debug: Dump Nearest NPC Movement/Audio", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.dumpNearestNpcMovementAudioState then
+            LWN.DebugTools.dumpNearestNpcMovementAudioState(p)
+        end
+    end)
+
     settingsSub:addOption("Debug: Wipe Data + Reseed", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.wipeAndReseed then
             LWN.DebugTools.wipeAndReseed(p)

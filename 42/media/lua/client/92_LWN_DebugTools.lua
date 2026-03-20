@@ -329,6 +329,7 @@ local function dumpRecordSummary(record, actor, player)
         #(record.memories or {})
     ))
     local meta = Store.getEmbodiedMeta and Store.getEmbodiedMeta(record.id) or nil
+    local debugState = record.embodiment and record.embodiment.debug or nil
     print("[LWN][Debug] npc actionQueue :: " .. table.concat(currentPlan, ","))
     print("[LWN][Debug] npc actor :: " .. actorDebugLine(actor))
     print(string.format(
@@ -343,6 +344,16 @@ local function dumpRecordSummary(record, actor, player)
         tostring(meta and meta.x or "nil"),
         tostring(meta and meta.y or "nil"),
         tostring(meta and meta.z or "nil")
+    ))
+    print(string.format(
+        "[LWN][Debug] npc decision :: source=%s utility=%s behavior=%s chosen=%s neutralized=%s queueBefore=%s tickHour=%s",
+        tostring(debugState and debugState.source or "nil"),
+        tostring(debugState and debugState.utility or "nil"),
+        tostring(debugState and debugState.behavior or "nil"),
+        tostring(debugState and debugState.chosen or "nil"),
+        tostring(debugState and debugState.neutralized or "nil"),
+        tostring(debugState and debugState.queueBefore or "nil"),
+        tostring(debugState and debugState.worldAgeHours or "nil")
     ))
     return true
 end
@@ -518,6 +529,36 @@ function DebugTools.dumpNearestNpcHybridSummary(player)
     sayInfo(player, tostring(line or "HYBRID unavailable"))
     print("[LWN][Debug] npc hybrid :: " .. tostring(line or "HYBRID unavailable"))
     return line ~= nil
+end
+
+function DebugTools.dumpNearestNpcMovementAudioState(player)
+    local record = findNearestRecord(player)
+    if not record then
+        sayInfo(player, "No NPCs found")
+        return false
+    end
+
+    local actor = findActorForRecord(record)
+    local modData = actor and actor.getModData and actor:getModData() or nil
+    local debugState = record.embodiment and record.embodiment.debug or nil
+    local currentPlan = record.goals and record.goals.currentPlan or {}
+    local line = string.format(
+        "MOVE/AUDIO %s queue=%s source=%s util=%s behavior=%s chosen=%s neutralized=%s moving=%s path2=%s supp=%s audio=%s",
+        tostring(record.id),
+        table.concat(currentPlan, ","),
+        tostring(debugState and debugState.source or "nil"),
+        tostring(debugState and debugState.utility or "nil"),
+        tostring(debugState and debugState.behavior or "nil"),
+        tostring(debugState and debugState.chosen or "nil"),
+        tostring(debugState and debugState.neutralized or "nil"),
+        tostring(actor and protectedCall(actor, "isMoving") or nil),
+        tostring(actor and protectedCall(actor, "getPath2") ~= nil or nil),
+        tostring(modData and modData.LWN_MovementSuppression or "none"),
+        tostring(modData and modData.LWN_AudioLeakHint or "none")
+    )
+    sayInfo(player, line)
+    print("[LWN][Debug] npc movement_audio :: " .. line)
+    return true
 end
 
 function DebugTools.dumpNpcById(npcId, player)

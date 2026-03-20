@@ -954,6 +954,16 @@ local function hideEmbodiedRecord(record, actor, reason, detail)
     })
 end
 
+local function stampEmbodiedDecision(record, fields)
+    if not record then return end
+    record.embodiment = record.embodiment or {}
+    record.embodiment.debug = record.embodiment.debug or {}
+    for k, v in pairs(fields or {}) do
+        record.embodiment.debug[k] = v
+    end
+    record.embodiment.debug.worldAgeHours = getGameTime() and getGameTime():getWorldAgeHours() or nil
+end
+
 local function tickEmbodiedRecord(record, actor, player)
     record = ensureRecordShape(record)
     local actorCleanup = getActorCleanupState(actor)
@@ -994,15 +1004,47 @@ local function tickEmbodiedRecord(record, actor, player)
     LWN.EmbodimentManager.registerActor(record, actor)
     LWN.GoalSystem.update(record, {})
 
+    local relationPolicy = LWN.Social and LWN.Social.relationshipCombatPolicy and LWN.Social.relationshipCombatPolicy(record) or nil
+    local queueBefore = LWN.ActionRuntime.peek(record)
+    local suppressUtilityForNeutralized = relationPolicy and relationPolicy.shouldNeutralizeCarrier == true
+
     local combatCtx = LWN.Combat.buildContext(record, actor)
     local combatIntent = LWN.Combat.chooseIntent(record, actor, combatCtx)
     if combatIntent then
+        stampEmbodiedDecision(record, {
+            source = "combat",
+            chosen = combatIntent.kind,
+            neutralized = suppressUtilityForNeutralized == true,
+            queueBefore = queueBefore and queueBefore.kind or nil,
+            utility = nil,
+            behavior = nil,
+        })
         LWN.ActionRuntime.enqueue(record, combatIntent)
     else
         local chosen = LWN.UtilityAI.choose(record, {})
-        local intent = LWN.BehaviorTree.tick(record, actor, {}, chosen)
-        if intent and not LWN.ActionRuntime.peek(record) then
-            LWN.ActionRuntime.enqueue(record, intent)
+        local chosenKind = chosen and chosen.kind or nil
+        if suppressUtilityForNeutralized and not queueBefore then
+            stampEmbodiedDecision(record, {
+                source = "policy_suppressed",
+                chosen = nil,
+                neutralized = true,
+                queueBefore = nil,
+                utility = chosenKind,
+                behavior = nil,
+            })
+        else
+            local intent = LWN.BehaviorTree.tick(record, actor, {}, chosen)
+            stampEmbodiedDecision(record, {
+                source = intent and "utility_behavior" or "utility_none",
+                chosen = intent and intent.kind or nil,
+                neutralized = suppressUtilityForNeutralized == true,
+                queueBefore = queueBefore and queueBefore.kind or nil,
+                utility = chosenKind,
+                behavior = intent and intent.kind or nil,
+            })
+            if intent and not queueBefore then
+                LWN.ActionRuntime.enqueue(record, intent)
+            end
         end
     end
 
