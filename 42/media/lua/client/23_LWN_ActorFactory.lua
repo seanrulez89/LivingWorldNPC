@@ -367,11 +367,26 @@ local function repeatSampleReason(seenCount)
     return "repeat_" .. tostring(seenCount)
 end
 
-local function shouldEmitRepeatSample(seenCount)
-    if seenCount == 4 or seenCount == 16 then
-        return true
+local function shouldEmitRepeatSample(seenCount, options)
+    local checkpoints = options and options.repeatCheckpoints or nil
+    if checkpoints then
+        for _, checkpoint in ipairs(checkpoints) do
+            if seenCount == checkpoint then
+                return true
+            end
+        end
+    else
+        if seenCount == 4 or seenCount == 16 then
+            return true
+        end
     end
-    return seenCount > 16 and (seenCount % 64) == 0
+
+    local interval = options and options.repeatInterval or 64
+    local threshold = options and options.repeatThreshold or 16
+    if seenCount > threshold and interval > 0 then
+        return (seenCount % interval) == 0
+    end
+    return false
 end
 
 local function getDebugSampleBucket(bucketName)
@@ -401,7 +416,7 @@ local function sampleDebugEvent(bucketName, key, signature, options)
     end
 
     state.seenCount = (state.seenCount or 1) + 1
-    if force or shouldEmitRepeatSample(state.seenCount) then
+    if force or shouldEmitRepeatSample(state.seenCount, options) then
         local suppressedCount = state.suppressedCount or 0
         state.suppressedCount = 0
         return {
@@ -1082,7 +1097,15 @@ local function tracePresentationGuard(actor, action, status, reason, source, bef
         return
     end
 
-    local sample = sampleDebugEvent("presentation_guard", sampleKey, signature)
+    local sampleOptions = nil
+    if status == "blocked" and reason == "zombie_or_reanimated" then
+        sampleOptions = {
+            repeatCheckpoints = { 8, 64 },
+            repeatThreshold = 64,
+            repeatInterval = 256,
+        }
+    end
+    local sample = sampleDebugEvent("presentation_guard", sampleKey, signature, sampleOptions)
     if sample.emit ~= true then
         return
     end
@@ -2329,6 +2352,7 @@ function Factory.buildDescriptor(record)
     callIf(desc, "setFriendliness", record.personality.sociability)
     callIf(desc, "setTemper", record.personality.impulsiveness)
     callIf(desc, "setLoner", 1.0 - record.personality.sociability)
+    callIf(desc, "setVoicePrefix", "NotAZombie")
 
     applyDescriptorAppearance(record, desc, descriptorMode)
     stageTrace("ActorFactory", "buildDescriptor.ready", record, nil, desc, {

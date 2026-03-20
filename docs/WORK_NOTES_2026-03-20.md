@@ -223,3 +223,33 @@
 1. Does non-hostile footstep churn disappear now that combat retreat injection is fully suppressed?
 2. If hostile still treadmill-walks, is the queue summary stable (`retreat×N`) or now much smaller / more interpretable?
 3. Does the first friendly sync produce a meaningful `appearanceDiff=` summary that confirms the observed outfit/visual change?
+
+## Direct patch: audio humanization + persistent illusion package (2026-03-21)
+
+### What changed
+
+- `23_LWN_ActorFactory.lua`
+  - descriptor build now always seeds `setVoicePrefix("NotAZombie")`
+  - presentation-guard known-constant spam (`blocked` + `zombie_or_reanimated`) is now sampled much more aggressively
+- `35_LWN_Carrier_IsoZombie.lua`
+  - added `applyPersistentIllusionPackage(...)` and apply it every carrier sync
+  - package currently reasserts:
+    - `NoLungeTarget=true`
+    - `ZombieHitReaction="Chainsaw"`
+    - `Walk` walk type
+    - `BanditWalkType="Walk"`
+    - descriptor voice prefix `NotAZombie`
+    - emitter `stopAll()` plus zombie combined sound stop calls
+  - this is intentionally experimental and treats the shell as a managed illusion surface, not a native human runtime
+- `92_LWN_DebugTools.lua`
+  - actor/movement dumps now expose:
+    - `audioHuman=...`
+    - `illusion=...`
+    - explicit `npc appearance :: diff=...` line
+  - queue summaries stay collapsed to avoid burying the important lines
+
+### Why this matches today's research
+
+- it leans into `managed shell + persistent illusion` instead of trying to convert the zombie carrier into a true human class
+- it explicitly borrows Bandits-style ideas (voice prefix, walk type, no-lunge, emitter suppression, persistent reapplication)
+- it keeps appearance diffs and audio humanization visible in the debug surface so manual tests can quickly answer whether the illusion is improving

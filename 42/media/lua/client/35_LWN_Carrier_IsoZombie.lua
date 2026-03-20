@@ -420,6 +420,41 @@ local function clearRuntimeIntent(record, actor)
     end
 end
 
+local function stopZombieCodedAudio(actor)
+    local emitter = protectedCall(actor, "getEmitter")
+    if emitter then
+        protectedCall(emitter, "stopAll")
+        protectedCall(emitter, "stopSoundByName", "MaleZombieCombined")
+        protectedCall(emitter, "stopSoundByName", "FemaleZombieCombined")
+    end
+end
+
+local function applyPersistentIllusionPackage(record, actor, descriptor, policy)
+    if not actor then return end
+    policy = policy or relationshipCombatPolicy(record)
+
+    protectedCall(actor, "setVariable", "LWNManagedShell", true)
+    protectedCall(actor, "setVariable", "NoLungeTarget", true)
+    protectedCall(actor, "setVariable", "ZombieHitReaction", "Chainsaw")
+    protectedCall(actor, "setWalkType", "Walk")
+    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+
+    if descriptor then
+        protectedCall(descriptor, "setVoicePrefix", "NotAZombie")
+    end
+
+    stopZombieCodedAudio(actor)
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_PersistentIllusionPackage = policy.shouldNeutralizeCarrier == true
+            and "walk_human+no_lunge+voice_notazombie+audio_stopall+hitreaction_guard"
+            or "walk_human+no_lunge+voice_notazombie+audio_stopall+hitreaction_guard"
+        modData.LWN_AudioHumanization = "descriptor_voiceprefix+emitter_stopall"
+        modData.LWN_AnimationHumanization = "walktype=Walk"
+    end
+end
+
 local function applyRelationshipCombatState(record, actor, options, policy)
     if not actor then return nil end
     policy = policy or relationshipCombatPolicy(record)
@@ -469,14 +504,14 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_AllowCarrierAttackPlayer = policy.allowCarrierAttackPlayer == true
         modData.LWN_CarrierCombatMode = carrierCombatMode(policy)
         modData.LWN_FriendlySuppression = friendlySuppressionSummary(policy)
-        modData.LWN_MovementSuppression = policy.shouldNeutralizeCarrier == true and "clearqueue+cleartarget+clearpath" or "hostile_pathing"
-        modData.LWN_AudioLeakHint = policy.shouldNeutralizeCarrier == true and "listen_for_footsteps_when_path2_reappears" or "hostile_movement_expected"
+        modData.LWN_MovementSuppression = policy.shouldNeutralizeCarrier == true and "clearqueue+cleartarget+clearpath+combat_block" or "hostile_pathing"
+        modData.LWN_AudioLeakHint = policy.shouldNeutralizeCarrier == true and "should_be_quiet_non_hostile" or "hostile_vocal_leak_possible"
         modData.LWN_HostilityReason = policy.reason
         modData.LWN_RelationshipPolicyAppliedAt = worldAgeHours()
     end
 
     stampHybridSummary(record, actor, summary, descriptor, appearanceDetail)
-
+    applyPersistentIllusionPackage(record, actor, descriptor, policy)
     applyRelationshipCombatState(record, actor, options, policy)
 
     protectedCall(actor, "setFakeDead", false)
