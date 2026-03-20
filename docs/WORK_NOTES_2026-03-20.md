@@ -253,3 +253,57 @@
 - it leans into `managed shell + persistent illusion` instead of trying to convert the zombie carrier into a true human class
 - it explicitly borrows Bandits-style ideas (voice prefix, walk type, no-lunge, emitter suppression, persistent reapplication)
 - it keeps appearance diffs and audio humanization visible in the debug surface so manual tests can quickly answer whether the illusion is improving
+
+## End-of-day status snapshot (2026-03-21)
+
+### What is now working better than it was this morning
+
+- the `IsoZombie` shell remains the clear active carrier path
+- policy forcing and shell sync no longer crash from the old `setNPC(true)` zombie-carrier path
+- `friendly` / `neutral` shells are now substantially calmer
+- the old tiny repeated footstep churn in non-hostile states has been strongly reduced
+- returning from `hostile` to `neutral` / `friendly` now stops the shell quickly instead of leaving it treadmill-walking in place
+- zombie vocal sounds can now be suppressed via the current persistent illusion package
+- appearance refreshes are now observable as concrete diffs instead of vague player impressions
+
+### What was newly proven today
+
+- the first strong state/sync change after spawn really does trigger a meaningful appearance refresh
+- that refresh can change:
+  - skin selection within zombie presentation
+  - hair
+  - beard
+  - worn-items count
+  - item-visual count
+  - persistent outfit id
+- despite that, final actor presentation remains zombie-coded (`reanimated_zombie`, zombie body skin)
+- therefore the project is now clearly operating in the space of:
+  - managed shell
+  - external brain/policy
+  - persistent illusion maintenance
+  not true class conversion into a native human runtime
+
+### What remains unsolved at end of day
+
+- hostile still reads like zombie aggression, not human hostility
+- audio suppression currently looks too blunt; zombie vocals are gone, but valid motion-presence sounds may also be erased
+- the first major humanization pass still lands on first significant sync rather than feeling fully completed at spawn time
+- the zombie presentation role/body layer still appears to be the final visual ceiling
+
+### Correct mental model going into next session
+
+Do **not** resume by asking "how do we make the engine treat this shell as human?"
+Resume by asking:
+
+1. how do we split initial humanization from maintenance reassertion?
+2. how do we suppress only zombie-coded audio without muting all presence?
+3. how do we give hostile shells their own humanized illusion profile?
+4. how far can surface-layer humanization go before zombie presentation hard-limits the result?
+
+### Most relevant commits from today
+
+- `9dad167` — Remove dead legacy cleanup remnants
+- `5d9686b` — Phase 0: tighten non-hostile shell suppression and debug observability
+- `66b63d9` — Phase 0 follow-up: add high-yield shell diagnostics
+- `d90b005` — Block neutralized combat churn and log appearance diffs
+- `9305213` — Apply persistent illusion package to isozombie shells

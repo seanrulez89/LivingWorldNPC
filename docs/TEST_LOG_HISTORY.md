@@ -122,3 +122,65 @@ For every new test cycle, append a new section using this structure:
 - remove or hard-gate `setNPC(true)` from zombie appearance refresh and confirm the relationship/trust sync errors disappear.
 - strengthen non-hostile movement suppression until repeated footstep/path churn stops.
 - probe whether zombie body/presentation-role overrides are the real limiting layer for human appearance on `IsoZombie`.
+
+## 2026-03-21 01:55 KST — Persistent illusion pass stabilizes non-hostile shells, but hostile still reads zombie
+
+### In-game result
+- forcing `friendly` / `neutral` now leaves the shell visibly calm; the earlier repeated tiny footstep churn largely disappeared
+- after switching from `hostile` back to `neutral` / `friendly`, the shell stopped immediately instead of treadmill-walking in place
+- the shell still rendered as a zombie in every state
+- after the persistent-illusion pass, the shell no longer emitted obvious zombie vocal sounds
+- however, this audio suppression was probably too blunt: during treadmill-like motion, normal footstep presence also felt absent
+- user clearly observed that the first forced state change after spawn caused an outfit / appearance change; later transitions back to `friendly` did not repeat that dramatic change every time
+- hostile still looked and felt like a zombie attacking the player, not a human-like hostile NPC
+
+### Log signals
+- non-hostile suppression now consistently showed:
+  - `npc decision :: source=policy_suppressed_combat`
+  - `npc actionQueue :: none`
+  - `npc movement_audio :: ... queue=none ... neutralized=true`
+- the combat retreat churn source was successfully isolated and then suppressed for neutralized shells
+- hostile still produced combat-driven behavior and zombie-coded pursuit/attack read
+- appearance diff logging confirmed the first strong appearance refresh was real, not imagined:
+  - `stage=appearance.diff`
+  - diff fields included changes such as:
+    - `skin:M_ZedBody02_level1->M_ZedBody04_level1`
+    - `hair:Mullet->Fabian`
+    - `beard:Chin->PointyChin`
+    - `itemVisuals:7->6`
+    - `wornItems:0->3`
+    - `persistentOutfitId:4325872->4325390`
+- despite the real appearance refresh, actor summaries still reported zombie presentation state:
+  - `presentationRole=reanimated_zombie`
+  - zombie body skin remained active
+- persistent illusion metadata now appeared in debug output, including:
+  - `audioHuman=descriptor_voiceprefix+emitter_stopall`
+  - `illusion=walk_human+no_lunge+voice_notazombie+audio_stopall+hitreaction_guard`
+
+### Interpretation / lesson
+- the project crossed an important threshold: the current `IsoZombie` route is no longer just about making the shell stable; it is now clearly about managing an illusion stack
+- non-hostile behavior is now much closer to the intended design: calm, quiet, and policy-controlled
+- the first state-change appearance jump strongly suggests humanization is currently landing on the first major sync rather than being fully completed at spawn time
+- appearance changes are real and meaningful at the clothing / grooming / outfit-id layer, but they still terminate inside zombie presentation role / zombie body skin
+- the audio pass proved that zombie-coded sound leaks can be suppressed, but the current method likely over-suppresses and removes too much sonic presence
+- hostile remains the main embodiment gap: it is still "managed zombie aggression" rather than a convincing human hostile profile
+
+### Code or document changes that followed
+- `9dad167` removed dead legacy remnants that were no longer supporting the spike
+- `5d9686b` strengthened non-hostile suppression and improved shell observability
+- `66b63d9` added high-yield decision / movement / audio diagnostics
+- `d90b005` blocked neutralized combat churn and added real appearance diff logging
+- `9305213` applied a Bandits-inspired persistent illusion package (voice prefix, walk type, no-lunge, hit-reaction guard, emitter suppression)
+- research synthesis was also expanded today across:
+  - `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
+  - `LWN_ISOZOMBIE_CLEANUP_TRIAGE_2026-03-21.md`
+  - `REFERENCE_CORPUS_ISOZOMBIE_AUDIT_2026-03-20.md`
+  - `BUILD42_ISOZOMBIE_NPC_WEB_MEMO_2026-03-20.md`
+  - `BUILD41_78_JAVADOC_SKEPTICAL_AUDIT_FOR_BUILD42_ISOZOMBIE_SHELL_2026-03-20.md`
+  - `PZWIKI_BUILD42_ISOZOMBIE_SHELL_REVIEW_2026-03-20.md`
+
+### Next thing to verify
+- split humanization into an explicit first-apply phase versus later maintenance reassertion, so the first forced state change is no longer the moment where the shell visibly "changes clothes"
+- replace blunt `emitter:stopAll()`-style suppression with narrower zombie-vocal suppression so human/presence cues are not also erased
+- introduce a hostile-specific illusion profile so hostile shells stop reading like plain zombies with some suppressions turned off
+- continue treating final zombie presentation role / zombie skin as the likely hard limit until evidence proves otherwise

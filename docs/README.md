@@ -73,9 +73,11 @@ This directory contains research notes, audits, workflow references, and experim
 - `CARRIER_ISOZOMBIE_FRIENDLY_ATTACK_SUPPRESSION_2026-03-14.md`
   - minimal friendly-shell suppression test using `setGodMod(true)` only when policy disallows player attack
 - `WORK_NOTES_2026-03-20.md`
-  - concise follow-up note for the next `IsoZombie` pass: debug policy forcing, shell policy observability, conservative suppression update, and test steps
+  - running technical narrative for the March 20-21 `IsoZombie` spike, including debug forcing, hybrid appearance work, churn suppression, appearance diff logging, and the first persistent illusion package
+- `NEXT_SESSION_HANDOFF_2026-03-21.md`
+  - the detailed end-of-day restart guide after the March 21 spike, including commit sequence, what actually improved, what still reads zombie, and the recommended next code priorities
 - `NEXT_SESSION_HANDOFF_2026-03-14.md`
-  - practical restart guide for the next session: current branch, confirmed findings, unresolved blockers, and recommended next actions
+  - earlier practical restart guide from the first visible `IsoZombie` success stage; useful historical context but superseded by the March 21 handoff
 - `ARCHITECTURE_VERDICT_2026-03-13.md`
   - final judgment on whether the current architecture is still worth pushing
 - `INGAME_TEST_CHECKLIST_2026-03-13.md`
