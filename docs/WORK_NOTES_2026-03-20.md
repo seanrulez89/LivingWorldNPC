@@ -126,3 +126,35 @@
   - force trust / relationship changes on a live `IsoZombie` shell and confirm the Java `this.player is null` exception no longer appears
   - confirm hostile shells still enter pursuit / attack posture
   - leave friendly / neutral movement churn for the later pass
+
+## A-group cleanup + Phase-0 immediate pass (2026-03-21)
+
+### Cleanup removals applied
+
+- removed dead `Legacy.applyPendingToPlayer(player)` stub from `30_LWN_Legacy.lua`
+- removed unread persisted `legacy.candidates` plumbing (`10_LWN_PopulationStore.lua` and write site in `30_LWN_Legacy.lua`)
+- removed unused debug write `record.companion.canContinueAsLegacy` and related forced-candidate write path in `92_LWN_DebugTools.lua`
+- removed now-unused schema defaults:
+  - `root.legacy.candidates`
+  - `record.companion.canContinueAsLegacy`
+
+### Phase-0 immediate changes applied
+
+- strengthened non-hostile suppression in `35_LWN_Carrier_IsoZombie.lua`:
+  - `clearCombatIntent(...)` now also calls `setPath2(nil)` and `setMoving(false)`
+  - non-hostile policy branches now also clear `LWN.ActionRuntime` queue via `ActionRuntime.clear(record, actor)`
+- expanded shell observability metadata in `35_LWN_Carrier_IsoZombie.lua`:
+  - `LWN_ActorKind`
+  - `LWN_SessionId`
+  - `LWN_ShellMarker`
+  - `LWN_MovementSuppression`
+  - `LWN_AudioLeakHint`
+- expanded debug dump in `92_LWN_DebugTools.lua`:
+  - actor line now includes carrier/shell/session/presentation-role/skin/itemVisuals/wornItems/path2/moving/audio hint
+  - identity line now includes canonical npc id, carrier kind, shell marker, session id, and embodied meta coordinates/state
+
+### Intended immediate test effect
+
+- reduce repeated footstep/path churn in `friendly`/`neutral`
+- make "still zombie-looking" ceiling easier to see in one dump
+- make shell replacement/continuity issues easier to spot from logs

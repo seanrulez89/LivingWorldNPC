@@ -401,6 +401,8 @@ local function clearCombatIntent(actor)
     protectedCall(actor, "setTarget", nil)
     protectedCall(actor, "setAttackedBy", nil)
     protectedCall(actor, "setTargetSeenTime", 0)
+    protectedCall(actor, "setPath2", nil)
+    protectedCall(actor, "setMoving", false)
 end
 
 local function getPrimaryPlayer(options)
@@ -410,6 +412,12 @@ local function getPrimaryPlayer(options)
         return getSpecificPlayer(0)
     end
     return nil
+end
+
+local function clearRuntimeIntent(record, actor)
+    if record and LWN.ActionRuntime and LWN.ActionRuntime.clear then
+        LWN.ActionRuntime.clear(record, actor)
+    end
 end
 
 local function applyRelationshipCombatState(record, actor, options, policy)
@@ -424,6 +432,7 @@ local function applyRelationshipCombatState(record, actor, options, policy)
         protectedCall(actor, "setCanWalk", false)
         protectedCall(actor, "setNoTeeth", true)
         clearCombatIntent(actor)
+        clearRuntimeIntent(record, actor)
     else
         protectedCall(actor, "setUseless", false)
         protectedCall(actor, "setCanWalk", true)
@@ -434,6 +443,7 @@ local function applyRelationshipCombatState(record, actor, options, policy)
             protectedCall(actor, "pathToCharacter", player)
         else
             clearCombatIntent(actor)
+            clearRuntimeIntent(record, actor)
         end
     end
 
@@ -449,6 +459,9 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_NpcId = record.id
         modData.LWN_LastNpcId = record.id
         modData.LWN_CarrierKind = "isozombie"
+        modData.LWN_ActorKind = tostring(protectedCall(actor, "getObjectName") or "IsoZombie")
+        modData.LWN_SessionId = record.embodiment and record.embodiment.sessionId or modData.LWN_SessionId
+        modData.LWN_ShellMarker = string.format("isozombie:%s", tostring(record.id))
         modData.LWN_CarrierSpike = true
         modData.LWN_RelationState = policy.state
         modData.LWN_RelationshipPolicySummary = summary
@@ -456,6 +469,8 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_AllowCarrierAttackPlayer = policy.allowCarrierAttackPlayer == true
         modData.LWN_CarrierCombatMode = carrierCombatMode(policy)
         modData.LWN_FriendlySuppression = friendlySuppressionSummary(policy)
+        modData.LWN_MovementSuppression = policy.shouldNeutralizeCarrier == true and "clearqueue+cleartarget+clearpath" or "hostile_pathing"
+        modData.LWN_AudioLeakHint = policy.shouldNeutralizeCarrier == true and "listen_for_footsteps_when_path2_reappears" or "hostile_movement_expected"
         modData.LWN_HostilityReason = policy.reason
         modData.LWN_RelationshipPolicyAppliedAt = worldAgeHours()
     end

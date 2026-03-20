@@ -204,16 +204,33 @@ local function syncRecordCarrier(record, player, source)
     return true, result.detail or "carrier_synced"
 end
 
+local function safeSize(list)
+    if not list then return 0 end
+    if list.size then
+        local ok, v = pcall(list.size, list)
+        if ok and type(v) == "number" then return v end
+    end
+    return 0
+end
+
 local function actorDebugLine(actor)
     if not actor then
         return "actor=nil"
     end
 
     local modData = actor.getModData and actor:getModData() or nil
+    local presentation = LWN.ActorFactory and LWN.ActorFactory.getPresentationState and LWN.ActorFactory.getPresentationState(actor) or nil
+    local visual = protectedCall(actor, "getHumanVisual")
+    local itemVisuals = protectedCall(actor, "getItemVisuals")
+    local wornItems = protectedCall(actor, "getWornItems")
+    local path2 = protectedCall(actor, "getPath2")
 
     return string.format(
-        "actor=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f policy=%s stance=%s safety=%s",
+        "actor=%s kind=%s shell=%s session=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f role=%s skin=%s itemVisuals=%d wornItems=%d policy=%s stance=%s safety=%s moveSupp=%s moving=%s path2=%s audioHint=%s",
         tostring(actor:getObjectName()),
+        tostring(modData and modData.LWN_ActorKind or "unknown"),
+        tostring(modData and modData.LWN_ShellMarker or (modData and modData.LWN_NpcId and ("isozombie:" .. tostring(modData.LWN_NpcId)) or "none")),
+        tostring(modData and modData.LWN_SessionId or "none"),
         tostring(actor.isExistInTheWorld and actor:isExistInTheWorld() or nil),
         tostring(actor.isGhostMode and actor:isGhostMode() or nil),
         tostring(actor.isInvisible and actor:isInvisible() or nil),
@@ -221,9 +238,17 @@ local function actorDebugLine(actor)
         tonumber(actor:getX() or 0) or 0,
         tonumber(actor:getY() or 0) or 0,
         tonumber(actor:getZ() or 0) or 0,
+        tostring(presentation and presentation.presentationRole or "unknown"),
+        tostring(visual and protectedCall(visual, "getSkinTexture") or "none"),
+        safeSize(itemVisuals),
+        safeSize(wornItems),
         tostring(modData and (modData.LWN_RelationshipPolicySummary or modData.LWN_RelationState) or "unknown"),
         tostring(modData and modData.LWN_CarrierCombatMode or "unknown"),
-        tostring(modData and modData.LWN_FriendlySuppression or "unknown")
+        tostring(modData and modData.LWN_FriendlySuppression or "unknown"),
+        tostring(modData and modData.LWN_MovementSuppression or "unknown"),
+        tostring(protectedCall(actor, "isMoving")),
+        tostring(path2 ~= nil),
+        tostring(modData and modData.LWN_AudioLeakHint or "none")
     )
 end
 
@@ -303,8 +328,22 @@ local function dumpRecordSummary(record, actor, player)
         tostring(record.storyArc and record.storyArc.clueCount or 0),
         #(record.memories or {})
     ))
+    local meta = Store.getEmbodiedMeta and Store.getEmbodiedMeta(record.id) or nil
     print("[LWN][Debug] npc actionQueue :: " .. table.concat(currentPlan, ","))
     print("[LWN][Debug] npc actor :: " .. actorDebugLine(actor))
+    print(string.format(
+        "[LWN][Debug] npc identity :: npcId=%s embodiedState=%s carrier=%s actorKind=%s shell=%s session=%s metaState=%s metaXYZ=%s/%s/%s",
+        tostring(record.id),
+        tostring(record.embodiment and record.embodiment.state or "unknown"),
+        tostring(record.embodiment and record.embodiment.carrierKind or "unknown"),
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_ActorKind or "unknown"),
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_ShellMarker or "none"),
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_SessionId or "none"),
+        tostring(meta and meta.state or "nil"),
+        tostring(meta and meta.x or "nil"),
+        tostring(meta and meta.y or "nil"),
+        tostring(meta and meta.z or "nil")
+    ))
     return true
 end
 
