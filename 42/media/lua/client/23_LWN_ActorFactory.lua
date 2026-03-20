@@ -192,6 +192,85 @@ local function getSkinTexture(visual)
     return protectedCall(visual, "getSkinTexture")
 end
 
+local actorPresentationState
+local stageTrace
+
+local function appearanceSnapshot(actor)
+    local visual = actor and protectedCall(actor, "getHumanVisual") or nil
+    local itemVisuals = actor and protectedCall(actor, "getItemVisuals") or nil
+    local wornItems = actor and protectedCall(actor, "getWornItems") or nil
+    local descriptor = actor and protectedCall(actor, "getDescriptor") or nil
+    local presentation = actor and actorPresentationState(actor) or nil
+    return {
+        role = presentation and presentation.presentationRole or nil,
+        skin = getSkinTexture(visual),
+        hair = visual and protectedCall(visual, "getHairModel") or nil,
+        beard = visual and protectedCall(visual, "getBeardModel") or nil,
+        itemVisuals = safeSize(itemVisuals),
+        wornItems = safeSize(wornItems),
+        persistentOutfitId = actor and protectedCall(actor, "getPersistentOutfitID") or nil,
+        descriptor = descriptor ~= nil,
+        humanVisual = visual ~= nil,
+    }
+end
+
+local function appearanceSignature(snapshot)
+    if not snapshot then return "nil" end
+    return table.concat({
+        safeText(snapshot.role),
+        safeText(snapshot.skin),
+        safeText(snapshot.hair),
+        safeText(snapshot.beard),
+        safeText(snapshot.itemVisuals),
+        safeText(snapshot.wornItems),
+        safeText(snapshot.persistentOutfitId),
+        safeText(snapshot.descriptor),
+        safeText(snapshot.humanVisual),
+    }, "|")
+end
+
+local function appearanceDiffSummary(before, after)
+    local changes = {}
+    local function note(label, a, b)
+        if safeText(a) ~= safeText(b) then
+            changes[#changes + 1] = string.format("%s:%s->%s", label, safeText(a), safeText(b))
+        end
+    end
+    note("role", before and before.role or nil, after and after.role or nil)
+    note("skin", before and before.skin or nil, after and after.skin or nil)
+    note("hair", before and before.hair or nil, after and after.hair or nil)
+    note("beard", before and before.beard or nil, after and after.beard or nil)
+    note("itemVisuals", before and before.itemVisuals or nil, after and after.itemVisuals or nil)
+    note("wornItems", before and before.wornItems or nil, after and after.wornItems or nil)
+    note("persistentOutfitId", before and before.persistentOutfitId or nil, after and after.persistentOutfitId or nil)
+    note("descriptor", before and before.descriptor or nil, after and after.descriptor or nil)
+    note("humanVisual", before and before.humanVisual or nil, after and after.humanVisual or nil)
+    if #changes == 0 then
+        return "no_change"
+    end
+    return table.concat(changes, ",")
+end
+
+local function stampAppearanceDiff(record, actor, source, before, after)
+    local modData = actor and protectedCall(actor, "getModData") or nil
+    local beforeSig = appearanceSignature(before)
+    local afterSig = appearanceSignature(after)
+    local diff = appearanceDiffSummary(before, after)
+    if modData then
+        modData.LWN_AppearanceSignature = afterSig
+        modData.LWN_AppearanceDiffSummary = diff
+        modData.LWN_AppearanceDiffSource = source
+        modData.LWN_AppearanceDiffAt = worldAgeHours()
+    end
+    if beforeSig ~= afterSig then
+        stageTrace("ActorFactory", "appearance.diff", record, actor, protectedCall(actor, "getDescriptor"), {
+            source = source,
+            detail = diff,
+            force = true,
+        })
+    end
+end
+
 local function isManagedActor(obj)
     if not obj then return false end
     local npcId = getNpcIdFromActor(obj)
@@ -588,7 +667,7 @@ local function visualSummary(actor, descriptor)
     return table.concat(parts, " | ")
 end
 
-local function actorPresentationState(actor)
+actorPresentationState = function(actor)
     if not actor then
         return nil
     end
@@ -1210,7 +1289,7 @@ local function stageTraceSignature(moduleName, stage, record, actor, descriptor,
     }, "|")
 end
 
-local function stageTrace(moduleName, stage, record, actor, descriptor, extra)
+stageTrace = function(moduleName, stage, record, actor, descriptor, extra)
     if not isDebugModeEnabled() then return end
 
     local currentSquare = actor and (protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")) or nil
@@ -2726,6 +2805,7 @@ function Factory.applySafeAppearanceShaping(record, actor, options)
     -- This intentionally reuses only the player-era appearance shaping subset.
     -- It keeps descriptor/body visual seeding, but does not try to make an
     -- IsoZombie behave like a true IsoPlayer runtime.
+    local beforeAppearance = appearanceSnapshot(actor)
     local activeDescriptor, bound = materializeDescriptorVisual(record or {}, actor, descriptor, "hybrid_isozombie_pre_clothing", {
         dressup = true,
         initSpriteParts = true,
@@ -2738,6 +2818,8 @@ function Factory.applySafeAppearanceShaping(record, actor, options)
     })
     local bridge = bridgeWornItemsToItemVisuals(actor)
     refreshActorPresentation(actor)
+    local afterAppearance = appearanceSnapshot(actor)
+    stampAppearanceDiff(record, actor, source, beforeAppearance, afterAppearance)
 
     if modData then
         modData.LWN_HybridAppearanceExperiment = experimentName

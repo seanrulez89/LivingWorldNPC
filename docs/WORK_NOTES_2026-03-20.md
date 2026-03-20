@@ -195,3 +195,31 @@
 2. If churn remains, does `npc decision` show the source was still `combat`, leftover queue state, or something engine-side?
 3. Does `npc movement_audio` show `moving=true` or `path2=true` even while suppression says the shell should be quiet?
 4. Does hostile still produce pursuit while the new neutralized short-circuit leaves non-hostile shells calmer?
+
+## Direct follow-up patch: combat retreat block + appearance diff logging (2026-03-21)
+
+### Behavior changes
+
+- `90_LWN_EventAdapter.lua`
+  - neutralized (`friendly` / `neutral`) shells now skip combat intent generation entirely
+  - if a stale queue already exists while neutralized, it is cleared before the tick proceeds
+  - debug source now distinguishes this path as `policy_suppressed_combat`
+- `20_LWN_ActionRuntime.lua`
+  - consecutive equivalent movement/combat intents (especially repeated `retreat`) are no longer appended endlessly to the queue
+
+### Observability changes
+
+- `23_LWN_ActorFactory.lua`
+  - appearance shaping now snapshots before/after state and stamps diff metadata
+  - diff covers role / skin / hair / beard / itemVisuals / wornItems / persistentOutfitId / descriptor / humanVisual
+  - if anything actually changed, a forced `appearance.diff` trace is emitted once for that change
+- `92_LWN_DebugTools.lua`
+  - actor line now includes `appearanceDiff=...`
+  - action queue output now collapses repeats (`retreat×8`) instead of dumping a huge raw list
+  - movement/audio dump also uses the summarized queue format
+
+### What the next test should clarify
+
+1. Does non-hostile footstep churn disappear now that combat retreat injection is fully suppressed?
+2. If hostile still treadmill-walks, is the queue summary stable (`retreat×N`) or now much smaller / more interpretable?
+3. Does the first friendly sync produce a meaningful `appearanceDiff=` summary that confirms the observed outfit/visual change?

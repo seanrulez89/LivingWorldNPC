@@ -131,10 +131,39 @@ function Runtime.clear(record, actor)
     end
 end
 
+local function intentsEquivalent(a, b)
+    if not a or not b then return false end
+    if a.kind ~= b.kind then return false end
+
+    local ad = a.data or {}
+    local bd = b.data or {}
+    if a.kind == "retreat" then
+        local ax = ad.threatPos and ad.threatPos.x or nil
+        local ay = ad.threatPos and ad.threatPos.y or nil
+        local bx = bd.threatPos and bd.threatPos.x or nil
+        local by = bd.threatPos and bd.threatPos.y or nil
+        return ax == bx and ay == by
+    end
+
+    if a.kind == "attack_melee" then
+        return ad.target == bd.target
+            and ad.targetX == bd.targetX
+            and ad.targetY == bd.targetY
+            and ad.targetZ == bd.targetZ
+    end
+
+    return true
+end
+
 function Runtime.enqueue(record, intent)
     local q = queueFor(record.id)
+    local last = q[#q]
+    if intentsEquivalent(last, intent) then
+        return false
+    end
     table.insert(q, intent)
     syncPlanMirror(record)
+    return true
 end
 
 function Runtime.peek(record)
