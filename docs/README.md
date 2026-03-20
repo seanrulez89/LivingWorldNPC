@@ -2,18 +2,37 @@
 
 This directory contains research notes, audits, workflow references, and experiment summaries for LivingWorldNPC.
 
+## Fresh synthesis / triage
+
+- `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
+  - new master synthesis of the March 20 IsoZombie research set, including:
+    - executive verdict
+    - supported vs speculative boundaries
+    - Build 41 lessons vs Build 42 distrust points
+    - what the best reference mods actually prove
+    - why the problem is really human perception / illusion maintenance
+    - the current strongest architecture for `spike/isozombie`
+    - a phased, practical next-session experiment roadmap
+- `LWN_ISOZOMBIE_CLEANUP_TRIAGE_2026-03-21.md`
+  - conservative cleanup candidate review of the current codebase, grouped into:
+    - high-confidence safe-to-remove soon
+    - likely removable but confirm first
+    - suspicious but should not be removed yet
+
 ## Current blocker / next spike
 
+- for the most current branch-level judgment, read `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md` first
+- the notes below are the 2026-03-20 session snapshot and are useful as historical context, not as the latest final verdict
 - current active carrier direction is `IsoZombie`, not `IsoPlayer`
 - the hybrid appearance experiment now really runs on the live `IsoZombie` shell, but the shell still renders through zombie presentation (`reanimated_zombie`, zombie body skin)
 - relationship policy has started affecting live behavior: `hostile` can now provoke pursuit/attack intent, while `friendly` / `neutral` still suffer from movement-churn / partial-neutralization issues
-- the most immediate technical blocker is a repeatable Java-side exception during relationship/trust sync:
+- the March 20 snapshot's most immediate technical blocker was a repeatable Java-side exception during relationship/trust sync:
   - `NullPointerException: Cannot assign field "isNpc" because "this.player" is null`
-  - current strongest local hypothesis: `refreshActorPresentation()` is calling `setNPC(true)` on an `IsoZombie` shell, which is unsafe
+  - current code has since added zombie-carrier guards around those human-only setters; the master reference covers the newer architecture verdict
 - recommended next manual experiments / fixes:
-  1. remove or hard-gate `setNPC(true)` for zombie carriers and confirm the sync errors disappear
-  2. strengthen non-hostile movement suppression and trace the repeated `retreat` / deferred movement churn
-  3. probe the zombie presentation pipeline itself rather than only descriptor/human-visual shaping
+  1. strengthen non-hostile movement suppression and trace the repeated `retreat` / deferred movement churn
+  2. probe the zombie presentation pipeline itself rather than only descriptor/human-visual shaping
+  3. keep validating shell identity continuity and UI framing rather than treating the problem as purely visual
 
 ## Start here
 
@@ -77,8 +96,18 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Reference-study documents
 
+- `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
+  - consolidated strategic reference that supersedes the need to read the four March 20 IsoZombie research docs separately before the next session
+- `LWN_ISOZOMBIE_CLEANUP_TRIAGE_2026-03-21.md`
+  - current cleanup/removal triage for stale carrier paths, legacy stubs, and risky human-first assumptions
 - `REFERENCE_CORPUS_ISOZOMBIE_AUDIT_2026-03-20.md`
   - full-corpus rescan focused on `IsoZombie` NPC-shell embodiment, human-presentation tricks, lifecycle patterns, and Build 41 -> 42 portability clues
+- `BUILD42_ISOZOMBIE_NPC_WEB_MEMO_2026-03-20.md`
+  - official Build 42 docs + web-context memo focused on supported `IsoZombie` shell boundaries and Build 42 pooling risk
+- `BUILD41_78_JAVADOC_SKEPTICAL_AUDIT_FOR_BUILD42_ISOZOMBIE_SHELL_2026-03-20.md`
+  - skeptical read of Build 41.78 javadocs as a concept map, not as Build 42 implementation truth
+- `PZWIKI_BUILD42_ISOZOMBIE_SHELL_REVIEW_2026-03-20.md`
+  - wiki-driven review of the broader Build 42 modding lanes, especially UI/animation/audio/perception implications for a zombie-shell NPC
 - `REFERENCE_STUDY_2026-03-11.md`
 - `REFERENCE_STUDY_2026-03-12_BUILD41_LESSONS.md`
 - `LUA_FLOW_AUDIT_2026-03-11.md`
