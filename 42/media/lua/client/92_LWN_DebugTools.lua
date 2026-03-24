@@ -70,6 +70,95 @@ local function randomizeIdentity(record)
     end
 end
 
+local function embodiedCoordsFor(record)
+    local meta = record and Store.getEmbodiedMeta and Store.getEmbodiedMeta(record.id) or nil
+    if meta and meta.x ~= nil and meta.y ~= nil then
+        return tonumber(meta.x) or 0, tonumber(meta.y) or 0, tonumber(meta.z or 0) or 0, "meta"
+    end
+    local anchor = record and record.anchor or {}
+    return tonumber(anchor.x) or 0, tonumber(anchor.y) or 0, tonumber(anchor.z) or 0, "anchor"
+end
+
+local function debugConfig(key, fallback)
+    local cfg = LWN.Config and LWN.Config.Debug or nil
+    if not cfg then return fallback end
+    local value = cfg[key]
+    if value == nil then return fallback end
+    return value
+end
+
+local function clearNearbyWorldNoise(player, radius, protectedNpcId)
+    if not player then return 0 end
+    local square = protectedCall(player, "getSquare")
+    local cell = getCell and getCell() or nil
+    if not square or not cell then return 0 end
+
+    local cx = protectedCall(square, "getX") or math.floor(player:getX())
+    local cy = protectedCall(square, "getY") or math.floor(player:getY())
+    local cz = protectedCall(square, "getZ") or math.floor(player:getZ())
+    local removed = 0
+    local seen = {}
+
+    local function maybeRemove(obj)
+        if not obj or seen[obj] then return end
+        seen[obj] = true
+        local npcId = getNpcId(obj)
+        if npcId and npcId == protectedNpcId then
+            return
+        end
+        local objectName = tostring(protectedCall(obj, "getObjectName") or "")
+        local managed = isManagedActor(obj)
+        local isZombie = protectedCall(obj, "isZombie") == true
+        local isDeadBody = string.find(objectName, "DeadBody", 1, true) ~= nil
+        if (isZombie and not managed) or isDeadBody then
+            protectedCall(obj, "removeFromWorld")
+            protectedCall(obj, "removeFromSquare")
+            removed = removed + 1
+        end
+    end
+
+    for y = cy - radius, cy + radius do
+        for x = cx - radius, cx + radius do
+            local scanSquare = cell:getGridSquare(x, y, cz)
+            if scanSquare then
+                local moving = protectedCall(scanSquare, "getMovingObjects")
+                if moving and moving.size then
+                    for i = moving:size() - 1, 0, -1 do
+                        maybeRemove(moving:get(i))
+                    end
+                end
+                local staticMoving = protectedCall(scanSquare, "getStaticMovingObjects")
+                if staticMoving and staticMoving.size then
+                    for i = staticMoving:size() - 1, 0, -1 do
+                        maybeRemove(staticMoving:get(i))
+                    end
+                end
+            end
+        end
+    end
+
+    return removed
+end
+
+local function applyDebugHarnessDefaults(record, carrierKind)
+    if not record then return end
+    record.debugHarness = record.debugHarness or {}
+    record.debugHarness.enabled = true
+    record.debugHarness.label = string.format("TEST-%s", tostring(record.id or "NPC"))
+    record.debugHarness.sterileRadius = tonumber(debugConfig("DebugSterileRadiusTiles", 8)) or 8
+    record.debugHarness.identityLock = debugConfig("DebugTestIdentityLock", true) == true
+    record.debugHarness.holdPosition = debugConfig("DebugTestHoldPosition", true) == true
+    record.debugHarness.forceFriendly = debugConfig("DebugTestForceFriendly", true) == true
+    record.debugHarness.carrierKind = carrierKind or "isoplayer"
+    record.identity.firstName = tostring(record.debugHarness.label)
+    record.identity.lastName = carrierKind == "isozombie" and "Shell" or "Debug"
+    record.relationshipToPlayer.trust = 0.85
+    record.relationshipToPlayer.respect = 0.70
+    record.relationshipToPlayer.resentment = 0.0
+    record.relationshipToPlayer.fear = 0.0
+    record.relationshipToPlayer.affection = 0.25
+end
+
 local function findActorForRecord(record)
     if not record or (Store.isAlive and not Store.isAlive(record)) then
         return nil
@@ -134,19 +223,30 @@ local function findNearestRecord(player)
     local px, py = player:getX(), player:getY()
     local bestRecord = nil
     local bestD2 = math.huge
+    local bestPriority = -1
 
     Store.eachNPC(function(record)
         if Store.isAlive(record) ~= true then
             return
         end
-        local ax = record.anchor and record.anchor.x or 0
-        local ay = record.anchor and record.anchor.y or 0
+        local ax, ay = embodiedCoordsFor(record)
         local dx = ax - px
         local dy = ay - py
         local d2 = dx * dx + dy * dy
-        if d2 < bestD2 then
+        local priority = 0
+        if record.debugSpawnOnly == true then
+            priority = priority + 10
+        end
+        if record.debugHarness and record.debugHarness.enabled == true then
+            priority = priority + 20
+        end
+        if record.embodiment and record.embodiment.carrierKind == "isozombie" then
+            priority = priority + 5
+        end
+        if priority > bestPriority or (priority == bestPriority and d2 < bestD2) then
             bestRecord = record
             bestD2 = d2
+            bestPriority = priority
         end
     end)
 
@@ -226,7 +326,7 @@ local function actorDebugLine(actor)
     local path2 = protectedCall(actor, "getPath2")
 
     return string.format(
-        "actor=%s kind=%s shell=%s session=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f role=%s skin=%s itemVisuals=%d wornItems=%d policy=%s stance=%s safety=%s moveSupp=%s moving=%s path2=%s audioHint=%s audioHuman=%s illusion=%s humanInit=%s humanProfile=%s maintMode=%s drift=%s appearanceDiff=%s",
+        "actor=%s kind=%s shell=%s session=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f role=%s skin=%s itemVisuals=%d wornItems=%d policy=%s stance=%s safety=%s moveSupp=%s moving=%s path2=%s audioHint=%s audioHuman=%s illusion=%s testLabel=%s hold=%s lock=%s humanInit=%s humanProfile=%s maintMode=%s drift=%s appearanceDiff=%s",
         tostring(actor:getObjectName()),
         tostring(modData and modData.LWN_ActorKind or "unknown"),
         tostring(modData and modData.LWN_ShellMarker or (modData and modData.LWN_NpcId and ("isozombie:" .. tostring(modData.LWN_NpcId)) or "none")),
@@ -251,6 +351,9 @@ local function actorDebugLine(actor)
         tostring(modData and modData.LWN_AudioLeakHint or "none"),
         tostring(modData and modData.LWN_AudioHumanization or "none"),
         tostring(modData and modData.LWN_PersistentIllusionPackage or "none"),
+        tostring(modData and modData.LWN_TestHarnessLabel or "none"),
+        tostring(modData and modData.LWN_TestHarnessHoldPosition or false),
+        tostring(modData and modData.LWN_TestHarnessIdentityLock or false),
         tostring(modData and modData.LWN_HumanizationInitialApplied or modData and modData.LWN_InitialHumanizationApplied or false),
         tostring(modData and (modData.LWN_HumanizationProfile or modData.LWN_InitialHumanizationProfile or modData.LWN_MaintenanceHumanizationProfile) or "none"),
         tostring(modData and (modData.LWN_HumanizationMaintenanceMode or modData.LWN_MaintenanceHumanizationMode) or "none"),
@@ -412,7 +515,7 @@ local function dumpRecordSummary(record, actor, player)
         tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_AppearanceSignature or "none")
     ))
     print(string.format(
-        "[LWN][Debug] npc humanization :: initialApplied=%s initialAt=%s initialProfile=%s initialSig=%s maintenanceAt=%s maintenanceSource=%s maintenanceProfile=%s maintenanceMode=%s driftCount=%s lastDriftAt=%s lastDriftReason=%s lastKnownSig=%s",
+        "[LWN][Debug] npc humanization :: initialApplied=%s initialAt=%s initialProfile=%s initialSig=%s maintenanceAt=%s maintenanceSource=%s maintenanceProfile=%s maintenanceMode=%s driftCount=%s lastDriftAt=%s lastDriftReason=%s lastKnownSig=%s lockedSig=%s",
         tostring(illusion and illusion.initialApplied or "nil"),
         tostring(illusion and illusion.initialAppliedAt or "nil"),
         tostring(illusion and illusion.initialProfile or "nil"),
@@ -424,7 +527,17 @@ local function dumpRecordSummary(record, actor, player)
         tostring(illusion and illusion.driftCount or 0),
         tostring(illusion and illusion.lastDriftAt or "nil"),
         tostring(illusion and illusion.lastDriftReason or "nil"),
-        tostring(illusion and illusion.lastKnownAppearanceSignature or "nil")
+        tostring(illusion and illusion.lastKnownAppearanceSignature or "nil"),
+        tostring(illusion and illusion.lockedAppearanceSignature or "nil")
+    ))
+    print(string.format(
+        "[LWN][Debug] npc testHarness :: enabled=%s label=%s hold=%s forceFriendly=%s identityLock=%s sterileRadius=%s",
+        tostring(record.debugHarness and record.debugHarness.enabled or false),
+        tostring(record.debugHarness and record.debugHarness.label or "nil"),
+        tostring(record.debugHarness and record.debugHarness.holdPosition or false),
+        tostring(record.debugHarness and record.debugHarness.forceFriendly or false),
+        tostring(record.debugHarness and record.debugHarness.identityLock or false),
+        tostring(record.debugHarness and record.debugHarness.sterileRadius or "nil")
     ))
     return true
 end
@@ -515,10 +628,9 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind)
     local record = LWN.Schema.newNPCRecord(id, seed)
 
     randomizeIdentity(record)
+    applyDebugHarnessDefaults(record, carrierKind)
     record.identity.profession = "unemployed"
     record.backstory.formerProfession = record.identity.profession
-    record.relationshipToPlayer.trust = 0.25
-    record.relationshipToPlayer.respect = 0.15
     record.companion.recruited = true
     record.companion.squadRole = "debug"
     record.goals.longTerm = LWN.Schema.newGoal("support_player", 1.0)
@@ -531,11 +643,36 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind)
     record.embodiment.preferredCarrierKind = carrierKind or "isoplayer"
     record.embodiment.carrierKind = carrierKind or "isoplayer"
 
+    local sterileRadius = tonumber(record.debugHarness and record.debugHarness.sterileRadius or 0) or 0
+    if sterileRadius > 0 then
+        local removedBefore = clearNearbyWorldNoise(player, sterileRadius, nil)
+        if removedBefore > 0 then
+            sayInfo(player, string.format("Sterile lane cleared: removed %d nearby world objects", removedBefore))
+        end
+    end
+
     Store.addNPC(record)
 
     local actor = LWN.EmbodimentManager.tryEmbody(record, player)
     if actor then
-        sayInfo(player, string.format("Spawned embodied NPC %s via %s", record.id, tostring(record.embodiment and record.embodiment.carrierKind or carrierKind)))
+        if sterileRadius > 0 then
+            local removedAfter = clearNearbyWorldNoise(player, sterileRadius, record.id)
+            if removedAfter > 0 then
+                sayInfo(player, string.format("Post-spawn sterile cleanup: removed %d nearby objects", removedAfter))
+            end
+        end
+        if record.debugHarness and record.debugHarness.forceFriendly == true and LWN.Social and LWN.Social.forceRelationshipCombatPolicy then
+            LWN.Social.forceRelationshipCombatPolicy(record, "friendly", "debug_spawn_test_harness")
+            syncRecordCarrier(record, player, "DebugTools.spawnOneNearPlayerWithCarrier")
+        end
+        local actorModData = actor.getModData and actor:getModData() or nil
+        if actorModData then
+            actorModData.LWN_TestHarnessLabel = record.debugHarness and record.debugHarness.label or nil
+            actorModData.LWN_TestHarnessSterileRadius = sterileRadius
+            actorModData.LWN_TestHarnessIdentityLock = record.debugHarness and record.debugHarness.identityLock == true or false
+            actorModData.LWN_TestHarnessHoldPosition = record.debugHarness and record.debugHarness.holdPosition == true or false
+        end
+        sayInfo(player, string.format("Spawned sterile test NPC %s via %s", record.id, tostring(record.embodiment and record.embodiment.carrierKind or carrierKind)))
     else
         local handle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
         local handleDetail = handle and handle.detail or nil
@@ -563,6 +700,14 @@ end
 
 function DebugTools.spawnOneNearPlayerIsoZombie(player)
     return spawnOneNearPlayerWithCarrier(player, "isozombie")
+end
+
+function DebugTools.cleanNearbyWorldNoise(player)
+    local nearest = findNearestRecord(player)
+    local protectedNpcId = nearest and nearest.id or nil
+    local removed = clearNearbyWorldNoise(player, tonumber(debugConfig("DebugSterileRadiusTiles", 8)) or 8, protectedNpcId)
+    sayInfo(player, string.format("Sterile cleanup removed %d nearby world objects", removed))
+    return true, removed
 end
 
 function DebugTools.dumpLastActorFailure(player)
@@ -614,7 +759,7 @@ function DebugTools.dumpNearestNpcMovementAudioState(player)
     local debugState = record.embodiment and record.embodiment.debug or nil
     local currentPlan = record.goals and record.goals.currentPlan or {}
     local line = string.format(
-        "MOVE/AUDIO %s queue=%s source=%s util=%s behavior=%s chosen=%s neutralized=%s moving=%s path2=%s supp=%s audio=%s humanize=%s illusion=%s init=%s profile=%s maint=%s drift=%s",
+        "MOVE/AUDIO %s queue=%s source=%s util=%s behavior=%s chosen=%s neutralized=%s moving=%s path2=%s supp=%s audio=%s humanize=%s illusion=%s testLabel=%s hold=%s lock=%s init=%s profile=%s maint=%s drift=%s",
         tostring(record.id),
         summarizePlan(currentPlan, 8),
         tostring(debugState and debugState.source or "nil"),
@@ -628,6 +773,9 @@ function DebugTools.dumpNearestNpcMovementAudioState(player)
         tostring(modData and modData.LWN_AudioLeakHint or "none"),
         tostring(modData and modData.LWN_AudioHumanization or "none"),
         tostring(modData and modData.LWN_PersistentIllusionPackage or "none"),
+        tostring(modData and modData.LWN_TestHarnessLabel or "none"),
+        tostring(modData and modData.LWN_TestHarnessHoldPosition or false),
+        tostring(modData and modData.LWN_TestHarnessIdentityLock or false),
         tostring(modData and (modData.LWN_HumanizationInitialApplied or modData.LWN_InitialHumanizationApplied) or false),
         tostring(modData and (modData.LWN_HumanizationProfile or modData.LWN_InitialHumanizationProfile or modData.LWN_MaintenanceHumanizationProfile) or "none"),
         tostring(modData and (modData.LWN_HumanizationMaintenanceMode or modData.LWN_MaintenanceHumanizationMode) or "none"),

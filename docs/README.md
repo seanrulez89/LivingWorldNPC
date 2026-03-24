@@ -4,6 +4,8 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Fresh synthesis / triage
 
+- `TEST_IDENTITY_HARNESS_2026-03-25.md`
+  - rationale and implementation notes for the sterile test-lane harness: debug shell labeling, nearby world cleanup, hold-position policy override, and identity-lock-aware maintenance
 - `INITIAL_HUMANIZATION_SPLIT_IMPLEMENTATION_2026-03-24.md`
   - implementation note for the first major structural split between spawn-time initial humanization and sync-time maintenance, including the new `ShellHumanizer` module and an in-game validation order
 - `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`

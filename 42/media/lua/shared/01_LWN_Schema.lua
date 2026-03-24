@@ -146,6 +146,7 @@ function Schema.newNPCRecord(id, seed)
                 lastMaintenanceProfile = nil,
                 lastKnownAppearanceSignature = nil,
                 lastMaintenanceMode = nil,
+                lockedAppearanceSignature = nil,
                 driftCount = 0,
                 lastDriftAt = nil,
                 lastDriftReason = nil,

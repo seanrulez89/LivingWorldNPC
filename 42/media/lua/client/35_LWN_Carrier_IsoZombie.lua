@@ -155,6 +155,16 @@ local function spawnZombieAtSquare(square, record)
 end
 
 local function relationshipCombatPolicy(record)
+    local harness = record and record.debugHarness or nil
+    if harness and harness.enabled == true and harness.holdPosition == true then
+        return {
+            state = harness.forceFriendly == true and "friendly" or "neutral",
+            allowPlayerAttack = true,
+            allowCarrierAttackPlayer = false,
+            shouldNeutralizeCarrier = true,
+            reason = "debug_test_harness_hold_position",
+        }
+    end
     if LWN.Social and LWN.Social.relationshipCombatPolicy then
         return LWN.Social.relationshipCombatPolicy(record)
     end
@@ -396,6 +406,10 @@ local function stageBaseForAction(actionName, runtimeOk)
 end
 
 local function humanizationProfile(record)
+    local harness = record and record.debugHarness or nil
+    if harness and harness.enabled == true and harness.forceFriendly == true then
+        return "friendly"
+    end
     local policy = relationshipCombatPolicy(record)
     return policy and policy.state or "neutral"
 end
@@ -464,6 +478,7 @@ local function applyRelationshipCombatState(record, actor, options, policy)
     if not actor then return nil end
     policy = policy or relationshipCombatPolicy(record)
     local player = getPrimaryPlayer(options)
+    local harness = record and record.debugHarness or nil
 
     protectedCall(actor, "setGodMod", policy.allowPlayerAttack ~= true)
 
@@ -473,6 +488,13 @@ local function applyRelationshipCombatState(record, actor, options, policy)
         protectedCall(actor, "setNoTeeth", true)
         clearCombatIntent(actor)
         clearRuntimeIntent(record, actor)
+        if harness and harness.holdPosition == true then
+            protectedCall(actor, "setTarget", nil)
+            protectedCall(actor, "setLastTargettedBy", nil)
+            protectedCall(actor, "setPath2", nil)
+            protectedCall(actor, "setMoving", false)
+            protectedCall(actor, "setDir", IsoDirections and IsoDirections.S or nil)
+        end
     else
         protectedCall(actor, "setUseless", false)
         protectedCall(actor, "setCanWalk", true)
@@ -497,6 +519,7 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
     local summary = relationshipPolicySummary(record, policy)
     if modData and record then
         local illusion = record.embodiment and record.embodiment.illusion or nil
+        local harness = record.debugHarness or nil
         modData.LWN_NpcId = record.id
         modData.LWN_LastNpcId = record.id
         modData.LWN_CarrierKind = "isozombie"
@@ -521,6 +544,11 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_HumanizationMaintenanceAt = illusion and illusion.lastMaintenanceAt or nil
         modData.LWN_HumanizationMaintenanceMode = illusion and illusion.lastMaintenanceMode or nil
         modData.LWN_HumanizationDriftCount = illusion and illusion.driftCount or 0
+        modData.LWN_TestHarnessLabel = harness and harness.label or nil
+        modData.LWN_TestHarnessEnabled = harness and harness.enabled == true or false
+        modData.LWN_TestHarnessHoldPosition = harness and harness.holdPosition == true or false
+        modData.LWN_TestHarnessIdentityLock = harness and harness.identityLock == true or false
+        modData.LWN_TestHarnessSterileRadius = harness and harness.sterileRadius or nil
     end
 
     stampHybridSummary(record, actor, summary, descriptor, appearanceDetail)

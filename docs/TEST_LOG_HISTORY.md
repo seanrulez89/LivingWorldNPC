@@ -217,3 +217,39 @@ For every new test cycle, append a new section using this structure:
 - spawn one IsoZombie debug NPC, walk far away, return, and confirm the NPC either remains embodied or rearms predictably near the last embodied position
 - confirm the debug menu now supports a fast loop of: spawn → dump summary → force policy → dump movement/audio
 - if the NPC still appears missing after continuity fixes, capture whether debug dumps show a live embodied actor with no visible presentation, which would re-point suspicion back to rendering/presentation rather than lifecycle
+
+## 2026-03-25 00:12 KST — Identity collapse observed, test lane pivoted to sterile harness
+
+### In-game result
+- user spawned exactly one debug NPC, moved far away, and returned
+- on return, the originally spawned NPC appeared to have collapsed back into a normal zombie-like read
+- at the same location, the user felt there was now also a "new NPC" present, creating a strong duplication impression
+
+### Log signals
+- console review showed only one explicit debug embodiment spawn for the test run: `LWN-000038`
+- subsequent log lines continued to track the same managed actor reference (`IsoZombie ID:72`) rather than a clearly separate second managed actor
+- debug pinning was active, so normal debug despawn was not the main explanation
+- the managed shell's appearance signature drifted across time, and the shell remained under zombie-coded presentation role
+- nearby ordinary zombies were still part of the local world state, increasing ambiguity
+
+### Interpretation / lesson
+- the strongest problem was not confirmed true duplication but **identity collapse under test conditions**
+- a single managed shell could still be misread as:
+  - a normal zombie
+  - a replaced shell
+  - a duplicated shell
+- this meant the test lane itself was no longer trustworthy enough for evaluating deeper humanization work
+
+### Code or document changes that followed
+- created a sterile test harness around debug IsoZombie spawns
+- added nearby world-noise cleanup before and after spawn
+- forced hold-position/friendly harness posture for the test shell
+- added identity-lock-aware maintenance behavior so test maintenance does not eagerly behave like re-randomization
+- expanded debug output with test harness metadata and locked signature reporting
+- documented the new test lane in `TEST_IDENTITY_HARNESS_2026-03-25.md`
+
+### Next thing to verify
+- spawn a sterile test NPC and confirm the area is visibly cleaner of ordinary zombies
+- walk away and return, then verify the same harness label / npcId remains the focus of debug dumps
+- confirm movement/pathing churn stays low enough that the shell remains locally findable
+- confirm maintenance now prefers holding the locked identity instead of escalating into an obviously different look during the test loop

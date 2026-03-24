@@ -343,9 +343,15 @@ local function addDebugSubmenu(context, player, actor)
     local isoTestSub = settingsSub:getNew(settingsSub)
     settingsSub:addSubMenu(isoTestOpt, isoTestSub)
 
-    isoTestSub:addOption("Spawn Test NPC Near Player (IsoZombie)", player, function(p)
+    isoTestSub:addOption("Spawn Sterile Test NPC Near Player (IsoZombie)", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayerIsoZombie then
             LWN.DebugTools.spawnOneNearPlayerIsoZombie(p)
+        end
+    end)
+
+    isoTestSub:addOption("Clean Nearby Ordinary Zombies", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.cleanNearbyWorldNoise then
+            LWN.DebugTools.cleanNearbyWorldNoise(p)
         end
     end)
 

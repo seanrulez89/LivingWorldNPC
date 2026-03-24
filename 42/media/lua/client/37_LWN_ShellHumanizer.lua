@@ -58,6 +58,7 @@ local function ensureIllusionState(record)
         lastMaintenanceProfile = nil,
         lastKnownAppearanceSignature = nil,
         lastMaintenanceMode = nil,
+        lockedAppearanceSignature = nil,
         driftCount = 0,
         lastDriftAt = nil,
         lastDriftReason = nil,
@@ -136,6 +137,7 @@ local function stampHumanizationState(record, actor, detail, source, profile, mo
 
     local signature = currentAppearanceSignature(actor)
     local now = worldAgeHours()
+    local harness = record and record.debugHarness or nil
 
     if mode == "initial" then
         illusion.initialApplied = detail and detail.applied == true or false
@@ -144,6 +146,9 @@ local function stampHumanizationState(record, actor, detail, source, profile, mo
         illusion.initialProfile = profile
         illusion.initialAppearanceSignature = signature
         illusion.lastKnownAppearanceSignature = signature
+        if harness and harness.identityLock == true then
+            illusion.lockedAppearanceSignature = signature
+        end
     else
         local previousSignature = illusion.lastKnownAppearanceSignature
         if previousSignature and signature and previousSignature ~= signature then
@@ -165,6 +170,7 @@ local function stampHumanizationState(record, actor, detail, source, profile, mo
         modData.LWN_InitialHumanizationProfile = illusion.initialProfile
         modData.LWN_InitialAppearanceSignature = illusion.initialAppearanceSignature
         modData.LWN_LastKnownAppearanceSignature = illusion.lastKnownAppearanceSignature
+        modData.LWN_LockedAppearanceSignature = illusion.lockedAppearanceSignature
         modData.LWN_HumanizationDriftCount = illusion.driftCount or 0
         modData.LWN_HumanizationLastDriftAt = illusion.lastDriftAt
         modData.LWN_HumanizationLastDriftReason = illusion.lastDriftReason
@@ -285,6 +291,7 @@ function Humanizer.maintain(record, actor, options)
     local profile = options and options.profile or "neutral"
     local source = options and options.source or "ShellHumanizer.maintain"
     local descriptor = protectedCall(actor, "getDescriptor")
+    local harness = record and record.debugHarness or nil
 
     if not actor then
         local detail = normalizeAppearanceDetail(nil, {
@@ -309,13 +316,18 @@ function Humanizer.maintain(record, actor, options)
     end
 
     local modData = protectedCall(actor, "getModData")
+    local illusion = ensureIllusionState(record)
     local beforeSig = currentAppearanceSignature(actor)
+    local lockedSig = illusion and (illusion.lockedAppearanceSignature or illusion.initialAppearanceSignature) or nil
     local needFullReapply = options and options.forceFull == true
     if not beforeSig or beforeSig == "" then
         needFullReapply = true
     end
     if modData and modData.LWN_HybridAppearanceApplied ~= true then
         needFullReapply = true
+    end
+    if harness and harness.identityLock == true and lockedSig and beforeSig and beforeSig ~= lockedSig then
+        needFullReapply = false
     end
 
     local detail
@@ -363,10 +375,17 @@ function Humanizer.maintain(record, actor, options)
 
         detail = cachedAppearanceDetail(actor, {
             applied = true,
-            stage = "maintenance_light",
+            stage = (harness and harness.identityLock == true and lockedSig and beforeSig and beforeSig ~= lockedSig)
+                and "maintenance_identity_lock_hold"
+                or "maintenance_light",
             status = "applied",
             profile = profile,
-            mode = "maintenance_light",
+            mode = (harness and harness.identityLock == true and lockedSig and beforeSig and beforeSig ~= lockedSig)
+                and "maintenance_identity_lock_hold"
+                or "maintenance_light",
+            reason = (harness and harness.identityLock == true and lockedSig and beforeSig and beforeSig ~= lockedSig)
+                and "signature_locked_skip_full_reapply"
+                or nil,
         })
     end
 
