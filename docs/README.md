@@ -4,6 +4,8 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Fresh synthesis / triage
 
+- `APPEARANCE_LOCK_RESTORE_AND_CENSUS_2026-03-25.md`
+  - explains the next hardening step after split-body suspicion: conservative identity-lock mismatch handling, stricter cleanup protection for LWN-marked objects, and a nearby zombie-like census debug tool
 - `BEHAVIOR_AUTHORITY_LOCK_2026-03-25.md`
   - explains the next hardening step after appearance stabilization: recovery-time hard re-neutralization, quarantine-side action suppression, and stronger behavior-authority locking for managed shells
 - `QUARANTINE_TETHER_HARDENING_2026-03-25.md`

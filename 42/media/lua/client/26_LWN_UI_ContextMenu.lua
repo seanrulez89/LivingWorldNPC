@@ -355,6 +355,12 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
+    isoTestSub:addOption("Dump Nearby Zombie-like Objects", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.dumpNearbyZombieLikeObjects then
+            LWN.DebugTools.dumpNearbyZombieLikeObjects(p)
+        end
+    end)
+
     isoTestSub:addOption("Dump Nearest NPC Summary + Hybrid", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.dumpNearestNpcSummary then
             LWN.DebugTools.dumpNearestNpcSummary(p)

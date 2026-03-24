@@ -312,3 +312,35 @@ For every new test cycle, append a new section using this structure:
 - confirm distance-return no longer restores obvious hostile pursuit/attack under quarantine
 - confirm the stronger behavior lock does not regress the newly improved spawn-time audio quieting
 - confirm appearance remains stable while stronger behavior authority suppression is active
+
+## 2026-03-25 01:50 KST — Split-body suspicion moved focus toward appearance-lock restore and object census
+
+### In-game result
+- spawn-time shell remained quiet
+- after distance-return, the user perceived two bodies on screen at once:
+  - the original shell-like body, which emitted zombie sound and later disappeared via nearby zombie cleanup
+  - a second body, which did not disappear via that cleanup
+- appearance seemed to change first on hostile forcing and again on a later friendly forcing, then stopped changing further
+
+### Log signals
+- earlier console review still did not prove a second managed `LWN-...` spawn id
+- this kept suspicion centered on managed-shell continuity split or leftover/orphaned zombie-like bodies rather than a clean second managed spawn
+- repeated appearance drift remained consistent with policy-transition-triggered sync/humanization churn
+
+### Interpretation / lesson
+- the runtime problem is no longer well described as only behavior authority drift
+- there is now strong reason to suspect a split between:
+  - a zombie-like/orphan-like body that can still be treated as ordinary cleanup noise
+  - a more protected/managed body that remains after cleanup
+- policy transitions remain one of the clearest suspected triggers for appearance instability
+
+### Code or document changes that followed
+- nearby ordinary-zombie cleanup now preserves any zombie-like object with LWN identity markers, not just currently managed actors
+- added `Dump Nearby Zombie-like Objects` so tests can inspect every nearby zombie-like body and its LWN markers/cleanup-candidate status
+- changed identity-lock maintenance to avoid blindly refreshing presentation when a locked shell is already in mismatch, recording `maintenance_identity_lock_restore_pending` instead
+- documented the pass in `APPEARANCE_LOCK_RESTORE_AND_CENSUS_2026-03-25.md`
+
+### Next thing to verify
+- force the same hostile→friendly-style policy sequence and see whether appearance now stabilizes earlier
+- when two bodies are visible, dump nearby zombie-like objects immediately and compare their LWN markers and cleanup-candidate status
+- verify whether the original shell-like body still vanishes under cleanup or is now preserved for better diagnosis

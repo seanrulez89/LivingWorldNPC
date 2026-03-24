@@ -156,7 +156,9 @@ local function stampHumanizationState(record, actor, detail, source, profile, mo
             illusion.lastDriftAt = now
             illusion.lastDriftReason = source
         end
-        illusion.lastKnownAppearanceSignature = signature or illusion.lastKnownAppearanceSignature
+        if not (detail and detail.mode == "maintenance_identity_lock_restore_pending") then
+            illusion.lastKnownAppearanceSignature = signature or illusion.lastKnownAppearanceSignature
+        end
         illusion.lastMaintenanceAt = now
         illusion.lastMaintenanceSource = source
         illusion.lastMaintenanceProfile = profile
@@ -319,6 +321,7 @@ function Humanizer.maintain(record, actor, options)
     local illusion = ensureIllusionState(record)
     local beforeSig = currentAppearanceSignature(actor)
     local lockedSig = illusion and (illusion.lockedAppearanceSignature or illusion.initialAppearanceSignature) or nil
+    local lockedMismatch = harness and harness.identityLock == true and lockedSig and beforeSig and beforeSig ~= lockedSig or false
     local needFullReapply = options and options.forceFull == true
     if not beforeSig or beforeSig == "" then
         needFullReapply = true
@@ -326,7 +329,7 @@ function Humanizer.maintain(record, actor, options)
     if modData and modData.LWN_HybridAppearanceApplied ~= true then
         needFullReapply = true
     end
-    if harness and harness.identityLock == true and lockedSig and beforeSig and beforeSig ~= lockedSig then
+    if lockedMismatch then
         needFullReapply = false
     end
 
@@ -364,27 +367,29 @@ function Humanizer.maintain(record, actor, options)
         if LWN.ActorFactory and LWN.ActorFactory.repairVisibleAlpha then
             LWN.ActorFactory.repairVisibleAlpha(actor, source)
         end
-        if LWN.ActorFactory and LWN.ActorFactory.refreshEmbodiedPresentation then
-            -- too heavy for maintenance; prefer the lower-level visual refresh path
-        end
-        if LWN.ActorFactory and LWN.ActorFactory.refreshActorPresentation then
-            LWN.ActorFactory.refreshActorPresentation(actor)
-        elseif LWN.ActorFactory and LWN.ActorFactory.applySafeAppearanceShaping then
-            needFullReapply = true
+        if not lockedMismatch then
+            if LWN.ActorFactory and LWN.ActorFactory.refreshEmbodiedPresentation then
+                -- too heavy for maintenance; prefer the lower-level visual refresh path
+            end
+            if LWN.ActorFactory and LWN.ActorFactory.refreshActorPresentation then
+                LWN.ActorFactory.refreshActorPresentation(actor)
+            elseif LWN.ActorFactory and LWN.ActorFactory.applySafeAppearanceShaping then
+                needFullReapply = true
+            end
         end
 
         detail = cachedAppearanceDetail(actor, {
             applied = true,
-            stage = (harness and harness.identityLock == true and lockedSig and beforeSig and beforeSig ~= lockedSig)
-                and "maintenance_identity_lock_hold"
+            stage = lockedMismatch
+                and "maintenance_identity_lock_restore_pending"
                 or "maintenance_light",
             status = "applied",
             profile = profile,
-            mode = (harness and harness.identityLock == true and lockedSig and beforeSig and beforeSig ~= lockedSig)
-                and "maintenance_identity_lock_hold"
+            mode = lockedMismatch
+                and "maintenance_identity_lock_restore_pending"
                 or "maintenance_light",
-            reason = (harness and harness.identityLock == true and lockedSig and beforeSig and beforeSig ~= lockedSig)
-                and "signature_locked_skip_full_reapply"
+            reason = lockedMismatch
+                and "signature_locked_restore_pending"
                 or nil,
         })
     end

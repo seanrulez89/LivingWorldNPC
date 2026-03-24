@@ -99,11 +99,23 @@ local function clearNearbyWorldNoise(player, radius, protectedNpcId)
     local removed = 0
     local seen = {}
 
+    local function hasAnyLwnMarker(obj)
+        local modData = obj and obj.getModData and obj:getModData() or nil
+        if not modData then return false end
+        return modData.LWN_NpcId ~= nil
+            or modData.LWN_LastNpcId ~= nil
+            or modData.LWN_TestHarnessLabel ~= nil
+            or modData.LWN_ShellMarker ~= nil
+    end
+
     local function maybeRemove(obj)
         if not obj or seen[obj] then return end
         seen[obj] = true
         local npcId = getNpcId(obj)
         if npcId and npcId == protectedNpcId then
+            return
+        end
+        if hasAnyLwnMarker(obj) then
             return
         end
         local objectName = tostring(protectedCall(obj, "getObjectName") or "")
@@ -712,6 +724,75 @@ function DebugTools.cleanNearbyWorldNoise(player)
     local removed = clearNearbyWorldNoise(player, tonumber(debugConfig("DebugSterileRadiusTiles", 8)) or 8, protectedNpcId)
     sayInfo(player, string.format("Sterile cleanup removed %d nearby world objects", removed))
     return true, removed
+end
+
+function DebugTools.dumpNearbyZombieLikeObjects(player)
+    if not player then return false end
+    local cell = getCell and getCell() or nil
+    local square = protectedCall(player, "getSquare")
+    if not cell or not square then
+        sayInfo(player, "No world square available")
+        return false
+    end
+
+    local radius = tonumber(debugConfig("DebugSterileRadiusTiles", 8)) or 8
+    local cx = protectedCall(square, "getX") or math.floor(player:getX())
+    local cy = protectedCall(square, "getY") or math.floor(player:getY())
+    local cz = protectedCall(square, "getZ") or math.floor(player:getZ())
+    local lines = {}
+    local seen = {}
+
+    local function inspect(obj)
+        if not obj or seen[obj] then return end
+        seen[obj] = true
+        local objectName = tostring(protectedCall(obj, "getObjectName") or "")
+        local isZombie = protectedCall(obj, "isZombie") == true
+        local isDeadBody = string.find(objectName, "DeadBody", 1, true) ~= nil
+        if not isZombie and not isDeadBody then
+            return
+        end
+        local modData = obj.getModData and obj:getModData() or nil
+        lines[#lines + 1] = string.format(
+            "obj=%s ref=%s managed=%s npcId=%s lastNpcId=%s label=%s x=%.1f y=%.1f z=%.1f cleanupCandidate=%s",
+            tostring(objectName ~= "" and objectName or "unknown"),
+            tostring(obj),
+            tostring(isManagedActor(obj)),
+            tostring(modData and modData.LWN_NpcId or nil),
+            tostring(modData and modData.LWN_LastNpcId or nil),
+            tostring(modData and modData.LWN_TestHarnessLabel or nil),
+            tonumber(protectedCall(obj, "getX") or 0) or 0,
+            tonumber(protectedCall(obj, "getY") or 0) or 0,
+            tonumber(protectedCall(obj, "getZ") or 0) or 0,
+            tostring((isZombie and not isManagedActor(obj) and not (modData and (modData.LWN_NpcId or modData.LWN_LastNpcId or modData.LWN_TestHarnessLabel))) or isDeadBody)
+        )
+    end
+
+    for y = cy - radius, cy + radius do
+        for x = cx - radius, cx + radius do
+            local scanSquare = cell:getGridSquare(x, y, cz)
+            if scanSquare then
+                local moving = protectedCall(scanSquare, "getMovingObjects")
+                if moving and moving.size then
+                    for i = 0, moving:size() - 1 do
+                        inspect(moving:get(i))
+                    end
+                end
+                local staticMoving = protectedCall(scanSquare, "getStaticMovingObjects")
+                if staticMoving and staticMoving.size then
+                    for i = 0, staticMoving:size() - 1 do
+                        inspect(staticMoving:get(i))
+                    end
+                end
+            end
+        end
+    end
+
+    print(string.format("[LWN][Debug] nearby zombie-like census :: radius=%s count=%s", tostring(radius), tostring(#lines)))
+    for i = 1, #lines do
+        print("[LWN][Debug] zombie-like :: " .. tostring(lines[i]))
+    end
+    sayInfo(player, string.format("Nearby zombie-like census dumped (%d objects)", #lines))
+    return true, #lines
 end
 
 function DebugTools.dumpLastActorFailure(player)
