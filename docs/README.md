@@ -4,6 +4,8 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Fresh synthesis / triage
 
+- `INITIAL_HUMANIZATION_SPLIT_IMPLEMENTATION_2026-03-24.md`
+  - implementation note for the first major structural split between spawn-time initial humanization and sync-time maintenance, including the new `ShellHumanizer` module and an in-game validation order
 - `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
   - new master synthesis of the March 20 IsoZombie research set, including:
     - executive verdict

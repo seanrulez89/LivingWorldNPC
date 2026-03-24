@@ -395,6 +395,11 @@ local function stageBaseForAction(actionName, runtimeOk)
     return string.format("%s_%s", tostring(actionName or "appearance"), runtimeOk == true and "ready" or "pending")
 end
 
+local function humanizationProfile(record)
+    local policy = relationshipCombatPolicy(record)
+    return policy and policy.state or "neutral"
+end
+
 -- Friendly/neutral shells should drop any stale queued aggression as well as target refs.
 local function clearCombatIntent(actor)
     protectedCall(actor, "StopAllActionQueue")
@@ -491,6 +496,7 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
     local policy = relationshipCombatPolicy(record)
     local summary = relationshipPolicySummary(record, policy)
     if modData and record then
+        local illusion = record.embodiment and record.embodiment.illusion or nil
         modData.LWN_NpcId = record.id
         modData.LWN_LastNpcId = record.id
         modData.LWN_CarrierKind = "isozombie"
@@ -508,6 +514,13 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_AudioLeakHint = policy.shouldNeutralizeCarrier == true and "should_be_quiet_non_hostile" or "hostile_vocal_leak_possible"
         modData.LWN_HostilityReason = policy.reason
         modData.LWN_RelationshipPolicyAppliedAt = worldAgeHours()
+        modData.LWN_HumanizationProfile = humanizationProfile(record)
+        modData.LWN_HumanizationInitialApplied = illusion and illusion.initialApplied == true or false
+        modData.LWN_HumanizationInitialAt = illusion and illusion.initialAppliedAt or nil
+        modData.LWN_HumanizationInitialSignature = illusion and illusion.initialAppearanceSignature or nil
+        modData.LWN_HumanizationMaintenanceAt = illusion and illusion.lastMaintenanceAt or nil
+        modData.LWN_HumanizationMaintenanceMode = illusion and illusion.lastMaintenanceMode or nil
+        modData.LWN_HumanizationDriftCount = illusion and illusion.driftCount or 0
     end
 
     stampHybridSummary(record, actor, summary, descriptor, appearanceDetail)
@@ -554,9 +567,10 @@ local function assessRuntimeReadiness(actor)
     )
 end
 
-local function runAppearancePass(record, actor, options, actionName, runtimeOk)
+local function runHumanizationPass(record, actor, options, actionName, runtimeOk)
     local stageBase = stageBaseForAction(actionName, runtimeOk)
     local appearanceOk, appearanceGateDetail = assessAppearanceEligibility(actor)
+    local profile = humanizationProfile(record)
 
     if appearanceOk ~= true then
         local skippedDetail = normalizeAppearanceDetail(nil, {
@@ -565,8 +579,10 @@ local function runAppearancePass(record, actor, options, actionName, runtimeOk)
             descriptorSource = "ineligible",
             stage = string.format("%s_ineligible", tostring(stageBase)),
             status = "skipped",
+            profile = profile,
+            mode = actionName == "spawn" and "initial" or "maintenance",
         })
-        trace("appearance.skipped", record, string.format("stage=%s | %s", tostring(stageBase), tostring(appearanceGateDetail)))
+        trace("humanization.skipped", record, string.format("stage=%s | %s", tostring(stageBase), tostring(appearanceGateDetail)))
         applyBasicZombieCarrierFlags(record, actor, options, nil, skippedDetail)
         return nil, skippedDetail, false, appearanceGateDetail
     end
@@ -574,10 +590,37 @@ local function runAppearancePass(record, actor, options, actionName, runtimeOk)
     local preAppearanceDetail = normalizeAppearanceDetail(nil, {
         stage = string.format("%s_pre", tostring(stageBase)),
         status = "pending",
+        profile = profile,
+        mode = actionName == "spawn" and "initial_pending" or "maintenance_pending",
     })
     applyBasicZombieCarrierFlags(record, actor, options, nil, preAppearanceDetail)
 
-    local descriptor, appearanceDetail = applyAppearanceExperiment(record, actor, stageBase)
+    local descriptor = nil
+    local appearanceDetail = nil
+    if LWN.ShellHumanizer then
+        local shouldApplyInitial = actionName == "spawn"
+            or (LWN.ShellHumanizer.hasInitialApplied and LWN.ShellHumanizer.hasInitialApplied(record, actor) ~= true)
+        if shouldApplyInitial and LWN.ShellHumanizer.applyInitial then
+            descriptor, appearanceDetail = LWN.ShellHumanizer.applyInitial(record, actor, {
+                source = string.format("CarrierIsoZombie.%s.initial", tostring(actionName)),
+                profile = profile,
+            })
+        elseif LWN.ShellHumanizer.maintain then
+            descriptor, appearanceDetail = LWN.ShellHumanizer.maintain(record, actor, {
+                source = string.format("CarrierIsoZombie.%s.maintain", tostring(actionName)),
+                profile = profile,
+            })
+        end
+    end
+
+    if descriptor == nil and appearanceDetail == nil then
+        descriptor, appearanceDetail = applyAppearanceExperiment(record, actor, stageBase)
+        appearanceDetail = normalizeAppearanceDetail(appearanceDetail, {
+            profile = profile,
+            mode = actionName == "spawn" and "legacy_initial_fallback" or "legacy_maintenance_fallback",
+        })
+    end
+
     applyBasicZombieCarrierFlags(record, actor, options, descriptor, appearanceDetail)
     return descriptor, appearanceDetail, true, appearanceGateDetail
 end
@@ -674,7 +717,7 @@ function Carrier.spawn(record, options)
     end
 
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
-    local _, appearanceDetail, appearanceEligible, appearanceGateDetail = runAppearancePass(
+    local _, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
         record,
         actor,
         options,
@@ -683,9 +726,10 @@ function Carrier.spawn(record, options)
     )
     local spawnedAt = worldAgeHours()
     trace(runtimeOk and "spawn.runtime_ready" or "spawn.pending_settle", record, string.format(
-        "spawn=%s | appearance=%s | %s",
+        "spawn=%s | humanization=%s mode=%s | %s",
         tostring(spawnDetail),
         appearanceEligible == true and tostring(appearanceDetail and appearanceDetail.stage or "eligible") or tostring(appearanceGateDetail),
+        tostring(appearanceDetail and appearanceDetail.mode or "nil"),
         tostring(runtimeDetail)
     ))
 
@@ -712,6 +756,9 @@ function Carrier.spawn(record, options)
                 appearanceApplied = appearanceDetail and appearanceDetail.applied == true or false,
                 appearanceStatus = appearanceDetail and appearanceDetail.status or nil,
                 appearanceStage = appearanceDetail and appearanceDetail.stage or nil,
+                humanizationMode = appearanceDetail and appearanceDetail.mode or nil,
+                humanizationProfile = appearanceDetail and appearanceDetail.profile or humanizationProfile(record),
+                initialHumanizationApplied = record.embodiment and record.embodiment.illusion and record.embodiment.illusion.initialApplied == true or false,
                 neutralized = true,
                 settlePending = runtimeOk ~= true,
                 settleAttempts = 0,
@@ -734,7 +781,7 @@ function Carrier.sync(record, handle, options)
 
     handle.runtime = handle.runtime or {}
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
-    local _, appearanceDetail, appearanceEligible, appearanceGateDetail = runAppearancePass(
+    local _, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
         record,
         actor,
         options,
@@ -747,6 +794,9 @@ function Carrier.sync(record, handle, options)
     handle.runtime.appearanceApplied = appearanceDetail and appearanceDetail.applied == true or false
     handle.runtime.appearanceStatus = appearanceDetail and appearanceDetail.status or nil
     handle.runtime.appearanceStage = appearanceDetail and appearanceDetail.stage or nil
+    handle.runtime.humanizationMode = appearanceDetail and appearanceDetail.mode or nil
+    handle.runtime.humanizationProfile = appearanceDetail and appearanceDetail.profile or humanizationProfile(record)
+    handle.runtime.initialHumanizationApplied = record.embodiment and record.embodiment.illusion and record.embodiment.illusion.initialApplied == true or false
     handle.runtime.runtimeDetail = runtimeDetail
     if runtimeOk ~= true then
         local settleAttempts = (tonumber(handle.runtime.settleAttempts) or 0) + 1
@@ -758,12 +808,13 @@ function Carrier.sync(record, handle, options)
 
         if settleAttempts < ISOZOMBIE_SETTLE_MAX_SYNC_ATTEMPTS and elapsed < ISOZOMBIE_SETTLE_MAX_HOURS then
             trace("sync.pending_settle", record, string.format(
-                "attempt=%s/%s elapsed=%.6f/%.6f | appearance=%s | %s",
+                "attempt=%s/%s elapsed=%.6f/%.6f | humanization=%s mode=%s | %s",
                 settleAttempts,
                 ISOZOMBIE_SETTLE_MAX_SYNC_ATTEMPTS,
                 elapsed,
                 ISOZOMBIE_SETTLE_MAX_HOURS,
                 appearanceEligible == true and tostring(appearanceDetail and appearanceDetail.stage or "eligible") or tostring(appearanceGateDetail),
+                tostring(appearanceDetail and appearanceDetail.mode or "nil"),
                 tostring(runtimeDetail)
             ))
             return {

@@ -226,7 +226,7 @@ local function actorDebugLine(actor)
     local path2 = protectedCall(actor, "getPath2")
 
     return string.format(
-        "actor=%s kind=%s shell=%s session=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f role=%s skin=%s itemVisuals=%d wornItems=%d policy=%s stance=%s safety=%s moveSupp=%s moving=%s path2=%s audioHint=%s audioHuman=%s illusion=%s appearanceDiff=%s",
+        "actor=%s kind=%s shell=%s session=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f role=%s skin=%s itemVisuals=%d wornItems=%d policy=%s stance=%s safety=%s moveSupp=%s moving=%s path2=%s audioHint=%s audioHuman=%s illusion=%s humanInit=%s humanProfile=%s maintMode=%s drift=%s appearanceDiff=%s",
         tostring(actor:getObjectName()),
         tostring(modData and modData.LWN_ActorKind or "unknown"),
         tostring(modData and modData.LWN_ShellMarker or (modData and modData.LWN_NpcId and ("isozombie:" .. tostring(modData.LWN_NpcId)) or "none")),
@@ -251,6 +251,10 @@ local function actorDebugLine(actor)
         tostring(modData and modData.LWN_AudioLeakHint or "none"),
         tostring(modData and modData.LWN_AudioHumanization or "none"),
         tostring(modData and modData.LWN_PersistentIllusionPackage or "none"),
+        tostring(modData and modData.LWN_HumanizationInitialApplied or modData and modData.LWN_InitialHumanizationApplied or false),
+        tostring(modData and (modData.LWN_HumanizationProfile or modData.LWN_InitialHumanizationProfile or modData.LWN_MaintenanceHumanizationProfile) or "none"),
+        tostring(modData and (modData.LWN_HumanizationMaintenanceMode or modData.LWN_MaintenanceHumanizationMode) or "none"),
+        tostring(modData and modData.LWN_HumanizationDriftCount or 0),
         tostring(modData and modData.LWN_AppearanceDiffSummary or "none")
     )
 end
@@ -374,6 +378,7 @@ local function dumpRecordSummary(record, actor, player)
     ))
     local meta = Store.getEmbodiedMeta and Store.getEmbodiedMeta(record.id) or nil
     local debugState = record.embodiment and record.embodiment.debug or nil
+    local illusion = record.embodiment and record.embodiment.illusion or nil
     print("[LWN][Debug] npc actionQueue :: " .. summarizePlan(currentPlan, 10))
     print("[LWN][Debug] npc actor :: " .. actorDebugLine(actor))
     print(string.format(
@@ -405,6 +410,21 @@ local function dumpRecordSummary(record, actor, player)
         tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_AppearanceDiffSource or "none"),
         tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_AppearanceDiffAt or "none"),
         tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_AppearanceSignature or "none")
+    ))
+    print(string.format(
+        "[LWN][Debug] npc humanization :: initialApplied=%s initialAt=%s initialProfile=%s initialSig=%s maintenanceAt=%s maintenanceSource=%s maintenanceProfile=%s maintenanceMode=%s driftCount=%s lastDriftAt=%s lastDriftReason=%s lastKnownSig=%s",
+        tostring(illusion and illusion.initialApplied or "nil"),
+        tostring(illusion and illusion.initialAppliedAt or "nil"),
+        tostring(illusion and illusion.initialProfile or "nil"),
+        tostring(illusion and illusion.initialAppearanceSignature or "nil"),
+        tostring(illusion and illusion.lastMaintenanceAt or "nil"),
+        tostring(illusion and illusion.lastMaintenanceSource or "nil"),
+        tostring(illusion and illusion.lastMaintenanceProfile or "nil"),
+        tostring(illusion and illusion.lastMaintenanceMode or "nil"),
+        tostring(illusion and illusion.driftCount or 0),
+        tostring(illusion and illusion.lastDriftAt or "nil"),
+        tostring(illusion and illusion.lastDriftReason or "nil"),
+        tostring(illusion and illusion.lastKnownAppearanceSignature or "nil")
     ))
     return true
 end
@@ -594,7 +614,7 @@ function DebugTools.dumpNearestNpcMovementAudioState(player)
     local debugState = record.embodiment and record.embodiment.debug or nil
     local currentPlan = record.goals and record.goals.currentPlan or {}
     local line = string.format(
-        "MOVE/AUDIO %s queue=%s source=%s util=%s behavior=%s chosen=%s neutralized=%s moving=%s path2=%s supp=%s audio=%s humanize=%s illusion=%s",
+        "MOVE/AUDIO %s queue=%s source=%s util=%s behavior=%s chosen=%s neutralized=%s moving=%s path2=%s supp=%s audio=%s humanize=%s illusion=%s init=%s profile=%s maint=%s drift=%s",
         tostring(record.id),
         summarizePlan(currentPlan, 8),
         tostring(debugState and debugState.source or "nil"),
@@ -607,7 +627,11 @@ function DebugTools.dumpNearestNpcMovementAudioState(player)
         tostring(modData and modData.LWN_MovementSuppression or "none"),
         tostring(modData and modData.LWN_AudioLeakHint or "none"),
         tostring(modData and modData.LWN_AudioHumanization or "none"),
-        tostring(modData and modData.LWN_PersistentIllusionPackage or "none")
+        tostring(modData and modData.LWN_PersistentIllusionPackage or "none"),
+        tostring(modData and (modData.LWN_HumanizationInitialApplied or modData.LWN_InitialHumanizationApplied) or false),
+        tostring(modData and (modData.LWN_HumanizationProfile or modData.LWN_InitialHumanizationProfile or modData.LWN_MaintenanceHumanizationProfile) or "none"),
+        tostring(modData and (modData.LWN_HumanizationMaintenanceMode or modData.LWN_MaintenanceHumanizationMode) or "none"),
+        tostring(modData and modData.LWN_HumanizationDriftCount or 0)
     )
     sayInfo(player, line)
     print("[LWN][Debug] npc movement_audio :: " .. line)

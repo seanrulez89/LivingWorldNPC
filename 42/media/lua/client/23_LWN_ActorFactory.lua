@@ -2783,6 +2783,7 @@ refreshActorPresentation = function(actor)
     protectedCall(actor, "resetModelNextFrame")
     refreshModelManager(actor, "presentation")
 end
+Factory.refreshActorPresentation = refreshActorPresentation
 
 function Factory.applySafeAppearanceShaping(record, actor, options)
     local experimentName = options and options.experimentName or "isozombie_shared_desc_visual_v1"
