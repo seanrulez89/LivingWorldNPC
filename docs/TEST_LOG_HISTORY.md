@@ -253,3 +253,34 @@ For every new test cycle, append a new section using this structure:
 - walk away and return, then verify the same harness label / npcId remains the focus of debug dumps
 - confirm movement/pathing churn stays low enough that the shell remains locally findable
 - confirm maintenance now prefers holding the locked identity instead of escalating into an obviously different look during the test loop
+
+## 2026-03-25 00:48 KST — Audio suppression works after policy sync, but shell still risks actor_lost zombie reversion
+
+### In-game result
+- spawn-time shell still emitted zombie-like sound at first
+- after forcing relationship policy, the shell stopped making zombie-like sound
+- after travelling away and returning, the shell appeared to behave like a normal attacking zombie
+- deleting nearby ordinary zombies also removed what the user perceived as the reverted shell
+
+### Log signals
+- initial spawn path still showed a settle gap before full runtime/presentation readiness
+- later debug state showed non-hostile suppression metadata working as intended
+- eventual cleanup path clearly showed `reason=actor_lost`, after which the record fell to `hidden`
+- cleanup/deletion then targeted the LWN record while the player-facing shell identity had already collapsed
+
+### Interpretation / lesson
+- suppression logic itself is not dead; it lands after policy/humanization sync
+- the bigger issue is still managed-shell control across lifecycle drift, especially around actor-loss/rebind boundaries
+- test harness stability needed another step beyond sterile lane + identity lock: stronger quarantine and stronger actor tethering
+
+### Code or document changes that followed
+- added spawn/sync-side emergency quarantine for debug harness shells
+- enforced quarantine again during embodied ticks so action/combat drift is less able to re-wild the shell
+- broadened actor recovery signals to include last known id / harness label / carrier-handle identity
+- preserved hidden alive records' last known position for continuity and future recovery
+- documented the pass in `QUARANTINE_TETHER_HARDENING_2026-03-25.md`
+
+### Next thing to verify
+- confirm spawn-time zombie audio leak is reduced by the new emergency quarantine path
+- confirm distance-return tests no longer collapse as easily into `actor_lost`
+- confirm quarantined debug shells remain neutralized unless deliberately released from quarantine later

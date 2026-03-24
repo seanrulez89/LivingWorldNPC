@@ -121,6 +121,34 @@ local function getNpcId(actor)
     return getKnownNpcId(actor)
 end
 
+local function harnessEnabled(record)
+    local harness = record and record.debugHarness or nil
+    return harness and harness.enabled == true or false
+end
+
+local function harnessQuarantine(record)
+    local harness = record and record.debugHarness or nil
+    return harness and harness.enabled == true and harness.quarantine == true or false
+end
+
+local function restampManagedActor(record, actor, source)
+    if not record or not actor then return false end
+    local modData = protectedCall(actor, "getModData")
+    if not modData then return false end
+
+    modData.LWN_NpcId = record.id
+    modData.LWN_LastNpcId = record.id
+    modData.LWN_CarrierKind = record.embodiment and record.embodiment.carrierKind or modData.LWN_CarrierKind
+    if record.debugHarness and record.debugHarness.label then
+        modData.LWN_TestHarnessLabel = record.debugHarness.label
+        modData.LWN_TestHarnessEnabled = true
+        modData.LWN_TestHarnessQuarantine = record.debugHarness.quarantine == true
+    end
+    modData.LWN_LastRestampSource = source or "EventAdapter.restampManagedActor"
+    modData.LWN_LastRestampAt = getGameTime() and getGameTime():getWorldAgeHours() or nil
+    return true
+end
+
 local function isCleanupBlocked(npcId)
     if not npcId then return false end
     if LWN.EmbodimentManager and LWN.EmbodimentManager.isCleanupBlocked then
@@ -760,18 +788,30 @@ local function findActorNearAnchor(record)
     if not cell then return nil end
 
     local meta = LWN.PopulationStore.getEmbodiedMeta(record.id)
-    local cx = math.floor((meta and meta.x) or record.anchor.x or 0)
-    local cy = math.floor((meta and meta.y) or record.anchor.y or 0)
-    local cz = math.floor((meta and meta.z) or record.anchor.z or 0)
+    local cx = math.floor((meta and meta.x) or record.embodiment and record.embodiment.lastKnownX or record.anchor.x or 0)
+    local cy = math.floor((meta and meta.y) or record.embodiment and record.embodiment.lastKnownY or record.anchor.y or 0)
+    local cz = math.floor((meta and meta.z) or record.embodiment and record.embodiment.lastKnownZ or record.anchor.z or 0)
+    local radius = harnessEnabled(record) and 6 or 2
 
-    for y = cy - 2, cy + 2 do
-        for x = cx - 2, cx + 2 do
+    for y = cy - radius, cy + radius do
+        for x = cx - radius, cx + radius do
             local square = cell:getGridSquare(x, y, cz)
             if square and square:getMovingObjects() then
                 for i = 0, square:getMovingObjects():size() - 1 do
                     local obj = square:getMovingObjects():get(i)
                     local actorCleanup = getActorCleanupState(obj)
-                    if isManagedActor(obj) and getActiveNpcId(obj) == record.id and not (actorCleanup and actorCleanup.pending == true) then
+                    local activeNpcId = getActiveNpcId(obj)
+                    local knownNpcId = getKnownNpcId(obj)
+                    local modData = protectedCall(obj, "getModData")
+                    local harnessMatch = record.debugHarness
+                        and record.debugHarness.label
+                        and modData
+                        and modData.LWN_TestHarnessLabel == record.debugHarness.label
+                    if isManagedActor(obj)
+                        and not (actorCleanup and actorCleanup.pending == true)
+                        and (activeNpcId == record.id or knownNpcId == record.id or harnessMatch)
+                    then
+                        restampManagedActor(record, obj, "findActorNearAnchor")
                         return obj
                     end
                 end
@@ -787,9 +827,9 @@ getAnchorSquare = function(record)
     if not cell or not record then return nil end
 
     local meta = LWN.PopulationStore.getEmbodiedMeta(record.id)
-    local cx = math.floor((meta and meta.x) or record.anchor.x or 0)
-    local cy = math.floor((meta and meta.y) or record.anchor.y or 0)
-    local cz = math.floor((meta and meta.z) or record.anchor.z or 0)
+    local cx = math.floor((meta and meta.x) or record.embodiment and record.embodiment.lastKnownX or record.anchor.x or 0)
+    local cy = math.floor((meta and meta.y) or record.embodiment and record.embodiment.lastKnownY or record.anchor.y or 0)
+    local cz = math.floor((meta and meta.z) or record.embodiment and record.embodiment.lastKnownZ or record.anchor.z or 0)
     return cell:getGridSquare(cx, cy, cz)
 end
 
@@ -812,12 +852,25 @@ local function isCarrierActorUsable(record, actor)
     if handle and LWN.CarrierAdapter and LWN.CarrierAdapter.isUsable then
         handle.actor = handle.actor or actor
         if LWN.CarrierAdapter.isUsable(handle) then
+            restampManagedActor(record, actor, "isCarrierActorUsable.carrier_adapter")
             return true
         end
     end
 
-    if getActiveNpcId(actor) ~= record.id then
-        return false
+    local activeNpcId = getActiveNpcId(actor)
+    local knownNpcId = getKnownNpcId(actor)
+    local modData = protectedCall(actor, "getModData")
+    local harnessMatch = record and record.debugHarness and record.debugHarness.label and modData
+        and modData.LWN_TestHarnessLabel == record.debugHarness.label or false
+    local sameHandleActor = handle and handle.actor == actor or false
+
+    if activeNpcId ~= record.id then
+        if knownNpcId == record.id or harnessMatch or sameHandleActor then
+            restampManagedActor(record, actor, "isCarrierActorUsable.restamp")
+            activeNpcId = getActiveNpcId(actor)
+        else
+            return false
+        end
     end
 
     return (not actor.isExistInTheWorld or actor:isExistInTheWorld() ~= false)
@@ -825,6 +878,9 @@ local function isCarrierActorUsable(record, actor)
 end
 
 local function missingActorThreshold(record)
+    if harnessEnabled(record) and LWN.Config and LWN.Config.Debug and tonumber(LWN.Config.Debug.DebugActorLostRecoveryTicks) then
+        return tonumber(LWN.Config.Debug.DebugActorLostRecoveryTicks) or 120
+    end
     local carrierKind = getCarrierKind(record)
     if carrierKind == "isozombie" then
         return 40
@@ -870,6 +926,10 @@ local function resolveEmbodiedActor(record)
             detail = string.format("reason=actor_cleanup_pending %s", actorCleanupDetail(actor)),
         })
         actor = nil
+    end
+    if actor and harnessQuarantine(record) and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceQuarantine then
+        LWN.Carriers.isozombie.enforceQuarantine(record, actor, "resolveEmbodiedActor.cached")
+        restampManagedActor(record, actor, "resolveEmbodiedActor.cached")
     end
     if actor and LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
         local anchorSquare = getAnchorSquare(record)
@@ -997,6 +1057,10 @@ local function tickEmbodiedRecord(record, actor, player)
         end
         return
     end
+    if harnessQuarantine(record) and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceQuarantine then
+        LWN.Carriers.isozombie.enforceQuarantine(record, actor, "tickEmbodiedRecord.pre_sync")
+        restampManagedActor(record, actor, "tickEmbodiedRecord.pre_sync")
+    end
     if LWN.ActorSync and LWN.ActorSync.ensureEmbodiedActorState then
         LWN.ActorSync.ensureEmbodiedActorState(record, actor)
     end
@@ -1005,6 +1069,15 @@ local function tickEmbodiedRecord(record, actor, player)
     LWN.GoalSystem.update(record, {})
 
     local relationPolicy = LWN.Social and LWN.Social.relationshipCombatPolicy and LWN.Social.relationshipCombatPolicy(record) or nil
+    if harnessQuarantine(record) then
+        relationPolicy = {
+            state = record.debugHarness and record.debugHarness.forceFriendly == true and "friendly" or "neutral",
+            allowPlayerAttack = true,
+            allowCarrierAttackPlayer = false,
+            shouldNeutralizeCarrier = true,
+            reason = "event_adapter_test_quarantine",
+        }
+    end
     local queueBefore = LWN.ActionRuntime.peek(record)
     local suppressForNeutralized = relationPolicy and relationPolicy.shouldNeutralizeCarrier == true
 
@@ -1363,7 +1436,20 @@ function Adapter.onTick()
                 end
                 local carrierHandle = getCarrierHandle(record)
                 local carrierActor = carrierHandle and carrierHandle.actor or nil
-                if carrierActor and getActiveNpcId(carrierActor) == record.id and protectedCall(carrierActor, "isExistInTheWorld") == true then
+                local carrierKnownNpcId = getKnownNpcId(carrierActor)
+                local carrierHarnessMatch = carrierActor
+                    and record.debugHarness
+                    and record.debugHarness.label
+                    and protectedCall(carrierActor, "getModData")
+                    and carrierActor:getModData().LWN_TestHarnessLabel == record.debugHarness.label
+                if carrierActor and (carrierKnownNpcId == record.id or carrierHarnessMatch or carrierHandle and carrierHandle.actor == carrierActor) then
+                    if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
+                        LWN.ActorFactory.ensureActorInWorld(carrierActor, getAnchorSquare(record))
+                    end
+                    restampManagedActor(record, carrierActor, "onTick.actor_missing_recovery")
+                    if harnessQuarantine(record) and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceQuarantine then
+                        LWN.Carriers.isozombie.enforceQuarantine(record, carrierActor, "onTick.actor_missing_recovery")
+                    end
                     if LWN.EmbodimentManager and LWN.EmbodimentManager.registerActor then
                         LWN.EmbodimentManager.registerActor(record, carrierActor)
                     end

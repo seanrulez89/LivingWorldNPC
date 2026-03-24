@@ -156,13 +156,13 @@ end
 
 local function relationshipCombatPolicy(record)
     local harness = record and record.debugHarness or nil
-    if harness and harness.enabled == true and harness.holdPosition == true then
+    if harness and harness.enabled == true and (harness.holdPosition == true or harness.quarantine == true) then
         return {
             state = harness.forceFriendly == true and "friendly" or "neutral",
             allowPlayerAttack = true,
             allowCarrierAttackPlayer = false,
             shouldNeutralizeCarrier = true,
-            reason = "debug_test_harness_hold_position",
+            reason = harness.quarantine == true and "debug_test_harness_quarantine" or "debug_test_harness_hold_position",
         }
     end
     if LWN.Social and LWN.Social.relationshipCombatPolicy then
@@ -448,6 +448,36 @@ local function stopZombieCodedAudio(actor)
     end
 end
 
+local function applyEmergencyQuarantine(record, actor, source)
+    if not actor then return end
+    local harness = record and record.debugHarness or nil
+    if not (harness and harness.enabled == true and harness.quarantine == true) then
+        return
+    end
+
+    protectedCall(actor, "setVariable", "LWNManagedShell", true)
+    protectedCall(actor, "setVariable", "NoLungeTarget", true)
+    protectedCall(actor, "setWalkType", "Walk")
+    protectedCall(actor, "setUseless", true)
+    protectedCall(actor, "setCanWalk", false)
+    protectedCall(actor, "setNoTeeth", true)
+    protectedCall(actor, "setTarget", nil)
+    protectedCall(actor, "setLastTargettedBy", nil)
+    protectedCall(actor, "setPath2", nil)
+    protectedCall(actor, "setMoving", false)
+    stopZombieCodedAudio(actor)
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_NpcId = record and record.id or modData.LWN_NpcId
+        modData.LWN_LastNpcId = record and record.id or modData.LWN_LastNpcId
+        modData.LWN_TestHarnessQuarantine = true
+        modData.LWN_TestHarnessQuarantineSource = source or "CarrierIsoZombie.applyEmergencyQuarantine"
+        modData.LWN_AudioHumanization = modData.LWN_AudioHumanization or "emergency_quarantine_stopall"
+        modData.LWN_AudioLeakHint = "spawn_quarantine_should_be_quiet"
+    end
+end
+
 local function applyPersistentIllusionPackage(record, actor, descriptor, policy)
     if not actor then return end
     policy = policy or relationshipCombatPolicy(record)
@@ -479,6 +509,10 @@ local function applyRelationshipCombatState(record, actor, options, policy)
     policy = policy or relationshipCombatPolicy(record)
     local player = getPrimaryPlayer(options)
     local harness = record and record.debugHarness or nil
+
+    if harness and harness.enabled == true and harness.quarantine == true then
+        applyEmergencyQuarantine(record, actor, "CarrierIsoZombie.applyRelationshipCombatState")
+    end
 
     protectedCall(actor, "setGodMod", policy.allowPlayerAttack ~= true)
 
@@ -547,6 +581,7 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_TestHarnessLabel = harness and harness.label or nil
         modData.LWN_TestHarnessEnabled = harness and harness.enabled == true or false
         modData.LWN_TestHarnessHoldPosition = harness and harness.holdPosition == true or false
+        modData.LWN_TestHarnessQuarantine = harness and harness.quarantine == true or false
         modData.LWN_TestHarnessIdentityLock = harness and harness.identityLock == true or false
         modData.LWN_TestHarnessSterileRadius = harness and harness.sterileRadius or nil
     end
@@ -699,6 +734,10 @@ function Carrier.kind()
     return "isozombie"
 end
 
+function Carrier.enforceQuarantine(record, actor, source)
+    applyEmergencyQuarantine(record, actor, source or "CarrierIsoZombie.enforceQuarantine")
+end
+
 function Carrier.canSpawn(record, options)
     if not addZombiesInOutfit then
         return false, "addZombiesInOutfit_missing"
@@ -743,6 +782,8 @@ function Carrier.spawn(record, options)
             },
         }
     end
+
+    applyEmergencyQuarantine(record, actor, "CarrierIsoZombie.spawn")
 
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
     local _, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
@@ -808,6 +849,7 @@ function Carrier.sync(record, handle, options)
     end
 
     handle.runtime = handle.runtime or {}
+    applyEmergencyQuarantine(record, actor, "CarrierIsoZombie.sync")
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
     local _, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
         record,

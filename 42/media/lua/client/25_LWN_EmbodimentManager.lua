@@ -104,6 +104,27 @@ local function worldAgeHours()
     return getGameTime() and getGameTime():getWorldAgeHours() or nil
 end
 
+local function updateLastKnownPosition(record, actor, overrides)
+    record = ensureRecordShape(record)
+    if not record then return nil end
+
+    local x = overrides and overrides.x or protectedCall(actor, "getX") or record.anchor.x or 0
+    local y = overrides and overrides.y or protectedCall(actor, "getY") or record.anchor.y or 0
+    local z = overrides and overrides.z or protectedCall(actor, "getZ") or record.anchor.z or 0
+
+    record.embodiment = record.embodiment or {}
+    record.embodiment.lastKnownX = tonumber(x) or 0
+    record.embodiment.lastKnownY = tonumber(y) or 0
+    record.embodiment.lastKnownZ = tonumber(z) or 0
+    record.embodiment.lastKnownHour = worldAgeHours()
+
+    return {
+        x = math.floor(record.embodiment.lastKnownX),
+        y = math.floor(record.embodiment.lastKnownY),
+        z = math.floor(record.embodiment.lastKnownZ),
+    }
+end
+
 local function isAlive(record)
     if Store and Store.isAlive then
         return Store.isAlive(record)
@@ -525,6 +546,10 @@ local function activationOriginFor(record)
         return tonumber(meta.x) or 0, tonumber(meta.y) or 0, tonumber(meta.z or record.anchor and record.anchor.z or 0) or 0, "embodied_meta"
     end
 
+    if record.embodiment and record.embodiment.lastKnownX ~= nil and record.embodiment.lastKnownY ~= nil then
+        return tonumber(record.embodiment.lastKnownX) or 0, tonumber(record.embodiment.lastKnownY) or 0, tonumber(record.embodiment.lastKnownZ or record.anchor and record.anchor.z or 0) or 0, "record_last_known"
+    end
+
     local anchor = record.anchor or {}
     return tonumber(anchor.x) or 0, tonumber(anchor.y) or 0, tonumber(anchor.z) or 0, "anchor"
 end
@@ -850,11 +875,12 @@ function Embody.tryDespawn(record, actor, player)
         detail = string.format("radius=%.2f distance=%.2f debugSpawn=%s", radius, math.sqrt(d2), tostring(record.debugSpawnOnly == true)),
     })
     LWN.ActorSync.pullActorToRecord(record, actor)
+    local lastKnown = updateLastKnownPosition(record, actor)
     Store.setEmbodiedMeta(record.id, {
         state = "embodied",
-        x = math.floor(protectedCall(actor, "getX") or record.anchor.x or 0),
-        y = math.floor(protectedCall(actor, "getY") or record.anchor.y or 0),
-        z = math.floor(protectedCall(actor, "getZ") or record.anchor.z or 0),
+        x = math.floor((lastKnown and lastKnown.x) or protectedCall(actor, "getX") or record.anchor.x or 0),
+        y = math.floor((lastKnown and lastKnown.y) or protectedCall(actor, "getY") or record.anchor.y or 0),
+        z = math.floor((lastKnown and lastKnown.z) or protectedCall(actor, "getZ") or record.anchor.z or 0),
         lastSeenHour = getGameTime() and getGameTime():getWorldAgeHours() or 0,
     })
     releaseActor(
@@ -937,11 +963,12 @@ function Embody.registerActor(record, actor)
             source = "Embody.registerActor",
         },
     })
+    local lastKnown = updateLastKnownPosition(record, actor)
     Store.setEmbodiedMeta(record.id, {
         state = record.embodiment.state,
-        x = math.floor(protectedCall(actor, "getX") or record.anchor.x or 0),
-        y = math.floor(protectedCall(actor, "getY") or record.anchor.y or 0),
-        z = math.floor(protectedCall(actor, "getZ") or record.anchor.z or 0),
+        x = math.floor((lastKnown and lastKnown.x) or protectedCall(actor, "getX") or record.anchor.x or 0),
+        y = math.floor((lastKnown and lastKnown.y) or protectedCall(actor, "getY") or record.anchor.y or 0),
+        z = math.floor((lastKnown and lastKnown.z) or protectedCall(actor, "getZ") or record.anchor.z or 0),
         lastSeenHour = getGameTime() and getGameTime():getWorldAgeHours() or 0,
     })
     touchRecordStage(record, record.embodiment.death and record.embodiment.death.latched and "death_latched" or "active", "registerActor")
@@ -1007,7 +1034,18 @@ function Embody.unregisterActor(record, reason)
     }, true)
     Embody._actors[record.id] = nil
     Embody.unregisterCarrierHandle(record, reason or "unregisterActor")
-    Store.setEmbodiedMeta(record.id, nil)
+    local preservedPos = updateLastKnownPosition(record, actor)
+    if record.embodiment and record.embodiment.state == "hidden" and isAlive(record) == true then
+        Store.setEmbodiedMeta(record.id, {
+            state = "hidden",
+            x = math.floor((preservedPos and preservedPos.x) or record.embodiment.lastKnownX or record.anchor.x or 0),
+            y = math.floor((preservedPos and preservedPos.y) or record.embodiment.lastKnownY or record.anchor.y or 0),
+            z = math.floor((preservedPos and preservedPos.z) or record.embodiment.lastKnownZ or record.anchor.z or 0),
+            lastSeenHour = worldAgeHours() or 0,
+        })
+    else
+        Store.setEmbodiedMeta(record.id, nil)
+    end
     Embody._registryTraceCache = Embody._registryTraceCache or {}
     Embody._registryTraceCache[record.id] = nil
     Embody._deathLikeTraceCache = Embody._deathLikeTraceCache or {}

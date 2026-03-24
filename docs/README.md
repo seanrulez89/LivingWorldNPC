@@ -4,6 +4,8 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Fresh synthesis / triage
 
+- `QUARANTINE_TETHER_HARDENING_2026-03-25.md`
+  - explains the next hardening step after identity collapse: spawn quarantine, stronger tick-side quarantine enforcement, actor recovery/tethering, and hidden-state last-known-position preservation
 - `TEST_IDENTITY_HARNESS_2026-03-25.md`
   - rationale and implementation notes for the sterile test-lane harness: debug shell labeling, nearby world cleanup, hold-position policy override, and identity-lock-aware maintenance
 - `INITIAL_HUMANIZATION_SPLIT_IMPLEMENTATION_2026-03-24.md`
