@@ -57,5 +57,9 @@ LWN.Config = {
         Enabled = true,
         Verbose = false,
         DrawEncounterInfo = false,
+        KeepDebugSpawnsEmbodied = true,
+        DebugSpawnDespawnRadiusTiles = 96,
+        ShowLegacyCarrierMenu = false,
+        ShowDangerousDebugMenu = true,
     },
 }

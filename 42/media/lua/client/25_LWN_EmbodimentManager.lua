@@ -515,6 +515,29 @@ function Embody._activationRadiusFor(record)
     return LWN.Config.Embodiment.RadiusTiles
 end
 
+local function activationOriginFor(record)
+    if not record then
+        return nil, nil, nil, "record=nil"
+    end
+
+    local meta = Store and Store.getEmbodiedMeta and Store.getEmbodiedMeta(record.id) or nil
+    if meta and meta.x ~= nil and meta.y ~= nil then
+        return tonumber(meta.x) or 0, tonumber(meta.y) or 0, tonumber(meta.z or record.anchor and record.anchor.z or 0) or 0, "embodied_meta"
+    end
+
+    local anchor = record.anchor or {}
+    return tonumber(anchor.x) or 0, tonumber(anchor.y) or 0, tonumber(anchor.z) or 0, "anchor"
+end
+
+local function debugNpcShouldStayEmbodied(record)
+    if not record then return false end
+    if record.debugSpawnOnly ~= true then return false end
+    if not (LWN.Config and LWN.Config.Debug and LWN.Config.Debug.KeepDebugSpawnsEmbodied == true) then
+        return false
+    end
+    return true
+end
+
 local function autoRearmCooldownHours(record)
     local companion = record.companion or {}
     if companion.recruited or record.debugSpawnOnly then
@@ -601,14 +624,15 @@ function Embody.tryRearmHidden(record, player)
     if (record.embodiment.cooldownUntilHour or 0) > now then return false end
 
     local radius = Embody._activationRadiusFor(record)
-    local d2 = dist2(player:getX(), player:getY(), record.anchor.x, record.anchor.y)
+    local originX, originY, originZ, originSource = activationOriginFor(record)
+    local d2 = dist2(player:getX(), player:getY(), originX, originY)
     if d2 > radius * radius then return false end
 
     record.embodiment.state = "eligible"
     touchRecordStage(record, "eligible", "tryRearmHidden")
     traceStage("tryRearmHidden.eligible", record, nil, {
         source = "tryRearmHidden",
-        detail = string.format("radius=%.2f distance=%.2f", radius, math.sqrt(d2)),
+        detail = string.format("radius=%.2f distance=%.2f origin=%s originPos=%.0f,%.0f,%.0f", radius, math.sqrt(d2), tostring(originSource), originX, originY, originZ),
     })
     print(string.format("[LWN][Embodiment] rearmed hidden npc %s", tostring(record.id)))
     return true
@@ -643,19 +667,20 @@ function Embody.tryEmbody(record, player)
     end
 
     local radius = Embody._activationRadiusFor(record)
-    local d2 = dist2(player:getX(), player:getY(), record.anchor.x, record.anchor.y)
+    local originX, originY, originZ, originSource = activationOriginFor(record)
+    local d2 = dist2(player:getX(), player:getY(), originX, originY)
     if d2 > radius * radius then
         setLastFailure(record, "out_of_range", string.format("%.2f", math.sqrt(d2)))
         traceStage("tryEmbody.out_of_range", record, nil, {
             source = "tryEmbody",
-            detail = string.format("radius=%.2f distance=%.2f", radius, math.sqrt(d2)),
+            detail = string.format("radius=%.2f distance=%.2f origin=%s originPos=%.0f,%.0f,%.0f", radius, math.sqrt(d2), tostring(originSource), originX, originY, originZ),
         })
         return nil
     end
 
     traceStage("tryEmbody.start", record, nil, {
         source = "tryEmbody",
-        detail = string.format("radius=%.2f distance=%.2f", radius, math.sqrt(d2)),
+        detail = string.format("radius=%.2f distance=%.2f origin=%s originPos=%.0f,%.0f,%.0f", radius, math.sqrt(d2), tostring(originSource), originX, originY, originZ),
     })
     touchRecordStage(record, "spawning", "tryEmbody.start")
 
@@ -797,11 +822,21 @@ function Embody.tryDespawn(record, actor, player)
     record = ensureRecordShape(record)
     if record.embodiment.state ~= "embodied" or not actor then return false end
     if not isAlive(record) then return false end
+    if debugNpcShouldStayEmbodied(record) then
+        traceStage("tryDespawn.skipped_debug_pinned", record, actor, {
+            source = "tryDespawn",
+            detail = "debugSpawnOnly=true keepEmbodied=true",
+        })
+        return false
+    end
 
     local radius = LWN.Config.Embodiment.DespawnRadiusTiles
     local companion = record.companion or {}
     if companion.recruited then
         radius = LWN.Config.Embodiment.CompanionDespawnRadiusTiles
+    end
+    if record.debugSpawnOnly == true and LWN.Config and LWN.Config.Debug and tonumber(LWN.Config.Debug.DebugSpawnDespawnRadiusTiles) then
+        radius = tonumber(LWN.Config.Debug.DebugSpawnDespawnRadiusTiles) or radius
     end
 
     local grace = record.embodiment.graceUntilHour or 0
@@ -812,7 +847,7 @@ function Embody.tryDespawn(record, actor, player)
 
     traceStage("tryDespawn.start", record, actor, {
         source = "tryDespawn",
-        detail = string.format("radius=%.2f distance=%.2f", radius, math.sqrt(d2)),
+        detail = string.format("radius=%.2f distance=%.2f debugSpawn=%s", radius, math.sqrt(d2), tostring(record.debugSpawnOnly == true)),
     })
     LWN.ActorSync.pullActorToRecord(record, actor)
     Store.setEmbodiedMeta(record.id, {

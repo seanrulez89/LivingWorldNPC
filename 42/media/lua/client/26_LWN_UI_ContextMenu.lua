@@ -339,117 +339,136 @@ local function addDebugSubmenu(context, player, actor)
 
     if not enabled then return end
 
-    settingsSub:addOption("Debug: Spawn NPC Near Player (IsoPlayer)", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayer then
-            LWN.DebugTools.spawnOneNearPlayer(p)
-        end
-    end)
+    local isoTestOpt = settingsSub:addOption("IsoZombie Test", nil, nil)
+    local isoTestSub = settingsSub:getNew(settingsSub)
+    settingsSub:addSubMenu(isoTestOpt, isoTestSub)
 
-    settingsSub:addOption("Debug: Spawn NPC Near Player (IsoSurvivor Spike)", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayerIsoSurvivor then
-            LWN.DebugTools.spawnOneNearPlayerIsoSurvivor(p)
-        end
-    end)
-
-    settingsSub:addOption("Debug: Spawn NPC Near Player (IsoZombie Spike)", player, function(p)
+    isoTestSub:addOption("Spawn Test NPC Near Player (IsoZombie)", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayerIsoZombie then
             LWN.DebugTools.spawnOneNearPlayerIsoZombie(p)
         end
     end)
 
-    settingsSub:addOption("Debug: Delete Nearest NPC", player, function(p)
-        traceContextCandidate("debug.delete.request", nil, "delete_nearest_npc", nil)
-        if LWN.DebugTools and LWN.DebugTools.deleteNearestNpc then
-            LWN.DebugTools.deleteNearestNpc(p)
-        end
-    end)
-
-    settingsSub:addOption("Debug: Dump Last Actor Failure", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.dumpLastActorFailure then
-            LWN.DebugTools.dumpLastActorFailure(p)
-        end
-    end)
-
-    settingsSub:addOption("Debug: Dump Nearest NPC Summary + Hybrid", player, function(p)
+    isoTestSub:addOption("Dump Nearest NPC Summary + Hybrid", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.dumpNearestNpcSummary then
             LWN.DebugTools.dumpNearestNpcSummary(p)
         end
     end)
 
-    settingsSub:addOption("Debug: Dump Nearest NPC Hybrid Line", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.dumpNearestNpcHybridSummary then
-            LWN.DebugTools.dumpNearestNpcHybridSummary(p)
-        end
-    end)
-
-    settingsSub:addOption("Debug: Dump Nearest NPC Movement/Audio", player, function(p)
+    isoTestSub:addOption("Dump Nearest NPC Movement/Audio", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.dumpNearestNpcMovementAudioState then
             LWN.DebugTools.dumpNearestNpcMovementAudioState(p)
         end
     end)
 
-    settingsSub:addOption("Debug: Wipe Data + Reseed", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.wipeAndReseed then
-            LWN.DebugTools.wipeAndReseed(p)
+    isoTestSub:addOption("Dump Last Actor Failure", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.dumpLastActorFailure then
+            LWN.DebugTools.dumpLastActorFailure(p)
         end
     end)
 
-    settingsSub:addOption("Debug: Boost Nearest NPC Trust", player, function(p)
+    isoTestSub:addOption("Boost Nearest NPC Trust", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.adjustNearestRelationship then
             LWN.DebugTools.adjustNearestRelationship(p, "trust", 0.20)
         end
     end)
 
-    settingsSub:addOption("Debug: Lower Nearest NPC Trust", player, function(p)
+    isoTestSub:addOption("Lower Nearest NPC Trust", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.adjustNearestRelationship then
             LWN.DebugTools.adjustNearestRelationship(p, "trust", -0.20)
         end
     end)
 
-    settingsSub:addOption("Debug: Force Nearest Friendly Policy", player, function(p)
+    isoTestSub:addOption("Force Nearest Friendly Policy", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.forceNearestRelationshipCombatPolicy then
             LWN.DebugTools.forceNearestRelationshipCombatPolicy(p, "friendly")
         end
     end)
 
-    settingsSub:addOption("Debug: Force Nearest Neutral Policy", player, function(p)
+    isoTestSub:addOption("Force Nearest Neutral Policy", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.forceNearestRelationshipCombatPolicy then
             LWN.DebugTools.forceNearestRelationshipCombatPolicy(p, "neutral")
         end
     end)
 
-    settingsSub:addOption("Debug: Force Nearest Hostile Policy", player, function(p)
+    isoTestSub:addOption("Force Nearest Hostile Policy", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.forceNearestRelationshipCombatPolicy then
             LWN.DebugTools.forceNearestRelationshipCombatPolicy(p, "hostile")
         end
     end)
 
-    settingsSub:addOption("Debug: Shared Food Beat (Nearest)", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.applyStoryBeat then
-            LWN.DebugTools.applyStoryBeat(p, "shared_food")
-        end
-    end)
-
-    settingsSub:addOption("Debug: Force Legacy Candidate (Nearest)", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.forceLegacyCandidate then
-            LWN.DebugTools.forceLegacyCandidate(p)
-        end
-    end)
-
     local npcId = getNpcId(actor)
     if npcId then
-        settingsSub:addOption("Debug: Dump This NPC (" .. tostring(npcId) .. ") + Hybrid", player, function(p)
+        isoTestSub:addOption("Dump This NPC (" .. tostring(npcId) .. ") + Hybrid", player, function(p)
             traceContextCandidate("debug.dump.request", actor, "dump_this_npc", nil)
             if LWN.DebugTools and LWN.DebugTools.dumpNpcById then
                 LWN.DebugTools.dumpNpcById(npcId, p)
             end
         end)
-        settingsSub:addOption("Debug: Delete This NPC (" .. tostring(npcId) .. ")", player, function(p)
-            traceContextCandidate("debug.delete.request", actor, "delete_this_npc", nil)
-            if LWN.DebugTools and LWN.DebugTools.deleteNpcById then
-                LWN.DebugTools.deleteNpcById(npcId, p)
+    end
+
+    if LWN.Config and LWN.Config.Debug and LWN.Config.Debug.ShowLegacyCarrierMenu == true then
+        local legacyOpt = settingsSub:addOption("Legacy / Carrier Experiments", nil, nil)
+        local legacySub = settingsSub:getNew(settingsSub)
+        settingsSub:addSubMenu(legacyOpt, legacySub)
+
+        legacySub:addOption("Spawn NPC Near Player (IsoPlayer)", player, function(p)
+            if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayer then
+                LWN.DebugTools.spawnOneNearPlayer(p)
             end
         end)
+
+        legacySub:addOption("Spawn NPC Near Player (IsoSurvivor Spike)", player, function(p)
+            if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayerIsoSurvivor then
+                LWN.DebugTools.spawnOneNearPlayerIsoSurvivor(p)
+            end
+        end)
+
+        legacySub:addOption("Dump Nearest NPC Hybrid Line", player, function(p)
+            if LWN.DebugTools and LWN.DebugTools.dumpNearestNpcHybridSummary then
+                LWN.DebugTools.dumpNearestNpcHybridSummary(p)
+            end
+        end)
+
+        legacySub:addOption("Shared Food Beat (Nearest)", player, function(p)
+            if LWN.DebugTools and LWN.DebugTools.applyStoryBeat then
+                LWN.DebugTools.applyStoryBeat(p, "shared_food")
+            end
+        end)
+
+        legacySub:addOption("Force Legacy Candidate (Nearest)", player, function(p)
+            if LWN.DebugTools and LWN.DebugTools.forceLegacyCandidate then
+                LWN.DebugTools.forceLegacyCandidate(p)
+            end
+        end)
+    end
+
+    if LWN.Config and LWN.Config.Debug and LWN.Config.Debug.ShowDangerousDebugMenu == true then
+        local dangerOpt = settingsSub:addOption("Danger Zone", nil, nil)
+        local dangerSub = settingsSub:getNew(settingsSub)
+        settingsSub:addSubMenu(dangerOpt, dangerSub)
+
+        dangerSub:addOption("Delete Nearest NPC", player, function(p)
+            traceContextCandidate("debug.delete.request", nil, "delete_nearest_npc", nil)
+            if LWN.DebugTools and LWN.DebugTools.deleteNearestNpc then
+                LWN.DebugTools.deleteNearestNpc(p)
+            end
+        end)
+
+        dangerSub:addOption("Wipe Data + Reseed", player, function(p)
+            if LWN.DebugTools and LWN.DebugTools.wipeAndReseed then
+                LWN.DebugTools.wipeAndReseed(p)
+            end
+        end)
+
+        if npcId then
+            dangerSub:addOption("Delete This NPC (" .. tostring(npcId) .. ")", player, function(p)
+                traceContextCandidate("debug.delete.request", actor, "delete_this_npc", nil)
+                if LWN.DebugTools and LWN.DebugTools.deleteNpcById then
+                    LWN.DebugTools.deleteNpcById(npcId, p)
+                end
+            end)
+        end
     end
 end
 

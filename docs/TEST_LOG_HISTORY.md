@@ -184,3 +184,36 @@ For every new test cycle, append a new section using this structure:
 - replace blunt `emitter:stopAll()`-style suppression with narrower zombie-vocal suppression so human/presence cues are not also erased
 - introduce a hostile-specific illusion profile so hostile shells stop reading like plain zombies with some suppressions turned off
 - continue treating final zombie presentation role / zombie skin as the likely hard limit until evidence proves otherwise
+
+## 2026-03-24 23:27 KST — Distance-return test exposed continuity friction and debug-menu clutter
+
+### In-game result
+- after spawning a test NPC and moving far away, returning did not restore a clearly visible NPC to the player’s eye
+- the user could not confidently tell whether the NPC was truly deleted or merely not visible/presented
+- the current debug menu was noisy enough that it actively slowed down test iteration
+
+### Log signals
+- code review after the test showed that hidden rearm and embody range checks still used `record.anchor.x/y` rather than the last embodied meta position
+- despawn already stores `Store.setEmbodiedMeta(record.id, { x, y, z, ... })`, but rearm path was not preferring that location
+- debug-spawned NPCs were still eligible for normal distance-based despawn behavior, which can interfere with rapid test loops
+- UI context debug options still exposed legacy carrier experiments and dangerous actions alongside the main IsoZombie test lane
+
+### Interpretation / lesson
+- this test was not clean evidence about humanization timing by itself because embodiment continuity policy was still able to contaminate the result
+- the likely issue is not simply “NPC deleted forever”, but a continuity mismatch between despawn bookkeeping, rearm distance checks, and test-oriented debug behavior
+- debug tooling itself had become part of the problem: too many unrelated menu entries reduced testing speed and clarity
+
+### Code or document changes that followed
+- updated embodiment continuity so hidden rearm / embody checks can prefer last embodied meta position over anchor-only distance checks
+- pinned debug-spawned NPCs in-world by default during tests, via config-driven `KeepDebugSpawnsEmbodied`
+- widened debug spawn despawn radius config as a fallback if pinned mode is disabled later
+- reorganized context debug menu into:
+  - `IsoZombie Test`
+  - optional `Legacy / Carrier Experiments`
+  - optional `Danger Zone`
+- kept legacy carrier items hidden by default and moved destructive actions out of the main test lane
+
+### Next thing to verify
+- spawn one IsoZombie debug NPC, walk far away, return, and confirm the NPC either remains embodied or rearms predictably near the last embodied position
+- confirm the debug menu now supports a fast loop of: spawn → dump summary → force policy → dump movement/audio
+- if the NPC still appears missing after continuity fixes, capture whether debug dumps show a live embodied actor with no visible presentation, which would re-point suspicion back to rendering/presentation rather than lifecycle
