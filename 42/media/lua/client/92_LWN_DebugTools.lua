@@ -340,7 +340,7 @@ local function actorDebugLine(actor)
     local path2 = protectedCall(actor, "getPath2")
 
     return string.format(
-        "actor=%s kind=%s shell=%s session=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f role=%s skin=%s itemVisuals=%d wornItems=%d policy=%s stance=%s safety=%s moveSupp=%s moving=%s path2=%s audioHint=%s audioHuman=%s illusion=%s testLabel=%s hold=%s quarantine=%s lock=%s humanInit=%s humanProfile=%s maintMode=%s drift=%s appearanceDiff=%s",
+        "actor=%s kind=%s shell=%s session=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f role=%s skin=%s itemVisuals=%d wornItems=%d policy=%s stance=%s safety=%s moveSupp=%s moving=%s path2=%s audioHint=%s audioHuman=%s posture=%s illusion=%s testLabel=%s hold=%s quarantine=%s lock=%s humanInit=%s humanProfile=%s maintMode=%s drift=%s appearanceDiff=%s",
         tostring(actor:getObjectName()),
         tostring(modData and modData.LWN_ActorKind or "unknown"),
         tostring(modData and modData.LWN_ShellMarker or (modData and modData.LWN_NpcId and ("isozombie:" .. tostring(modData.LWN_NpcId)) or "none")),
@@ -364,6 +364,7 @@ local function actorDebugLine(actor)
         tostring(path2 ~= nil),
         tostring(modData and modData.LWN_AudioLeakHint or "none"),
         tostring(modData and modData.LWN_AudioHumanization or "none"),
+        tostring(modData and modData.LWN_PostureHumanization or "none"),
         tostring(modData and modData.LWN_PersistentIllusionPackage or "none"),
         tostring(modData and modData.LWN_TestHarnessLabel or "none"),
         tostring(modData and modData.LWN_TestHarnessHoldPosition or false),
@@ -844,7 +845,7 @@ function DebugTools.dumpNearestNpcMovementAudioState(player)
     local debugState = record.embodiment and record.embodiment.debug or nil
     local currentPlan = record.goals and record.goals.currentPlan or {}
     local line = string.format(
-        "MOVE/AUDIO %s queue=%s source=%s util=%s behavior=%s chosen=%s neutralized=%s moving=%s path2=%s supp=%s audio=%s humanize=%s illusion=%s testLabel=%s hold=%s quarantine=%s lock=%s init=%s profile=%s maint=%s drift=%s",
+        "MOVE/AUDIO %s queue=%s source=%s util=%s behavior=%s chosen=%s neutralized=%s moving=%s path2=%s supp=%s audio=%s humanize=%s posture=%s illusion=%s testLabel=%s hold=%s quarantine=%s lock=%s init=%s profile=%s maint=%s drift=%s",
         tostring(record.id),
         summarizePlan(currentPlan, 8),
         tostring(debugState and debugState.source or "nil"),
@@ -857,6 +858,7 @@ function DebugTools.dumpNearestNpcMovementAudioState(player)
         tostring(modData and modData.LWN_MovementSuppression or "none"),
         tostring(modData and modData.LWN_AudioLeakHint or "none"),
         tostring(modData and modData.LWN_AudioHumanization or "none"),
+        tostring(modData and modData.LWN_PostureHumanization or "none"),
         tostring(modData and modData.LWN_PersistentIllusionPackage or "none"),
         tostring(modData and modData.LWN_TestHarnessLabel or "none"),
         tostring(modData and modData.LWN_TestHarnessHoldPosition or false),

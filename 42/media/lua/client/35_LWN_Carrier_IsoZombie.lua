@@ -448,6 +448,56 @@ local function stopZombieCodedAudio(actor)
     end
 end
 
+local function applyPostureHumanization(record, actor, source, options)
+    if not actor then return end
+    local neutralized = options and options.neutralized == true or false
+
+    protectedCall(actor, "setVariable", "LWNManagedShell", true)
+    protectedCall(actor, "setVariable", "NoLungeTarget", true)
+    protectedCall(actor, "setVariable", "ZombieHitReaction", "Chainsaw")
+    protectedCall(actor, "setWalkType", "Walk")
+    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    protectedCall(actor, "setIdleAnimatorState")
+    protectedCall(actor, "clearVariable", "TimedActionType")
+    protectedCall(actor, "clearVariable", "BumpFallType")
+    protectedCall(actor, "clearVariable", "WeaponReloadType")
+    protectedCall(actor, "clearVariable", "bdoshove")
+    protectedCall(actor, "clearVariable", "bDoShove")
+    protectedCall(actor, "clearVariable", "isattacking")
+    protectedCall(actor, "clearVariable", "AttackAnim")
+    protectedCall(actor, "clearVariable", "bShoveAiming")
+    protectedCall(actor, "clearVariable", "BumpFall")
+    protectedCall(actor, "clearVariable", "bPathfind")
+    protectedCall(actor, "clearVariable", "bKnockedDown")
+    protectedCall(actor, "clearVariable", "FallOnFront")
+    protectedCall(actor, "clearVariable", "ZombieTurnAlerted")
+    protectedCall(actor, "clearVariable", "ZombieTurnRight")
+    protectedCall(actor, "clearVariable", "ZombieTurnLeft")
+    protectedCall(actor, "clearVariable", "onknees")
+    protectedCall(actor, "clearVariable", "frombehind")
+    protectedCall(actor, "clearVariable", "ragdollbump")
+    protectedCall(actor, "setOnFloor", false)
+    protectedCall(actor, "setFallOnFront", false)
+    if neutralized then
+        protectedCall(actor, "setMoving", false)
+        protectedCall(actor, "setPath2", nil)
+        protectedCall(actor, "setTarget", nil)
+        protectedCall(actor, "setLastTargettedBy", nil)
+        protectedCall(actor, "setDir", IsoDirections and IsoDirections.S or nil)
+    end
+    if LWN.ActorFactory and LWN.ActorFactory.refreshActorPresentation then
+        LWN.ActorFactory.refreshActorPresentation(actor)
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_PostureHumanization = neutralized == true
+            and "idle_anim_reset+walktype=Walk+anti_hunch_neutralized"
+            or "idle_anim_reset+walktype=Walk+anti_hunch_active"
+        modData.LWN_PostureHumanizationSource = source or "CarrierIsoZombie.applyPostureHumanization"
+    end
+end
+
 local function applyEmergencyQuarantine(record, actor, source)
     if not actor then return end
     local harness = record and record.debugHarness or nil
@@ -465,6 +515,9 @@ local function applyEmergencyQuarantine(record, actor, source)
     protectedCall(actor, "setLastTargettedBy", nil)
     protectedCall(actor, "setPath2", nil)
     protectedCall(actor, "setMoving", false)
+    applyPostureHumanization(record, actor, source or "CarrierIsoZombie.applyEmergencyQuarantine", {
+        neutralized = true,
+    })
     stopZombieCodedAudio(actor)
 
     local modData = protectedCall(actor, "getModData")
@@ -487,6 +540,9 @@ local function applyPersistentIllusionPackage(record, actor, descriptor, policy)
     protectedCall(actor, "setVariable", "ZombieHitReaction", "Chainsaw")
     protectedCall(actor, "setWalkType", "Walk")
     protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    applyPostureHumanization(record, actor, "CarrierIsoZombie.applyPersistentIllusionPackage", {
+        neutralized = policy.shouldNeutralizeCarrier == true,
+    })
 
     if descriptor then
         protectedCall(descriptor, "setVoicePrefix", "NotAZombie")
@@ -497,10 +553,10 @@ local function applyPersistentIllusionPackage(record, actor, descriptor, policy)
     local modData = protectedCall(actor, "getModData")
     if modData then
         modData.LWN_PersistentIllusionPackage = policy.shouldNeutralizeCarrier == true
-            and "walk_human+no_lunge+voice_notazombie+audio_stopall+hitreaction_guard"
-            or "walk_human+no_lunge+voice_notazombie+audio_stopall+hitreaction_guard"
+            and "walk_human+no_lunge+voice_notazombie+audio_stopall+hitreaction_guard+posture_idle_reset"
+            or "walk_human+no_lunge+voice_notazombie+audio_stopall+hitreaction_guard+posture_idle_reset"
         modData.LWN_AudioHumanization = "descriptor_voiceprefix+emitter_stopall"
-        modData.LWN_AnimationHumanization = "walktype=Walk"
+        modData.LWN_AnimationHumanization = "walktype=Walk+idle_anim_reset+clear_attack_vars"
     end
 end
 
@@ -522,6 +578,9 @@ local function applyRelationshipCombatState(record, actor, options, policy)
         protectedCall(actor, "setNoTeeth", true)
         clearCombatIntent(actor)
         clearRuntimeIntent(record, actor)
+        applyPostureHumanization(record, actor, "CarrierIsoZombie.applyRelationshipCombatState.neutralized", {
+            neutralized = true,
+        })
         if harness and harness.holdPosition == true then
             protectedCall(actor, "setTarget", nil)
             protectedCall(actor, "setLastTargettedBy", nil)
@@ -533,6 +592,9 @@ local function applyRelationshipCombatState(record, actor, options, policy)
         protectedCall(actor, "setUseless", false)
         protectedCall(actor, "setCanWalk", true)
         protectedCall(actor, "setNoTeeth", policy.allowCarrierAttackPlayer ~= true)
+        applyPostureHumanization(record, actor, "CarrierIsoZombie.applyRelationshipCombatState.active", {
+            neutralized = false,
+        })
         if policy.allowCarrierAttackPlayer == true and player then
             protectedCall(actor, "setTarget", player)
             protectedCall(actor, "faceThisObject", player)

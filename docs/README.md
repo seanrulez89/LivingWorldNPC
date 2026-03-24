@@ -4,6 +4,8 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Fresh synthesis / triage
 
+- `POSTURE_IDLE_ANIM_EXPERIMENT_2026-03-25.md`
+  - documents the new anti-hunch experiment for `IsoZombie` shells: idle animator reset, animation-variable clearing, walk-type restamping, and posture telemetry
 - `APPEARANCE_LOCK_RESTORE_AND_CENSUS_2026-03-25.md`
   - explains the next hardening step after split-body suspicion: conservative identity-lock mismatch handling, stricter cleanup protection for LWN-marked objects, and a nearby zombie-like census debug tool
 - `BEHAVIOR_AUTHORITY_LOCK_2026-03-25.md`
