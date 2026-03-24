@@ -4,6 +4,8 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Fresh synthesis / triage
 
+- `NEXT_SESSION_HANDOFF_2026-03-25.md`
+  - end-of-day handoff for the branch after all 2026-03-25 runtime hardening/test work: what improved, what is still broken, and the recommended next-session priority order
 - `MANUAL_ASSISTED_AUTOMATED_TEST_RUNNER_2026-03-25.md`
   - documents the new semi-automated debug workflow: scripted spawn/policy/dump phases, human observation prompts, and tracked test-state continuation across a distance-return loop
 - `DISTANCE_RETURN_HOSTILE_REVERSION_LOCK_2026-03-25.md`

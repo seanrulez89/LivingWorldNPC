@@ -391,3 +391,30 @@ For every new test cycle, append a new section using this structure:
 - confirm the automated sequence targets the intended test NPC consistently across all three phases
 - confirm the prompts are clear enough that the user can pause for sound/visual observation at the right times
 - confirm the return-phase dump captures the relevant hostile-reversion or split-body moment more reliably than the old manual click sequence
+
+## 2026-03-25 03:28 KST — Final test of the day: automation useful, hostile reversion remains, posture still fails
+
+### In-game result
+- spawn-time zombie audio was still suppressed well enough that the user did not notice immediate zombie sound
+- after distance-return, before any new relationship toggle, the originally spawned NPC immediately showed hostile intent and attacked the player, including real hit confirmation
+- in this final run, the earlier split-body/two-bodies-at-once symptom was not observed
+- posture still looked hunched and zombie-like to the user; the anti-hunch experiment did not meaningfully change the read
+- the automated test runner was useful in principle, but its speech-bubble prompts were unreadable because Korean text appeared garbled/encoding-broken
+- `Continue Automated Test` may still have triggered at least one clothing/appearance change, but the user was not fully certain
+- when nearby-zombie cleanup was used after the hostile return, the visible attacker disappeared from view
+
+### Interpretation / lesson
+- automation is worth keeping, but its prompt channel currently needs to avoid broken Korean speech-bubble text
+- the strongest remaining gameplay/runtime failure is still return-path hostile reversion of the original spawned shell before any new manual policy input
+- posture correction via the current accessible idle/anim reset approach appears insufficient; zombie hunch remains a major tell
+- the split-body problem may be intermittent rather than guaranteed on every return-path run
+- visible attacker removal by nearby-zombie cleanup again suggests world object / logical record separation remains a live concern, though this exact run did not fully re-check whether logical controls still persisted afterward
+
+### Code or document changes that followed
+- none yet in this entry; this log is intended as the end-of-day stable handoff point before the next session continues from the remaining failures
+
+### Next thing to verify
+- switch automation speech-bubble prompts to an encoding-safe prompt strategy (likely ASCII/English or a different in-game notification path) before relying on them heavily again
+- use the automated flow to check whether `attackLock` is present at the exact moment of return-path hostility
+- verify again whether nearby-zombie cleanup removes only the visible shell while relationship/debug controls still target the logical record
+- decide whether posture work should pause behind behavior-authority/recovery fixes, since posture improvements currently do not survive user perception testing
