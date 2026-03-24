@@ -284,3 +284,31 @@ For every new test cycle, append a new section using this structure:
 - confirm spawn-time zombie audio leak is reduced by the new emergency quarantine path
 - confirm distance-return tests no longer collapse as easily into `actor_lost`
 - confirm quarantined debug shells remain neutralized unless deliberately released from quarantine later
+
+## 2026-03-25 01:21 KST — Spawn audio improved, appearance stabilized, but distance-return still restores hostile zombie-like behavior
+
+### In-game result
+- spawn-time zombie audio leak was no longer observed immediately after spawn
+- after travelling away and returning, the shell still behaved like a normal hostile zombie and clearly walked toward the player to attack
+- appearance changed once at the first forced relationship-policy refresh, then stayed visually stable afterward
+
+### Log signals
+- recent code behavior strongly suggests quarantine improved the initial spawn layer enough to reduce early audio leakage
+- identity lock / initial-humanization split also appears to have reduced repeated appearance churn
+- however, behavior authority still remains vulnerable after recovery / distance-return transitions
+
+### Interpretation / lesson
+- appearance is no longer the sharpest blocker in this test lane
+- the stronger remaining failure is that the managed shell can still regain zombie-native pursuit/attack authority after return/recovery
+- the next pass therefore needs to lock behavior authority harder, not just maintain identity and appearance
+
+### Code or document changes that followed
+- added stronger recovery-time re-neutralization in the event layer
+- made quarantined shells skip normal goal/action progression more aggressively
+- blocked hostile forcing via debug policy tools while quarantine is active by default
+- documented the pass in `BEHAVIOR_AUTHORITY_LOCK_2026-03-25.md`
+
+### Next thing to verify
+- confirm distance-return no longer restores obvious hostile pursuit/attack under quarantine
+- confirm the stronger behavior lock does not regress the newly improved spawn-time audio quieting
+- confirm appearance remains stable while stronger behavior authority suppression is active

@@ -149,6 +149,29 @@ local function restampManagedActor(record, actor, source)
     return true
 end
 
+local function hardReNeutralize(record, actor, source)
+    if not (record and actor and harnessQuarantine(record)) then
+        return false
+    end
+
+    restampManagedActor(record, actor, source or "EventAdapter.hardReNeutralize")
+    if LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceQuarantine then
+        LWN.Carriers.isozombie.enforceQuarantine(record, actor, source or "EventAdapter.hardReNeutralize")
+    end
+    if LWN.ActionRuntime and LWN.ActionRuntime.clear then
+        LWN.ActionRuntime.clear(record, actor)
+    end
+    protectedCall(actor, "StopAllActionQueue")
+    protectedCall(actor, "setTarget", nil)
+    protectedCall(actor, "setLastTargettedBy", nil)
+    protectedCall(actor, "setPath2", nil)
+    protectedCall(actor, "setMoving", false)
+    protectedCall(actor, "setUseless", true)
+    protectedCall(actor, "setCanWalk", false)
+    protectedCall(actor, "setNoTeeth", true)
+    return true
+end
+
 local function isCleanupBlocked(npcId)
     if not npcId then return false end
     if LWN.EmbodimentManager and LWN.EmbodimentManager.isCleanupBlocked then
@@ -927,9 +950,8 @@ local function resolveEmbodiedActor(record)
         })
         actor = nil
     end
-    if actor and harnessQuarantine(record) and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceQuarantine then
-        LWN.Carriers.isozombie.enforceQuarantine(record, actor, "resolveEmbodiedActor.cached")
-        restampManagedActor(record, actor, "resolveEmbodiedActor.cached")
+    if actor and harnessQuarantine(record) then
+        hardReNeutralize(record, actor, "resolveEmbodiedActor.cached")
     end
     if actor and LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
         local anchorSquare = getAnchorSquare(record)
@@ -969,6 +991,7 @@ local function resolveEmbodiedActor(record)
             if LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
                 LWN.EmbodimentManager.touchGrace(record)
             end
+            hardReNeutralize(record, actor, "resolveEmbodiedActor.relinked")
             traceEmbodiedDeathLike(record, actor, "resolveEmbodiedActor.relinked")
             traceStage("resolveEmbodiedActor.relinked_near_anchor", record, actor, {
                 source = "resolveEmbodiedActor",
@@ -1057,16 +1080,17 @@ local function tickEmbodiedRecord(record, actor, player)
         end
         return
     end
-    if harnessQuarantine(record) and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceQuarantine then
-        LWN.Carriers.isozombie.enforceQuarantine(record, actor, "tickEmbodiedRecord.pre_sync")
-        restampManagedActor(record, actor, "tickEmbodiedRecord.pre_sync")
+    if harnessQuarantine(record) then
+        hardReNeutralize(record, actor, "tickEmbodiedRecord.pre_sync")
     end
     if LWN.ActorSync and LWN.ActorSync.ensureEmbodiedActorState then
         LWN.ActorSync.ensureEmbodiedActorState(record, actor)
     end
     LWN.ActorSync.pullActorToRecord(record, actor)
     LWN.EmbodimentManager.registerActor(record, actor)
-    LWN.GoalSystem.update(record, {})
+    if not harnessQuarantine(record) then
+        LWN.GoalSystem.update(record, {})
+    end
 
     local relationPolicy = LWN.Social and LWN.Social.relationshipCombatPolicy and LWN.Social.relationshipCombatPolicy(record) or nil
     if harnessQuarantine(record) then
@@ -1085,14 +1109,26 @@ local function tickEmbodiedRecord(record, actor, player)
         if queueBefore then
             LWN.ActionRuntime.clear(record, actor)
         end
-        stampEmbodiedDecision(record, {
-            source = "policy_suppressed_combat",
-            chosen = nil,
-            neutralized = true,
-            queueBefore = queueBefore and queueBefore.kind or nil,
-            utility = nil,
-            behavior = nil,
-        })
+        if harnessQuarantine(record) then
+            LWN.ActionRuntime.clear(record, actor)
+            stampEmbodiedDecision(record, {
+                source = "quarantine_lock",
+                chosen = nil,
+                neutralized = true,
+                queueBefore = queueBefore and queueBefore.kind or nil,
+                utility = nil,
+                behavior = nil,
+            })
+        else
+            stampEmbodiedDecision(record, {
+                source = "policy_suppressed_combat",
+                chosen = nil,
+                neutralized = true,
+                queueBefore = queueBefore and queueBefore.kind or nil,
+                utility = nil,
+                behavior = nil,
+            })
+        end
     else
         local combatCtx = LWN.Combat.buildContext(record, actor)
         local combatIntent = LWN.Combat.chooseIntent(record, actor, combatCtx)
@@ -1124,7 +1160,11 @@ local function tickEmbodiedRecord(record, actor, player)
         end
     end
 
-    LWN.ActionRuntime.tick(record, actor)
+    if not harnessQuarantine(record) then
+        LWN.ActionRuntime.tick(record, actor)
+    else
+        hardReNeutralize(record, actor, "tickEmbodiedRecord.post_quarantine")
+    end
     traceDeathState(record, actor, "tickEmbodiedRecord.pre_despawn")
     traceStage("tickEmbodiedRecord.pre_despawn", record, actor, {
         source = "tickEmbodiedRecord",
@@ -1446,12 +1486,16 @@ function Adapter.onTick()
                     if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
                         LWN.ActorFactory.ensureActorInWorld(carrierActor, getAnchorSquare(record))
                     end
-                    restampManagedActor(record, carrierActor, "onTick.actor_missing_recovery")
-                    if harnessQuarantine(record) and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceQuarantine then
-                        LWN.Carriers.isozombie.enforceQuarantine(record, carrierActor, "onTick.actor_missing_recovery")
-                    end
+                    hardReNeutralize(record, carrierActor, "onTick.actor_missing_recovery")
                     if LWN.EmbodimentManager and LWN.EmbodimentManager.registerActor then
                         LWN.EmbodimentManager.registerActor(record, carrierActor)
+                    end
+                    local carrierHandle = getCarrierHandle(record)
+                    if carrierHandle and LWN.CarrierAdapter and LWN.CarrierAdapter.sync then
+                        LWN.CarrierAdapter.sync(record, carrierHandle, {
+                            mode = "quarantine_recovery",
+                            source = "onTick.actor_missing_recovery",
+                        })
                     end
                     if LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
                         LWN.EmbodimentManager.touchGrace(record)

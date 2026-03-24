@@ -835,6 +835,17 @@ function DebugTools.forceNearestRelationshipCombatPolicy(player, targetState)
         return false
     end
 
+    local harness = record.debugHarness or nil
+    if targetState == "hostile"
+        and harness
+        and harness.enabled == true
+        and harness.quarantine == true
+        and harness.allowForcedHostile ~= true
+    then
+        sayInfo(player, string.format("%s hostile force blocked by quarantine", tostring(record.id)))
+        return false
+    end
+
     local policy, err = LWN.Social.forceRelationshipCombatPolicy(
         record,
         targetState,
