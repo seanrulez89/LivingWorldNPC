@@ -93,6 +93,25 @@ local function clearNearbyWorldNoise(player, radius, protectedNpcId)
     local cell = getCell and getCell() or nil
     if not square or not cell then return 0 end
 
+    local function isBoundToAnyLiveRecord(obj)
+        local found = false
+        Store.eachNPC(function(record)
+            if found or Store.isAlive(record) ~= true then
+                return
+            end
+            local actor = LWN.EmbodimentManager and LWN.EmbodimentManager.getActor and LWN.EmbodimentManager.getActor(record) or nil
+            if actor and actor == obj then
+                found = true
+                return
+            end
+            local handle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
+            if handle and handle.actor and handle.actor == obj then
+                found = true
+            end
+        end)
+        return found
+    end
+
     local cx = protectedCall(square, "getX") or math.floor(player:getX())
     local cy = protectedCall(square, "getY") or math.floor(player:getY())
     local cz = protectedCall(square, "getZ") or math.floor(player:getZ())
@@ -115,7 +134,7 @@ local function clearNearbyWorldNoise(player, radius, protectedNpcId)
         if npcId and npcId == protectedNpcId then
             return
         end
-        if hasAnyLwnMarker(obj) then
+        if hasAnyLwnMarker(obj) or isBoundToAnyLiveRecord(obj) then
             return
         end
         local objectName = tostring(protectedCall(obj, "getObjectName") or "")
@@ -248,6 +267,7 @@ local function findNearestRecord(player)
         local dy = ay - py
         local d2 = dx * dx + dy * dy
         local priority = 0
+        local actor = findActorForRecord(record)
         if record.debugSpawnOnly == true then
             priority = priority + 10
         end
@@ -256,6 +276,17 @@ local function findNearestRecord(player)
         end
         if record.embodiment and record.embodiment.carrierKind == "isozombie" then
             priority = priority + 5
+        end
+        if record.embodiment and record.embodiment.state == "embodied" then
+            priority = priority + 40
+        elseif record.embodiment and record.embodiment.state == "hidden" then
+            priority = priority - 30
+        end
+        if actor then
+            priority = priority + 30
+            if protectedCall(actor, "isExistInTheWorld") == true then
+                priority = priority + 15
+            end
         end
         if priority > bestPriority or (priority == bestPriority and d2 < bestD2) then
             bestRecord = record
@@ -340,7 +371,7 @@ local function actorDebugLine(actor)
     local path2 = protectedCall(actor, "getPath2")
 
     return string.format(
-        "actor=%s kind=%s shell=%s session=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f role=%s skin=%s itemVisuals=%d wornItems=%d policy=%s stance=%s safety=%s moveSupp=%s moving=%s path2=%s audioHint=%s audioHuman=%s posture=%s illusion=%s testLabel=%s hold=%s quarantine=%s lock=%s humanInit=%s humanProfile=%s maintMode=%s drift=%s appearanceDiff=%s",
+        "actor=%s kind=%s shell=%s session=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f role=%s skin=%s itemVisuals=%d wornItems=%d policy=%s stance=%s safety=%s moveSupp=%s moving=%s path2=%s audioHint=%s audioHuman=%s posture=%s illusion=%s testLabel=%s hold=%s quarantine=%s attackLock=%s lock=%s humanInit=%s humanProfile=%s maintMode=%s drift=%s appearanceDiff=%s",
         tostring(actor:getObjectName()),
         tostring(modData and modData.LWN_ActorKind or "unknown"),
         tostring(modData and modData.LWN_ShellMarker or (modData and modData.LWN_NpcId and ("isozombie:" .. tostring(modData.LWN_NpcId)) or "none")),
@@ -369,6 +400,7 @@ local function actorDebugLine(actor)
         tostring(modData and modData.LWN_TestHarnessLabel or "none"),
         tostring(modData and modData.LWN_TestHarnessHoldPosition or false),
         tostring(modData and modData.LWN_TestHarnessQuarantine or false),
+        tostring(modData and modData.LWN_AttackQuarantineUntil or "none"),
         tostring(modData and modData.LWN_TestHarnessIdentityLock or false),
         tostring(modData and modData.LWN_HumanizationInitialApplied or modData and modData.LWN_InitialHumanizationApplied or false),
         tostring(modData and (modData.LWN_HumanizationProfile or modData.LWN_InitialHumanizationProfile or modData.LWN_MaintenanceHumanizationProfile) or "none"),
@@ -547,14 +579,16 @@ local function dumpRecordSummary(record, actor, player)
         tostring(illusion and illusion.lockedAppearanceSignature or "nil")
     ))
     print(string.format(
-        "[LWN][Debug] npc testHarness :: enabled=%s label=%s hold=%s quarantine=%s forceFriendly=%s identityLock=%s sterileRadius=%s",
+        "[LWN][Debug] npc testHarness :: enabled=%s label=%s hold=%s quarantine=%s forceFriendly=%s identityLock=%s sterileRadius=%s attackLockUntil=%s attackLockReason=%s",
         tostring(record.debugHarness and record.debugHarness.enabled or false),
         tostring(record.debugHarness and record.debugHarness.label or "nil"),
         tostring(record.debugHarness and record.debugHarness.holdPosition or false),
         tostring(record.debugHarness and record.debugHarness.quarantine or false),
         tostring(record.debugHarness and record.debugHarness.forceFriendly or false),
         tostring(record.debugHarness and record.debugHarness.identityLock or false),
-        tostring(record.debugHarness and record.debugHarness.sterileRadius or "nil")
+        tostring(record.debugHarness and record.debugHarness.sterileRadius or "nil"),
+        tostring(record.embodiment and record.embodiment.attackQuarantineUntilHour or "nil"),
+        tostring(record.embodiment and record.embodiment.lastAttackQuarantineReason or "nil")
     ))
     return true
 end
@@ -845,7 +879,7 @@ function DebugTools.dumpNearestNpcMovementAudioState(player)
     local debugState = record.embodiment and record.embodiment.debug or nil
     local currentPlan = record.goals and record.goals.currentPlan or {}
     local line = string.format(
-        "MOVE/AUDIO %s queue=%s source=%s util=%s behavior=%s chosen=%s neutralized=%s moving=%s path2=%s supp=%s audio=%s humanize=%s posture=%s illusion=%s testLabel=%s hold=%s quarantine=%s lock=%s init=%s profile=%s maint=%s drift=%s",
+        "MOVE/AUDIO %s queue=%s source=%s util=%s behavior=%s chosen=%s neutralized=%s moving=%s path2=%s supp=%s audio=%s humanize=%s posture=%s illusion=%s testLabel=%s hold=%s quarantine=%s attackLock=%s lock=%s init=%s profile=%s maint=%s drift=%s",
         tostring(record.id),
         summarizePlan(currentPlan, 8),
         tostring(debugState and debugState.source or "nil"),
@@ -863,6 +897,7 @@ function DebugTools.dumpNearestNpcMovementAudioState(player)
         tostring(modData and modData.LWN_TestHarnessLabel or "none"),
         tostring(modData and modData.LWN_TestHarnessHoldPosition or false),
         tostring(modData and modData.LWN_TestHarnessQuarantine or false),
+        tostring(modData and modData.LWN_AttackQuarantineUntil or "none"),
         tostring(modData and modData.LWN_TestHarnessIdentityLock or false),
         tostring(modData and (modData.LWN_HumanizationInitialApplied or modData.LWN_InitialHumanizationApplied) or false),
         tostring(modData and (modData.LWN_HumanizationProfile or modData.LWN_InitialHumanizationProfile or modData.LWN_MaintenanceHumanizationProfile) or "none"),

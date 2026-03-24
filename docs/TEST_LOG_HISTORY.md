@@ -344,3 +344,28 @@ For every new test cycle, append a new section using this structure:
 - force the same hostile→friendly-style policy sequence and see whether appearance now stabilizes earlier
 - when two bodies are visible, dump nearby zombie-like objects immediately and compare their LWN markers and cleanup-candidate status
 - verify whether the original shell-like body still vanishes under cleanup or is now preserved for better diagnosis
+
+## 2026-03-25 02:29 KST — Consolidated lock against return-path hostile reversion
+
+### In-game result
+- user confirmed a stronger and clearer failure shape:
+  - after distance-return, the originally spawned shell could emit zombie audio, pursue, and land real hit events before new manual policy toggles
+  - nearby zombie cleanup could remove the visible attacker from view
+  - relationship controls still worked until explicit delete, proving record/object detachment persisted
+
+### Log/behavior interpretation
+- this pattern points to return/recovery-time shell authority leakage more than pure appearance-only drift
+- cleanup semantics also indicated that a visible attacker object could be removed while the logical record remained active
+
+### Code or document changes that followed
+- added recovery attack-quarantine state and metadata at schema/runtime levels
+- enforced suppression while recovery attack-quarantine is active, not only while harness quarantine is active
+- hardened actor_lost path to salvage likely live shell actor references before cleanup finalization
+- strengthened debug nearby-zombie cleanup to preserve objects bound to live records, not just objects with obvious LWN markers
+- expanded debug telemetry with attack-lock fields
+- documented consolidation in `DISTANCE_RETURN_HOSTILE_REVERSION_LOCK_2026-03-25.md`
+
+### Next thing to verify
+- after distance-return, confirm whether attack starts before attack-lock expiry
+- verify whether `attackLock` fields are present on the attacker-looking shell at the moment of threat
+- verify that nearby zombie cleanup no longer removes currently bound shell objects while the record remains alive

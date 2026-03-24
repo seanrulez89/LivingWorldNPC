@@ -131,6 +131,31 @@ local function harnessQuarantine(record)
     return harness and harness.enabled == true and harness.quarantine == true or false
 end
 
+local function recoveryAttackQuarantineHours()
+    local cfg = LWN.Config and LWN.Config.Debug or nil
+    local hours = cfg and tonumber(cfg.DebugRecoveryAttackQuarantineHours) or nil
+    if hours == nil then return 0.08 end
+    return hours
+end
+
+local function applyRecoveryAttackQuarantine(record, reason)
+    if not record then return nil end
+    local now = getGameTime() and getGameTime():getWorldAgeHours() or nil
+    if not now then return nil end
+    local untilHour = now + recoveryAttackQuarantineHours()
+    record.embodiment = record.embodiment or {}
+    record.embodiment.attackQuarantineUntilHour = untilHour
+    record.embodiment.lastAttackQuarantineAt = now
+    record.embodiment.lastAttackQuarantineReason = reason or "EventAdapter.applyRecoveryAttackQuarantine"
+    return untilHour
+end
+
+local function isRecoveryAttackQuarantineActive(record)
+    local untilHour = record and record.embodiment and record.embodiment.attackQuarantineUntilHour or nil
+    local now = getGameTime() and getGameTime():getWorldAgeHours() or nil
+    return untilHour ~= nil and now ~= nil and now < untilHour
+end
+
 local function restampManagedActor(record, actor, source)
     if not record or not actor then return false end
     local modData = protectedCall(actor, "getModData")
@@ -144,6 +169,8 @@ local function restampManagedActor(record, actor, source)
         modData.LWN_TestHarnessEnabled = true
         modData.LWN_TestHarnessQuarantine = record.debugHarness.quarantine == true
     end
+    modData.LWN_AttackQuarantineUntil = record.embodiment and record.embodiment.attackQuarantineUntilHour or nil
+    modData.LWN_AttackQuarantineReason = record.embodiment and record.embodiment.lastAttackQuarantineReason or nil
     modData.LWN_LastRestampSource = source or "EventAdapter.restampManagedActor"
     modData.LWN_LastRestampAt = getGameTime() and getGameTime():getWorldAgeHours() or nil
     return true
@@ -154,6 +181,7 @@ local function hardReNeutralize(record, actor, source)
         return false
     end
 
+    applyRecoveryAttackQuarantine(record, source or "EventAdapter.hardReNeutralize")
     restampManagedActor(record, actor, source or "EventAdapter.hardReNeutralize")
     if LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceQuarantine then
         LWN.Carriers.isozombie.enforceQuarantine(record, actor, source or "EventAdapter.hardReNeutralize")
@@ -1012,6 +1040,27 @@ end
 
 local function hideEmbodiedRecord(record, actor, reason, detail)
     record = ensureRecordShape(record)
+    local purgeRogueShell = LWN.Config and LWN.Config.Debug and LWN.Config.Debug.DebugPurgeRogueShellOnActorLost ~= false
+    if not actor and reason == "actor_lost" and purgeRogueShell then
+        local handle = getCarrierHandle(record)
+        local handleActor = handle and handle.actor or nil
+        if handleActor and protectedCall(handleActor, "isExistInTheWorld") ~= false then
+            actor = handleActor
+            traceStage("hideEmbodiedRecord.actor_lost_salvaged_handle", record, actor, {
+                source = "hideEmbodiedRecord",
+                detail = "using carrier handle actor for actor_lost cleanup",
+            })
+        else
+            local relinked = findActorNearAnchor(record)
+            if relinked then
+                actor = relinked
+                traceStage("hideEmbodiedRecord.actor_lost_salvaged_nearby", record, actor, {
+                    source = "hideEmbodiedRecord",
+                    detail = "using nearby recovered actor for actor_lost cleanup",
+                })
+            end
+        end
+    end
     traceStage("hideEmbodiedRecord.start", record, actor, {
         source = "hideEmbodiedRecord",
         detail = tostring(reason) .. ":" .. tostring(detail),
@@ -1093,13 +1142,15 @@ local function tickEmbodiedRecord(record, actor, player)
     end
 
     local relationPolicy = LWN.Social and LWN.Social.relationshipCombatPolicy and LWN.Social.relationshipCombatPolicy(record) or nil
-    if harnessQuarantine(record) then
+    if harnessQuarantine(record) or isRecoveryAttackQuarantineActive(record) then
         relationPolicy = {
             state = record.debugHarness and record.debugHarness.forceFriendly == true and "friendly" or "neutral",
             allowPlayerAttack = true,
             allowCarrierAttackPlayer = false,
             shouldNeutralizeCarrier = true,
-            reason = "event_adapter_test_quarantine",
+            reason = isRecoveryAttackQuarantineActive(record)
+                and "event_adapter_recovery_attack_quarantine"
+                or "event_adapter_test_quarantine",
         }
     end
     local queueBefore = LWN.ActionRuntime.peek(record)

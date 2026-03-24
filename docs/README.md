@@ -4,6 +4,8 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Fresh synthesis / triage
 
+- `DISTANCE_RETURN_HOSTILE_REVERSION_LOCK_2026-03-25.md`
+  - consolidates the latest hardening around return-path hostile reversion: recovery attack-quarantine windows, actor-lost salvage, bound-shell cleanup protection, and attack-lock telemetry
 - `POSTURE_IDLE_ANIM_EXPERIMENT_2026-03-25.md`
   - documents the new anti-hunch experiment for `IsoZombie` shells: idle animator reset, animation-variable clearing, walk-type restamping, and posture telemetry
 - `APPEARANCE_LOCK_RESTORE_AND_CENSUS_2026-03-25.md`

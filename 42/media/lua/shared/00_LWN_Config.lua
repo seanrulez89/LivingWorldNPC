@@ -66,6 +66,8 @@ LWN.Config = {
         DebugTestQuarantine = true,
         DebugTestAllowForcedHostile = false,
         DebugActorLostRecoveryTicks = 120,
+        DebugRecoveryAttackQuarantineHours = 0.08,
+        DebugPurgeRogueShellOnActorLost = true,
         ShowLegacyCarrierMenu = false,
         ShowDangerousDebugMenu = true,
     },

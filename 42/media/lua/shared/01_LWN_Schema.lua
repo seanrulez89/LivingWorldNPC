@@ -128,6 +128,9 @@ function Schema.newNPCRecord(id, seed)
             graceUntilHour = 0,
             cooldownUntilHour = 0,
             missingTicks = 0,
+            attackQuarantineUntilHour = nil,
+            lastAttackQuarantineAt = nil,
+            lastAttackQuarantineReason = nil,
             presentation = {
                 stage = "idle",
                 pending = false,

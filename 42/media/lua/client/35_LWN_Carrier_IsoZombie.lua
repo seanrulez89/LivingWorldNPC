@@ -644,6 +644,8 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_TestHarnessEnabled = harness and harness.enabled == true or false
         modData.LWN_TestHarnessHoldPosition = harness and harness.holdPosition == true or false
         modData.LWN_TestHarnessQuarantine = harness and harness.quarantine == true or false
+        modData.LWN_AttackQuarantineUntil = record.embodiment and record.embodiment.attackQuarantineUntilHour or nil
+        modData.LWN_AttackQuarantineReason = record.embodiment and record.embodiment.lastAttackQuarantineReason or nil
         modData.LWN_TestHarnessIdentityLock = harness and harness.identityLock == true or false
         modData.LWN_TestHarnessSterileRadius = harness and harness.sterileRadius or nil
     end
