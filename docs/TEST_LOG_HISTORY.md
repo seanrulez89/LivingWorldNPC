@@ -369,3 +369,25 @@ For every new test cycle, append a new section using this structure:
 - after distance-return, confirm whether attack starts before attack-lock expiry
 - verify whether `attackLock` fields are present on the attacker-looking shell at the moment of threat
 - verify that nearby zombie cleanup no longer removes currently bound shell objects while the record remains alive
+
+## 2026-03-25 02:45 KST — Added manual-assisted automation for repeatable debug test flow
+
+### In-game / workflow need
+- the manual test loop had become too click-heavy and timing-sensitive
+- important runtime windows could be missed before the right dump button was pressed
+- user explicitly wanted automation for spawn / dump / policy-sequence / return-phase dump, while keeping sound/visual judgment manual
+
+### Code or document changes that followed
+- added an `Automation` submenu under `IsoZombie Test`
+- implemented a tracked multi-phase automated scenario:
+  - start -> spawn baseline dumps
+  - continue -> hostile/friendly policy cycle with dumps
+  - continue again after return -> return-phase dumps + zombie census + last actor failure
+- added explicit in-game prompt messages telling the human what to observe and when to move away / return
+- tracked the automation scenario by concrete `npcId` instead of relying purely on repeated nearest-target clicking
+- documented the workflow in `MANUAL_ASSISTED_AUTOMATED_TEST_RUNNER_2026-03-25.md`
+
+### Next thing to verify
+- confirm the automated sequence targets the intended test NPC consistently across all three phases
+- confirm the prompts are clear enough that the user can pause for sound/visual observation at the right times
+- confirm the return-phase dump captures the relevant hostile-reversion or split-body moment more reliably than the old manual click sequence

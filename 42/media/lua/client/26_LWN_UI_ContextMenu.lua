@@ -349,6 +349,34 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
+    local automationOpt = isoTestSub:addOption("Automation", nil, nil)
+    local automationSub = isoTestSub:getNew(isoTestSub)
+    isoTestSub:addSubMenu(automationOpt, automationSub)
+
+    automationSub:addOption("Start Automated Test", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.startAutomatedIsoZombieTest then
+            LWN.DebugTools.startAutomatedIsoZombieTest(p)
+        end
+    end)
+
+    automationSub:addOption("Continue Automated Test", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.continueAutomatedIsoZombieTest then
+            LWN.DebugTools.continueAutomatedIsoZombieTest(p)
+        end
+    end)
+
+    automationSub:addOption("Dump Automated Test Status", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.dumpAutomatedIsoZombieTestStatus then
+            LWN.DebugTools.dumpAutomatedIsoZombieTestStatus(p)
+        end
+    end)
+
+    automationSub:addOption("Reset Automated Test", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.resetAutomatedIsoZombieTest then
+            LWN.DebugTools.resetAutomatedIsoZombieTest(p)
+        end
+    end)
+
     isoTestSub:addOption("Clean Nearby Ordinary Zombies", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.cleanNearbyWorldNoise then
             LWN.DebugTools.cleanNearbyWorldNoise(p)

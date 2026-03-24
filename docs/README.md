@@ -4,6 +4,8 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Fresh synthesis / triage
 
+- `MANUAL_ASSISTED_AUTOMATED_TEST_RUNNER_2026-03-25.md`
+  - documents the new semi-automated debug workflow: scripted spawn/policy/dump phases, human observation prompts, and tracked test-state continuation across a distance-return loop
 - `DISTANCE_RETURN_HOSTILE_REVERSION_LOCK_2026-03-25.md`
   - consolidates the latest hardening around return-path hostile reversion: recovery attack-quarantine windows, actor-lost salvage, bound-shell cleanup protection, and attack-lock telemetry
 - `POSTURE_IDLE_ANIM_EXPERIMENT_2026-03-25.md`
