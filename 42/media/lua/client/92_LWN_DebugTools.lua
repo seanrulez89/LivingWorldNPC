@@ -215,6 +215,17 @@ local function applyDebugHarnessDefaults(record, carrierKind)
     record.relationshipToPlayer.affection = 0.25
 end
 
+local function applyDebugHarnessOverrides(record, overrides)
+    if not record or type(overrides) ~= "table" then return end
+    record.debugHarness = record.debugHarness or {}
+    for key, value in pairs(overrides) do
+        record.debugHarness[key] = value
+    end
+    if record.debugHarness.label then
+        record.identity.firstName = tostring(record.debugHarness.label)
+    end
+end
+
 local function findActorForRecord(record)
     if not record or (Store.isAlive and not Store.isAlive(record)) then
         return nil
@@ -708,7 +719,7 @@ function DebugTools.toggleEnabled()
     return state.devToolsEnabled
 end
 
-local function spawnOneNearPlayerWithCarrier(player, carrierKind)
+local function spawnOneNearPlayerWithCarrier(player, carrierKind, options)
     if not player then return nil end
 
     local roomOk, roomDetail = makeRoomForDebugSpawn(player)
@@ -725,6 +736,7 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind)
 
     randomizeIdentity(record)
     applyDebugHarnessDefaults(record, carrierKind)
+    applyDebugHarnessOverrides(record, options and options.harness or nil)
     record.identity.profession = "unemployed"
     record.backstory.formerProfession = record.identity.profession
     record.companion.recruited = true
@@ -813,6 +825,104 @@ local function resetAutomation(player, reason)
         sayInfo(player, string.format("TEST RESET (%s)", tostring(reason)))
     end
     return state
+end
+
+local function collectDebugHarnessRecords()
+    local records = {}
+    Store.eachNPC(function(record)
+        if Store.isAlive(record) == true
+            and record.debugSpawnOnly == true
+            and record.debugHarness
+            and record.debugHarness.enabled == true
+        then
+            records[#records + 1] = record
+        end
+    end)
+    return records
+end
+
+local function purgeRogueDebugHarnessShells(player, radius)
+    if not player then return 0 end
+    local cell = getCell and getCell() or nil
+    local square = protectedCall(player, "getSquare")
+    if not cell or not square then return 0 end
+
+    local cx = protectedCall(square, "getX") or math.floor(player:getX())
+    local cy = protectedCall(square, "getY") or math.floor(player:getY())
+    local cz = protectedCall(square, "getZ") or math.floor(player:getZ())
+    local searchRadius = tonumber(radius) or 18
+    local removed = 0
+    local seen = {}
+
+    local function hasHarnessMarker(obj)
+        local modData = obj and obj.getModData and obj:getModData() or nil
+        if not modData then return false end
+        return modData.LWN_TestHarnessLabel ~= nil
+            or (type(modData.LWN_ShellMarker) == "string"
+                and string.find(modData.LWN_ShellMarker, "isozombie:", 1, true) == 1
+                and modData.LWN_CarrierSpike == true)
+    end
+
+    local function maybeRemove(obj)
+        if not obj or seen[obj] then return end
+        seen[obj] = true
+        if not hasHarnessMarker(obj) then return end
+        if LWN.ActorFactory and LWN.ActorFactory.cleanupActor and LWN.ActorFactory.hasRuntimeCore and LWN.ActorFactory.hasRuntimeCore(obj) then
+            LWN.ActorFactory.cleanupActor(obj, "debug_test_clean_slate")
+        else
+            protectedCall(obj, "removeFromSquare")
+            protectedCall(obj, "removeFromWorld")
+        end
+        removed = removed + 1
+    end
+
+    for y = cy - searchRadius, cy + searchRadius do
+        for x = cx - searchRadius, cx + searchRadius do
+            local scanSquare = cell:getGridSquare(x, y, cz)
+            if scanSquare then
+                local moving = protectedCall(scanSquare, "getMovingObjects")
+                if moving and moving.size then
+                    for i = moving:size() - 1, 0, -1 do
+                        maybeRemove(moving:get(i))
+                    end
+                end
+                local staticMoving = protectedCall(scanSquare, "getStaticMovingObjects")
+                if staticMoving and staticMoving.size then
+                    for i = staticMoving:size() - 1, 0, -1 do
+                        maybeRemove(staticMoving:get(i))
+                    end
+                end
+            end
+        end
+    end
+
+    return removed
+end
+
+local function prepareAutomationCleanSlate(player, reason)
+    local cleanedRecords = 0
+    local records = collectDebugHarnessRecords()
+    for i = 1, #records do
+        local record = records[i]
+        local actor = findActorForRecord(record)
+        if LWN.EmbodimentManager and LWN.EmbodimentManager.canonicalCleanup then
+            LWN.EmbodimentManager.canonicalCleanup(record, {
+                actor = actor,
+                removeRecord = true,
+                blockNpcId = false,
+                reason = reason or "debug_test_clean_slate",
+                detail = "remove_existing_debug_harness_records",
+            })
+            cleanedRecords = cleanedRecords + 1
+        end
+    end
+
+    local removedShells = purgeRogueDebugHarnessShells(player, math.max(18, tonumber(debugConfig("DebugSterileRadiusTiles", 8)) or 8))
+    resetAutomation(nil, reason or "clean_slate")
+    if player then
+        sayInfo(player, string.format("TEST CLEAN SLATE records=%d shells=%d", cleanedRecords, removedShells))
+    end
+    return cleanedRecords, removedShells
 end
 
 local function getAutomationRecord()
@@ -993,6 +1103,9 @@ local function issueDesignatedMoveCommand(record, player, options)
 
     if record.debugHarness then
         record.debugHarness.allowCommandMovement = true
+        record.debugHarness.quarantine = false
+        syncRecordCarrier(record, player, "DebugTools.issueDesignatedMoveCommand.prep")
+        actor = findActorForRecord(record) or actor
     end
 
     local intent = LWN.ActionIntents.moveTo(record, destination.x, destination.y, destination.z, {
@@ -1015,7 +1128,6 @@ local function issueDesignatedMoveCommand(record, player, options)
         return false
     end
 
-    syncRecordCarrier(record, player, "DebugTools.issueDesignatedMoveCommand")
     sayInfo(player, string.format(
         "MOVE CMD %s -> %s (%s,%s,%s)",
         tostring(record.id),
@@ -1028,7 +1140,15 @@ local function issueDesignatedMoveCommand(record, player, options)
 end
 
 local function runMovementAutomationTest01(player)
-    local record, actor = spawnOneNearPlayerWithCarrier(player, "isozombie")
+    prepareAutomationCleanSlate(player, "automation_test_start")
+    local record, actor = spawnOneNearPlayerWithCarrier(player, "isozombie", {
+        harness = {
+            forceFriendly = true,
+            holdPosition = true,
+            quarantine = false,
+            allowCommandMovement = true,
+        },
+    })
     if not record then
         sayInfo(player, "TEST 01 failed: spawn failed")
         return false
@@ -1048,6 +1168,7 @@ local function runMovementAutomationTest01(player)
     dumpMovementAudioForRecord(record, player)
 
     sayChecklist(player, "TEST 01 CHECK", {
+        "Look: only ONE test NPC should exist.",
         "Look: same face, hair, and clothes stay stable.",
         "Look: idle posture reads human, not feral zombie.",
         "Listen: zombie audio should stay quiet.",
@@ -1152,6 +1273,7 @@ local function runMovementAutomationTest04(player)
         "Look: posture and movement still read human-ish.",
         "Listen: no fresh zombie audio leak.",
         "Watch: no hostile reversion, lunge, bite, or chase.",
+        "Watch: no duplicate replacement shells appear.",
     })
     return true
 end
@@ -1369,7 +1491,7 @@ function DebugTools.runAutomatedIsoZombieTest04(player)
 end
 
 function DebugTools.resetAutomatedIsoZombieTest(player)
-    resetAutomation(player, "manual_reset")
+    prepareAutomationCleanSlate(player, "manual_reset")
     return true
 end
 

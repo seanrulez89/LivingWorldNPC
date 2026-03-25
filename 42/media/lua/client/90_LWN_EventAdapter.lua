@@ -830,6 +830,90 @@ local function updateTravelledDistance(player)
     end
 end
 
+local function isRecoverableShellCandidate(record, obj)
+    if not record or not obj then return false end
+    if protectedCall(obj, "isDestroyed") == true then return false end
+    if protectedCall(obj, "isExistInTheWorld") == false then return false end
+    if protectedCall(obj, "isZombie") ~= true then return false end
+    if not (protectedCall(obj, "getCurrentSquare") or protectedCall(obj, "getSquare")) then return false end
+    if LWN.ActorFactory and LWN.ActorFactory.hasRuntimeCore and not LWN.ActorFactory.hasRuntimeCore(obj) then
+        return false
+    end
+
+    local actorCleanup = getActorCleanupState(obj)
+    if actorCleanup and actorCleanup.pending == true then
+        return false
+    end
+
+    local activeNpcId = getActiveNpcId(obj)
+    local knownNpcId = getKnownNpcId(obj)
+    local modData = protectedCall(obj, "getModData")
+    local harnessMatch = record.debugHarness
+        and record.debugHarness.label
+        and modData
+        and modData.LWN_TestHarnessLabel == record.debugHarness.label
+    local shellMatch = modData
+        and modData.LWN_ShellMarker == string.format("isozombie:%s", tostring(record.id))
+
+    return activeNpcId == record.id or knownNpcId == record.id or harnessMatch or shellMatch
+end
+
+local function findRecoveryCandidateNearSquare(record, square, radius, source)
+    if not record or not square then
+        return nil
+    end
+
+    local cell = getCell and getCell() or nil
+    if not cell then return nil end
+
+    local cx = protectedCall(square, "getX") or 0
+    local cy = protectedCall(square, "getY") or 0
+    local cz = protectedCall(square, "getZ") or 0
+    local scanRadius = tonumber(radius) or 2
+    local handle = getCarrierHandle(record)
+    local best = nil
+    local bestScore = -1
+    local bestD2 = math.huge
+
+    for y = cy - scanRadius, cy + scanRadius do
+        for x = cx - scanRadius, cx + scanRadius do
+            local scanSquare = cell:getGridSquare(x, y, cz)
+            if scanSquare and scanSquare:getMovingObjects() then
+                for i = 0, scanSquare:getMovingObjects():size() - 1 do
+                    local obj = scanSquare:getMovingObjects():get(i)
+                    if isRecoverableShellCandidate(record, obj) then
+                        local modData = protectedCall(obj, "getModData")
+                        local score = 0
+                        if handle and handle.actor == obj then score = score + 60 end
+                        if getActiveNpcId(obj) == record.id then score = score + 40 end
+                        if getKnownNpcId(obj) == record.id then score = score + 20 end
+                        if record.debugHarness
+                            and record.debugHarness.label
+                            and modData
+                            and modData.LWN_TestHarnessLabel == record.debugHarness.label
+                        then
+                            score = score + 10
+                        end
+                        local dx = (protectedCall(obj, "getX") or x) - cx
+                        local dy = (protectedCall(obj, "getY") or y) - cy
+                        local d2 = dx * dx + dy * dy
+                        if score > bestScore or (score == bestScore and d2 < bestD2) then
+                            best = obj
+                            bestScore = score
+                            bestD2 = d2
+                        end
+                    end
+                end
+            end
+        end
+    end
+
+    if best then
+        restampManagedActor(record, best, source or "findRecoveryCandidateNearSquare")
+    end
+    return best
+end
+
 local function findActorNearAnchor(record)
     if not record or isCleanupBlocked(record.id) then
         return nil
@@ -842,35 +926,20 @@ local function findActorNearAnchor(record)
     local cx = math.floor((meta and meta.x) or record.embodiment and record.embodiment.lastKnownX or record.anchor.x or 0)
     local cy = math.floor((meta and meta.y) or record.embodiment and record.embodiment.lastKnownY or record.anchor.y or 0)
     local cz = math.floor((meta and meta.z) or record.embodiment and record.embodiment.lastKnownZ or record.anchor.z or 0)
-    local radius = harnessEnabled(record) and 6 or 2
+    local radius = harnessEnabled(record)
+        and math.max(12, tonumber(record.debugHarness and record.debugHarness.sterileRadius or 0) or 0)
+        or 2
 
-    for y = cy - radius, cy + radius do
-        for x = cx - radius, cx + radius do
-            local square = cell:getGridSquare(x, y, cz)
-            if square and square:getMovingObjects() then
-                for i = 0, square:getMovingObjects():size() - 1 do
-                    local obj = square:getMovingObjects():get(i)
-                    local actorCleanup = getActorCleanupState(obj)
-                    local activeNpcId = getActiveNpcId(obj)
-                    local knownNpcId = getKnownNpcId(obj)
-                    local modData = protectedCall(obj, "getModData")
-                    local harnessMatch = record.debugHarness
-                        and record.debugHarness.label
-                        and modData
-                        and modData.LWN_TestHarnessLabel == record.debugHarness.label
-                    if isManagedActor(obj)
-                        and not (actorCleanup and actorCleanup.pending == true)
-                        and (activeNpcId == record.id or knownNpcId == record.id or harnessMatch)
-                    then
-                        restampManagedActor(record, obj, "findActorNearAnchor")
-                        return obj
-                    end
-                end
-            end
-        end
+    return findRecoveryCandidateNearSquare(record, cell:getGridSquare(cx, cy, cz), radius, "findActorNearAnchor")
+end
+
+local function findActorNearPlayerForHarness(record, player)
+    if not (record and player and harnessEnabled(record)) then
+        return nil
     end
-
-    return nil
+    local square = protectedCall(player, "getSquare")
+    local radius = math.max(18, tonumber(record.debugHarness and record.debugHarness.sterileRadius or 0) or 0)
+    return findRecoveryCandidateNearSquare(record, square, radius, "findActorNearPlayerForHarness")
 end
 
 getAnchorSquare = function(record)
@@ -1040,6 +1109,7 @@ end
 
 local function hideEmbodiedRecord(record, actor, reason, detail)
     record = ensureRecordShape(record)
+    local shouldHoldDebugRearm = reason == "actor_lost" and record and record.debugSpawnOnly == true
     local purgeRogueShell = LWN.Config and LWN.Config.Debug and LWN.Config.Debug.DebugPurgeRogueShellOnActorLost ~= false
     if not actor and reason == "actor_lost" and purgeRogueShell then
         local handle = getCarrierHandle(record)
@@ -1078,6 +1148,17 @@ local function hideEmbodiedRecord(record, actor, reason, detail)
             removeRecord = false,
             reason = reason,
             detail = detail,
+        })
+    end
+    if shouldHoldDebugRearm then
+        record.embodiment = record.embodiment or {}
+        record.embodiment.noAutoRearm = true
+        record.embodiment.missingTicks = 0
+        record.embodiment.lastFailureReason = "actor_lost_debug_hold"
+        record.embodiment.lastFailureDetail = detail or reason
+        traceStage("hideEmbodiedRecord.debug_no_auto_rearm", record, actor, {
+            source = "hideEmbodiedRecord",
+            detail = tostring(detail),
         })
     end
     traceStage("hideEmbodiedRecord.hidden", record, actor, {
@@ -1539,8 +1620,40 @@ function Adapter.onTick()
     end
 
     LWN.PopulationStore.eachNPC(function(record)
-        if isAliveRecord(record) and record.embodiment.state == "hidden" and LWN.EmbodimentManager.tryRearmHidden then
-            LWN.EmbodimentManager.tryRearmHidden(record, player)
+        if isAliveRecord(record) and record.embodiment.state == "hidden" then
+            if record.debugSpawnOnly == true and record.embodiment and record.embodiment.noAutoRearm == true then
+                local recovered = findActorNearPlayerForHarness(record, player)
+                if recovered then
+                    record.embodiment.state = "embodied"
+                    record.embodiment.actorId = record.id
+                    record.embodiment.missingTicks = 0
+                    record.embodiment.noAutoRearm = false
+                    if LWN.EmbodimentManager and LWN.EmbodimentManager.registerActor then
+                        LWN.EmbodimentManager.registerActor(record, recovered)
+                    end
+                    local carrierHandle = getCarrierHandle(record)
+                    if carrierHandle then
+                        carrierHandle.actor = recovered
+                        if LWN.CarrierAdapter and LWN.CarrierAdapter.sync then
+                            LWN.CarrierAdapter.sync(record, carrierHandle, {
+                                mode = "full",
+                                source = "onTick.hidden_debug_recovery",
+                            })
+                        end
+                    end
+                    if LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
+                        LWN.EmbodimentManager.touchGrace(record)
+                    end
+                    traceStage("onTick.hidden_debug_recovered", record, recovered, {
+                        source = "onTick",
+                        detail = "reclaimed hidden debug shell near player",
+                    })
+                    return
+                end
+            end
+            if LWN.EmbodimentManager.tryRearmHidden then
+                LWN.EmbodimentManager.tryRearmHidden(record, player)
+            end
         end
     end)
 
@@ -1560,52 +1673,77 @@ function Adapter.onTick()
                     hideEmbodiedRecord(record, actor, "embodied_tick_error", err)
                 end
             else
-                record.embodiment.missingTicks = (record.embodiment.missingTicks or 0) + 1
-                local threshold = missingActorThreshold(record)
-                if record.embodiment.missingTicks == 1 then
-                    traceStage("onTick.actor_missing", record, nil, {
-                        source = "onTick",
-                        detail = string.format("missingTicks=1 carrierKind=%s threshold=%s", tostring(getCarrierKind(record)), tostring(threshold)),
-                    })
-                    probeDeathObjects(record, nil, "onTick.actor_missing")
-                end
-                local carrierHandle = getCarrierHandle(record)
-                local carrierActor = carrierHandle and carrierHandle.actor or nil
-                local carrierKnownNpcId = getKnownNpcId(carrierActor)
-                local carrierHarnessMatch = carrierActor
-                    and record.debugHarness
-                    and record.debugHarness.label
-                    and protectedCall(carrierActor, "getModData")
-                    and carrierActor:getModData().LWN_TestHarnessLabel == record.debugHarness.label
-                if carrierActor and (carrierKnownNpcId == record.id or carrierHarnessMatch or carrierHandle and carrierHandle.actor == carrierActor) then
-                    if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
-                        LWN.ActorFactory.ensureActorInWorld(carrierActor, getAnchorSquare(record))
-                    end
-                    hardReNeutralize(record, carrierActor, "onTick.actor_missing_recovery")
+                local recovered = findActorNearPlayerForHarness(record, player)
+                if recovered then
                     if LWN.EmbodimentManager and LWN.EmbodimentManager.registerActor then
-                        LWN.EmbodimentManager.registerActor(record, carrierActor)
+                        LWN.EmbodimentManager.registerActor(record, recovered)
                     end
                     local carrierHandle = getCarrierHandle(record)
-                    if carrierHandle and LWN.CarrierAdapter and LWN.CarrierAdapter.sync then
-                        LWN.CarrierAdapter.sync(record, carrierHandle, {
-                            mode = "quarantine_recovery",
-                            source = "onTick.actor_missing_recovery",
-                        })
+                    if carrierHandle then
+                        carrierHandle.actor = recovered
+                        if LWN.CarrierAdapter and LWN.CarrierAdapter.sync then
+                            LWN.CarrierAdapter.sync(record, carrierHandle, {
+                                mode = "full",
+                                source = "onTick.actor_missing_player_recovery",
+                            })
+                        end
                     end
                     if LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
                         LWN.EmbodimentManager.touchGrace(record)
                     end
                     record.embodiment.missingTicks = 0
-                    traceStage("onTick.actor_missing_recovered_from_handle", record, carrierActor, {
+                    traceStage("onTick.actor_missing_recovered_near_player", record, recovered, {
                         source = "onTick",
                         detail = string.format("carrierKind=%s", tostring(getCarrierKind(record))),
                     })
-                elseif record.embodiment.missingTicks >= threshold then
-                    traceStage("onTick.actor_missing_threshold", record, nil, {
-                        source = "onTick",
-                        detail = string.format("missingTicks=%s carrierKind=%s threshold=%s", tostring(record.embodiment.missingTicks), tostring(getCarrierKind(record)), tostring(threshold)),
-                    })
-                    hideEmbodiedRecord(record, nil, "actor_lost", "resolveEmbodiedActor returned nil")
+                else
+                    record.embodiment.missingTicks = (record.embodiment.missingTicks or 0) + 1
+                    local threshold = missingActorThreshold(record)
+                    if record.embodiment.missingTicks == 1 then
+                        traceStage("onTick.actor_missing", record, nil, {
+                            source = "onTick",
+                            detail = string.format("missingTicks=1 carrierKind=%s threshold=%s", tostring(getCarrierKind(record)), tostring(threshold)),
+                        })
+                        probeDeathObjects(record, nil, "onTick.actor_missing")
+                    end
+                    local carrierHandle = getCarrierHandle(record)
+                    local carrierActor = carrierHandle and carrierHandle.actor or nil
+                    local carrierKnownNpcId = getKnownNpcId(carrierActor)
+                    local carrierHarnessMatch = carrierActor
+                        and record.debugHarness
+                        and record.debugHarness.label
+                        and protectedCall(carrierActor, "getModData")
+                        and carrierActor:getModData().LWN_TestHarnessLabel == record.debugHarness.label
+                    if carrierActor and (carrierKnownNpcId == record.id or carrierHarnessMatch or carrierHandle and carrierHandle.actor == carrierActor) then
+                        if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
+                            LWN.ActorFactory.ensureActorInWorld(carrierActor, getAnchorSquare(record))
+                        end
+                        hardReNeutralize(record, carrierActor, "onTick.actor_missing_recovery")
+                        if LWN.EmbodimentManager and LWN.EmbodimentManager.registerActor then
+                            LWN.EmbodimentManager.registerActor(record, carrierActor)
+                        end
+                        local carrierHandle = getCarrierHandle(record)
+                        if carrierHandle and LWN.CarrierAdapter and LWN.CarrierAdapter.sync then
+                            LWN.CarrierAdapter.sync(record, carrierHandle, {
+                                mode = harnessQuarantine(record) and "quarantine_recovery" or "full",
+                                source = "onTick.actor_missing_recovery",
+                            })
+                        end
+                        if LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
+                            LWN.EmbodimentManager.touchGrace(record)
+                        end
+                        record.embodiment.missingTicks = 0
+                        traceStage("onTick.actor_missing_recovered_from_handle", record, carrierActor, {
+                            source = "onTick",
+                            detail = string.format("carrierKind=%s", tostring(getCarrierKind(record))),
+                        })
+                    elseif record.embodiment.missingTicks >= threshold then
+                        traceStage("onTick.actor_missing_threshold", record, nil, {
+                            source = "onTick",
+                            detail = string.format("missingTicks=%s carrierKind=%s threshold=%s", tostring(record.embodiment.missingTicks), tostring(getCarrierKind(record)), tostring(threshold)),
+                        })
+                        hideEmbodiedRecord(record, nil, "actor_lost", "resolveEmbodiedActor returned nil")
+                    end
                 end
             end
         end

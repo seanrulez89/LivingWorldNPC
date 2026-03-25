@@ -46,3 +46,25 @@ Instead the carrier/runtime stack now supports:
 
 - `./scripts/validate-wsl.sh`
 - `luac -p` on all changed Lua files
+
+
+## Follow-up debug pass after first live validation
+
+After the first live TEST 01-04 run, the user confirmed the stronger failure mode:
+
+- two different NPCs overlapped at spawn
+- commanded walking never actually started
+- the original shells later returned as hostile attackers with the same clothes/hair
+- fresh stationary replacements then appeared with different random appearance
+
+A follow-up direct patch addressed that by:
+
+- forcing clean-slate automation startup and reset
+- switching debug quarantine default back off for movement testing
+- making move commands explicitly drop quarantine
+- widening debug shell recovery to reclaim matching shells near the player/anchor
+- blocking hidden debug records from auto-respawning replacement shells after actor loss
+
+See also:
+
+- `docs/DEBUG_SINGLE_SHELL_RECOVERY_2026-03-26.md`
