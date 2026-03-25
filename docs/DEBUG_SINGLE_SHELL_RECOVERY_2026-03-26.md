@@ -77,3 +77,30 @@ Hidden debug records will now only recover by reclaiming a matching live shell, 
 2. `TEST 02` should finally produce real commanded walking.
 3. `TEST 04` should not produce hostile originals plus fresh replacement duplicates.
 4. If recovery fails, the expected failure should now be **missing test NPC without replacement spawn**, not shell duplication.
+
+
+## Follow-up locomotion patch after the first single-shell retest
+
+A second live retest showed:
+
+- clean-slate startup was improved enough to show only one test NPC
+- the command escaped quarantine and entered `queued -> pathing`
+- but the NPC still looked completely statue-like and never visibly walked
+- a runtime error remained in `findRecoveryCandidateNearSquare`
+
+That pointed to two direct issues:
+
+1. the recovery helper had a real nil-call regression
+2. movement was entering command/path state without reliably reaching actor-level locomotion
+
+The follow-up patch therefore:
+
+- removed the forward-local dependency in `findRecoveryCandidateNearSquare`
+- stopped forcing a full carrier sync immediately before designated move command issue
+- changed `Carrier.sync` so anchor snapping only happens when explicitly requested
+- kept initial embodiment snapping by passing `snapToAnchor=true` only during initial sync
+- updated movement start to try actor-level `pathToLocation` / `pathToCharacter` before falling back to `PathFindBehavior2`
+
+This should make the next retest answer a narrower question:
+
+- does the commandable non-hostile shell now produce first visible walking?

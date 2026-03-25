@@ -870,7 +870,7 @@ local function findRecoveryCandidateNearSquare(record, square, radius, source)
     local cy = protectedCall(square, "getY") or 0
     local cz = protectedCall(square, "getZ") or 0
     local scanRadius = tonumber(radius) or 2
-    local handle = getCarrierHandle(record)
+    local handle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
     local best = nil
     local bestScore = -1
     local bestD2 = math.huge

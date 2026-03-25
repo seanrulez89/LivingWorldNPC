@@ -739,6 +739,7 @@ function Embody.tryEmbody(record, player)
             if LWN.CarrierAdapter and LWN.CarrierAdapter.sync then
                 return LWN.CarrierAdapter.sync(record, handle, {
                     mode = "full",
+                    snapToAnchor = true,
                     source = "tryEmbody.initial_sync",
                 })
             end

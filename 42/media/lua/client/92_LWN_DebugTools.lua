@@ -1104,7 +1104,6 @@ local function issueDesignatedMoveCommand(record, player, options)
     if record.debugHarness then
         record.debugHarness.allowCommandMovement = true
         record.debugHarness.quarantine = false
-        syncRecordCarrier(record, player, "DebugTools.issueDesignatedMoveCommand.prep")
         actor = findActorForRecord(record) or actor
     end
 

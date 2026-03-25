@@ -353,34 +353,93 @@ function Runtime._startTimedAction(record, actor, intent)
     end
 end
 
+local function invokeActorPath(actor, methodName, ...)
+    if not actor then return false end
+    local fn = actor[methodName]
+    if not fn then return false end
+    local ok = pcall(fn, actor, ...)
+    return ok == true
+end
+
 function Runtime._startMovement(record, actor, intent)
     local pf = actor:getPathFindBehavior2()
-    if not pf then
-        intent.failed = true
-        updateMoveCommand(record, intent, "failed", "path_behavior_missing", actor)
-        return
-    end
+    local started = false
+    local pathMethod = nil
+
+    protectedCall(actor, "setUseless", false)
+    protectedCall(actor, "setCanWalk", true)
+    protectedCall(actor, "setNoTeeth", true)
+    protectedCall(actor, "setVariable", "NoLungeTarget", true)
+    protectedCall(actor, "setWalkType", "Walk")
+    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    protectedCall(actor, "clearVariable", "bPathfind")
 
     if intent.kind == "move_to" then
-        pf:pathToLocation(intent.data.x, intent.data.y, intent.data.z)
+        started = invokeActorPath(actor, "pathToLocation", intent.data.x, intent.data.y, intent.data.z)
+        pathMethod = started and "actor:pathToLocation" or nil
+        if not started and pf then
+            pf:pathToLocation(intent.data.x, intent.data.y, intent.data.z)
+            started = true
+            pathMethod = "pf:pathToLocation"
+        end
     elseif intent.kind == "follow_player" then
         local player = getPlayer()
-        if player then pf:pathToCharacter(player) end
+        if player then
+            started = invokeActorPath(actor, "pathToCharacter", player)
+            pathMethod = started and "actor:pathToCharacter" or nil
+            if not started and pf then
+                pf:pathToCharacter(player)
+                started = true
+                pathMethod = "pf:pathToCharacter"
+            end
+        end
     elseif intent.kind == "guard_player" then
         local player = getPlayer()
-        if player then pf:pathToCharacter(player) end
+        if player then
+            started = invokeActorPath(actor, "pathToCharacter", player)
+            pathMethod = started and "actor:pathToCharacter" or nil
+            if not started and pf then
+                pf:pathToCharacter(player)
+                started = true
+                pathMethod = "pf:pathToCharacter"
+            end
+        end
     elseif intent.kind == "retreat" then
         local px, py, pz = actor:getX(), actor:getY(), actor:getZ()
         local tx = math.floor(px + (px - (intent.data.threatPos and intent.data.threatPos.x or px)) * 4)
         local ty = math.floor(py + (py - (intent.data.threatPos and intent.data.threatPos.y or py)) * 4)
-        pf:pathToLocation(tx, ty, pz)
+        started = invokeActorPath(actor, "pathToLocation", tx, ty, pz)
+        pathMethod = started and "actor:pathToLocation" or nil
+        if not started and pf then
+            pf:pathToLocation(tx, ty, pz)
+            started = true
+            pathMethod = "pf:pathToLocation"
+        end
     elseif intent.kind == "wander_short" then
         local px, py, pz = math.floor(actor:getX()), math.floor(actor:getY()), math.floor(actor:getZ())
-        pf:pathToLocation(px + ZombRand(-5, 6), py + ZombRand(-5, 6), pz)
+        local tx = px + ZombRand(-5, 6)
+        local ty = py + ZombRand(-5, 6)
+        started = invokeActorPath(actor, "pathToLocation", tx, ty, pz)
+        pathMethod = started and "actor:pathToLocation" or nil
+        if not started and pf then
+            pf:pathToLocation(tx, ty, pz)
+            started = true
+            pathMethod = "pf:pathToLocation"
+        end
+    end
+
+    if not started then
+        intent.failed = true
+        updateMoveCommand(record, intent, "failed", "path_start_unavailable", actor)
+        return
     end
 
     intent.started = true
-    updateMoveCommand(record, intent, "pathing", "path_started", actor)
+    intent.pathMethod = pathMethod
+    intent.lastProgressAt = worldAgeHours()
+    intent.lastObservedDistance = moveIntentDistance(actor, intent)
+    protectedCall(actor, "setMoving", true)
+    updateMoveCommand(record, intent, "pathing", pathMethod and ("path_started:" .. pathMethod) or "path_started", actor)
 end
 
 function Runtime._tickMovementIntent(record, actor, intent)
@@ -390,6 +449,13 @@ function Runtime._tickMovementIntent(record, actor, intent)
             intent.done = true
             updateMoveCommand(record, intent, "arrived", "distance_threshold", actor)
             return true
+        end
+        if distance ~= nil then
+            local lastDistance = tonumber(intent.lastObservedDistance)
+            if lastDistance == nil or distance < (lastDistance - 0.05) then
+                intent.lastProgressAt = worldAgeHours()
+            end
+            intent.lastObservedDistance = distance
         end
     end
 

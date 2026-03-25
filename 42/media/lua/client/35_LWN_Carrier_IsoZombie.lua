@@ -1017,7 +1017,8 @@ function Carrier.sync(record, handle, options)
     handle.runtime.runtimeDetail = runtimeDetail
 
     local anchor = record and record.anchor or nil
-    if anchor then
+    local snapToAnchor = options and options.snapToAnchor == true
+    if anchor and snapToAnchor then
         protectedCall(actor, "setX", tonumber(anchor.x) + 0.5)
         protectedCall(actor, "setY", tonumber(anchor.y) + 0.5)
         protectedCall(actor, "setZ", tonumber(anchor.z))

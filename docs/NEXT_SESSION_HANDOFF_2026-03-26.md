@@ -68,3 +68,24 @@ A follow-up direct patch addressed that by:
 See also:
 
 - `docs/DEBUG_SINGLE_SHELL_RECOVERY_2026-03-26.md`
+
+
+## Follow-up locomotion patch after direct retest
+
+The next live retest after `98d1352` narrowed the state further:
+
+- one visible test NPC only
+- no visible walking at all during TEST 02/03 (completely statue-like)
+- command state reached `queued -> pathing` but body/world position never changed
+- `90_LWN_EventAdapter.lua` had a real nil-call regression in `findRecoveryCandidateNearSquare`
+
+A direct follow-up patch then:
+
+- fixed the recovery helper nil-call
+- removed designated-move prep full-sync side effects
+- made carrier anchor snapping opt-in instead of always-on
+- switched movement start to try actor-level path calls first
+
+The immediate next question for live validation is now simple:
+
+- do TEST 02/03 finally show first visible walking?
