@@ -89,3 +89,44 @@ A direct follow-up patch then:
 The immediate next question for live validation is now simple:
 
 - do TEST 02/03 finally show first visible walking?
+
+## Latest live validation after `ba1e972`
+
+The next live validation answered that question in a worse way than hoped:
+
+- the test still started with one visible NPC only
+- the shell immediately read as hostile / attack-seeking while remaining stuck in place
+- zombie audio leakage was back
+- `TEST 02` / `TEST 03` still showed only in-place walking with no real displacement or turning
+- local active-test appearance stayed mostly stable, but posture still read as hunched / zombie-like
+- after leaving and returning, the user clearly saw both of these **simultaneously** on screen:
+  - the original roaming hostile zombie shell
+  - a different-looking NPC anchored back at the original test spot
+- forcing the anchored replacement friendly changed its appearance again
+- deleting the anchored NPC failed because the actor was still considered in combat
+- the previous explicit EventAdapter runtime error did not obviously recur
+
+## Current best diagnosis
+
+The branch now appears to have two linked failures active at once:
+
+1. **Combat-state leak into non-hostile shells**
+   - the managed `non_hostile_commandable` shell is still targetable / combat-active in practice
+   - this matches the user seeing attack intent, zombie audio, and delete-blocking due to `actor_has_target`
+
+2. **Duplicate embodiment via rogue original + anchored replacement**
+   - the user explicitly saw the roaming hostile original and anchored replacement together on the same screen
+   - this is stronger than an observability ambiguity; it is active dual-shell coexistence
+
+A third issue remains open beneath those two:
+
+3. **Pathing without locomotion**
+   - command state can reach `pathing` with `moving=true` and `path2=true`
+   - but the actor still does not visibly leave the anchor square
+
+## Immediate next priorities
+
+1. Hard-clear combat target / attack state every tick for commandable non-hostile shells.
+2. Add explicit combat-target observability to debug output.
+3. Explain anchored in-place walking before doing more posture polish.
+4. Keep duplicate-shell debugging centered on `rogue hostile original` versus `managed anchored replacement`.

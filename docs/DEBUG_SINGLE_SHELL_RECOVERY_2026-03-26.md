@@ -104,3 +104,37 @@ The follow-up patch therefore:
 This should make the next retest answer a narrower question:
 
 - does the commandable non-hostile shell now produce first visible walking?
+
+## Latest live validation after `ba1e972`
+
+The next live validation established a stronger failure shape than the previous retest:
+
+- `TEST 01` still showed only one visible test NPC at spawn
+- from spawn, the shell already behaved as if it wanted to attack the player
+- zombie audio leakage was present again
+- `TEST 02` / `TEST 03` still produced only in-place walking with no real displacement and no visible turning
+- the active shell kept its external appearance during the local test loop, but posture still read as hunched / zombie-like
+- there was no obvious repeat of the earlier explicit runtime error
+- after leaving and returning, the user clearly saw **both** of these on screen at the same time:
+  - a roaming hostile zombie that matched the original NPC
+  - a different-looking anchored NPC sitting back at the original test spot
+- forcibly setting the anchored replacement friendly changed its appearance again
+- deleting the active anchored NPC failed because it was already considered in combat
+
+## Updated interpretation after that validation
+
+The strongest current interpretation is now:
+
+- the explicit `findRecoveryCandidateNearSquare` nil-call regression was fixed
+- but the managed non-hostile commandable shell is still not actually winning against zombie combat / target-acquisition state
+- movement command state can still reach `pathing`, `moving=true`, and `path2=true` while the actor never leaves the anchor square
+- duplication is no longer just inferred: the user explicitly saw a roaming hostile original shell and a separate anchored replacement shell on the same screen at the same time
+- the anchored managed shell also appears vulnerable to repeated appearance drift / reapplication when state is forced back toward friendly
+
+## Immediate next engineering priorities
+
+1. Hard-stop target acquisition and combat intent for commandable non-hostile test shells every tick.
+2. Log explicit current-target / attack-state data so `non-hostile policy` can be compared against actual actor combat state.
+3. Explain why `moving=true` + `path2=true` still never changes `currentSquare`.
+4. Keep the duplicate-shell investigation focused on `rogue hostile original` + `managed anchored replacement`, not just generic relink failure.
+5. Treat posture polish as secondary until the shell can both stay non-hostile and visibly walk.
