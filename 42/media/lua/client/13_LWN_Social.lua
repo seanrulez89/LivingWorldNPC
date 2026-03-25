@@ -101,6 +101,9 @@ function Social.relationshipCombatPolicy(record)
             allowPlayerAttack = true,
             allowCarrierAttackPlayer = true,
             shouldNeutralizeCarrier = false,
+            allowMovement = true,
+            allowAutonomousMovement = true,
+            shellMode = "hostile",
             reason = drama.pendingBetrayal == true and "pending_betrayal" or "betrayal_score",
         }
     end
@@ -111,6 +114,9 @@ function Social.relationshipCombatPolicy(record)
             allowPlayerAttack = false,
             allowCarrierAttackPlayer = false,
             shouldNeutralizeCarrier = true,
+            allowMovement = true,
+            allowAutonomousMovement = true,
+            shellMode = "non_hostile_mobile",
             reason = "trusted_companion",
         }
     end
@@ -120,6 +126,9 @@ function Social.relationshipCombatPolicy(record)
         allowPlayerAttack = true,
         allowCarrierAttackPlayer = false,
         shouldNeutralizeCarrier = true,
+        allowMovement = true,
+        allowAutonomousMovement = true,
+        shellMode = "non_hostile_mobile",
         reason = companion.recruited == true and "recruited_but_low_trust" or "not_recruited",
     }
 end

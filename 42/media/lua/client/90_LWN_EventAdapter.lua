@@ -1148,13 +1148,22 @@ local function tickEmbodiedRecord(record, actor, player)
             allowPlayerAttack = true,
             allowCarrierAttackPlayer = false,
             shouldNeutralizeCarrier = true,
+            allowMovement = harnessQuarantine(record) ~= true,
+            allowAutonomousMovement = false,
+            shellMode = harnessQuarantine(record) == true and "debug_quarantine" or "recovery_non_hostile_mobile",
             reason = isRecoveryAttackQuarantineActive(record)
                 and "event_adapter_recovery_attack_quarantine"
                 or "event_adapter_test_quarantine",
         }
     end
     local queueBefore = LWN.ActionRuntime.peek(record)
-    local suppressForNeutralized = relationPolicy and relationPolicy.shouldNeutralizeCarrier == true
+    if relationPolicy and relationPolicy.shouldNeutralizeCarrier == true and queueBefore and queueBefore.kind == "attack_melee" then
+        LWN.ActionRuntime.clear(record, actor)
+        queueBefore = nil
+    end
+    local allowMovement = relationPolicy and relationPolicy.allowMovement == true
+    local allowAutonomousMovement = relationPolicy and relationPolicy.allowAutonomousMovement == true
+    local suppressForNeutralized = relationPolicy and relationPolicy.shouldNeutralizeCarrier == true and allowMovement ~= true
 
     if suppressForNeutralized then
         if queueBefore then
@@ -1176,6 +1185,41 @@ local function tickEmbodiedRecord(record, actor, player)
                 chosen = nil,
                 neutralized = true,
                 queueBefore = queueBefore and queueBefore.kind or nil,
+                utility = nil,
+                behavior = nil,
+            })
+        end
+    elseif relationPolicy and relationPolicy.shouldNeutralizeCarrier == true then
+        if queueBefore then
+            stampEmbodiedDecision(record, {
+                source = "non_hostile_command_queue",
+                chosen = queueBefore.kind,
+                neutralized = true,
+                queueBefore = queueBefore.kind,
+                utility = nil,
+                behavior = queueBefore.kind,
+            })
+        elseif allowAutonomousMovement then
+            local chosen = LWN.UtilityAI.choose(record, {})
+            local chosenKind = chosen and chosen.kind or nil
+            local intent = LWN.BehaviorTree.tick(record, actor, {}, chosen)
+            stampEmbodiedDecision(record, {
+                source = intent and "non_hostile_utility_behavior" or "non_hostile_idle",
+                chosen = intent and intent.kind or nil,
+                neutralized = true,
+                queueBefore = nil,
+                utility = chosenKind,
+                behavior = intent and intent.kind or nil,
+            })
+            if intent then
+                LWN.ActionRuntime.enqueue(record, intent)
+            end
+        else
+            stampEmbodiedDecision(record, {
+                source = "non_hostile_hold",
+                chosen = nil,
+                neutralized = true,
+                queueBefore = nil,
                 utility = nil,
                 behavior = nil,
             })

@@ -156,13 +156,28 @@ end
 
 local function relationshipCombatPolicy(record)
     local harness = record and record.debugHarness or nil
-    if harness and harness.enabled == true and (harness.holdPosition == true or harness.quarantine == true) then
+    if harness and harness.enabled == true and harness.quarantine == true then
         return {
             state = harness.forceFriendly == true and "friendly" or "neutral",
             allowPlayerAttack = true,
             allowCarrierAttackPlayer = false,
             shouldNeutralizeCarrier = true,
-            reason = harness.quarantine == true and "debug_test_harness_quarantine" or "debug_test_harness_hold_position",
+            allowMovement = false,
+            allowAutonomousMovement = false,
+            shellMode = "debug_quarantine",
+            reason = "debug_test_harness_quarantine",
+        }
+    end
+    if harness and harness.enabled == true and harness.holdPosition == true then
+        return {
+            state = harness.forceFriendly == true and "friendly" or "neutral",
+            allowPlayerAttack = true,
+            allowCarrierAttackPlayer = false,
+            shouldNeutralizeCarrier = true,
+            allowMovement = harness.allowCommandMovement ~= false,
+            allowAutonomousMovement = false,
+            shellMode = harness.allowCommandMovement == false and "non_hostile_hold" or "non_hostile_commandable",
+            reason = "debug_test_harness_hold_position",
         }
     end
     if LWN.Social and LWN.Social.relationshipCombatPolicy then
@@ -173,6 +188,9 @@ local function relationshipCombatPolicy(record)
         allowPlayerAttack = true,
         allowCarrierAttackPlayer = false,
         shouldNeutralizeCarrier = true,
+        allowMovement = true,
+        allowAutonomousMovement = true,
+        shellMode = "non_hostile_mobile",
         reason = "social_policy_missing",
     }
 end
@@ -189,6 +207,9 @@ local function carrierCombatMode(policy)
     if policy.allowCarrierAttackPlayer == true then
         return "hostile_player"
     end
+    if policy.shouldNeutralizeCarrier == true and policy.allowMovement == true then
+        return policy.shellMode or "non_hostile_mobile"
+    end
     if policy.shouldNeutralizeCarrier == true then
         return "neutralized"
     end
@@ -198,6 +219,9 @@ end
 local function friendlySuppressionSummary(policy)
     if policy.allowPlayerAttack ~= true then
         return "godmod+clearqueue"
+    end
+    if policy.shouldNeutralizeCarrier == true and policy.allowMovement == true then
+        return "no_teeth+no_lunge+clear_target_keep_path"
     end
     if policy.shouldNeutralizeCarrier == true then
         return "clearqueue"
@@ -415,13 +439,17 @@ local function humanizationProfile(record)
 end
 
 -- Friendly/neutral shells should drop any stale queued aggression as well as target refs.
-local function clearCombatIntent(actor)
-    protectedCall(actor, "StopAllActionQueue")
+local function clearCombatIntent(actor, options)
+    if not (options and options.stopActions == false) then
+        protectedCall(actor, "StopAllActionQueue")
+    end
     protectedCall(actor, "setTarget", nil)
     protectedCall(actor, "setAttackedBy", nil)
     protectedCall(actor, "setTargetSeenTime", 0)
-    protectedCall(actor, "setPath2", nil)
-    protectedCall(actor, "setMoving", false)
+    if not (options and options.clearPath == false) then
+        protectedCall(actor, "setPath2", nil)
+        protectedCall(actor, "setMoving", false)
+    end
 end
 
 local function getPrimaryPlayer(options)
@@ -457,7 +485,9 @@ local function applyPostureHumanization(record, actor, source, options)
     protectedCall(actor, "setVariable", "ZombieHitReaction", "Chainsaw")
     protectedCall(actor, "setWalkType", "Walk")
     protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
-    protectedCall(actor, "setIdleAnimatorState")
+    if neutralized == true or protectedCall(actor, "isMoving") ~= true then
+        protectedCall(actor, "setIdleAnimatorState")
+    end
     protectedCall(actor, "clearVariable", "TimedActionType")
     protectedCall(actor, "clearVariable", "BumpFallType")
     protectedCall(actor, "clearVariable", "WeaponReloadType")
@@ -467,7 +497,9 @@ local function applyPostureHumanization(record, actor, source, options)
     protectedCall(actor, "clearVariable", "AttackAnim")
     protectedCall(actor, "clearVariable", "bShoveAiming")
     protectedCall(actor, "clearVariable", "BumpFall")
-    protectedCall(actor, "clearVariable", "bPathfind")
+    if neutralized == true then
+        protectedCall(actor, "clearVariable", "bPathfind")
+    end
     protectedCall(actor, "clearVariable", "bKnockedDown")
     protectedCall(actor, "clearVariable", "FallOnFront")
     protectedCall(actor, "clearVariable", "ZombieTurnAlerted")
@@ -541,7 +573,7 @@ local function applyPersistentIllusionPackage(record, actor, descriptor, policy)
     protectedCall(actor, "setWalkType", "Walk")
     protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
     applyPostureHumanization(record, actor, "CarrierIsoZombie.applyPersistentIllusionPackage", {
-        neutralized = policy.shouldNeutralizeCarrier == true,
+        neutralized = policy.shouldNeutralizeCarrier == true and policy.allowMovement ~= true,
     })
 
     if descriptor then
@@ -565,6 +597,7 @@ local function applyRelationshipCombatState(record, actor, options, policy)
     policy = policy or relationshipCombatPolicy(record)
     local player = getPrimaryPlayer(options)
     local harness = record and record.debugHarness or nil
+    local allowMovement = policy.allowMovement == true
 
     if harness and harness.enabled == true and harness.quarantine == true then
         applyEmergencyQuarantine(record, actor, "CarrierIsoZombie.applyRelationshipCombatState")
@@ -573,15 +606,20 @@ local function applyRelationshipCombatState(record, actor, options, policy)
     protectedCall(actor, "setGodMod", policy.allowPlayerAttack ~= true)
 
     if policy.shouldNeutralizeCarrier == true then
-        protectedCall(actor, "setUseless", true)
-        protectedCall(actor, "setCanWalk", false)
+        protectedCall(actor, "setUseless", allowMovement ~= true)
+        protectedCall(actor, "setCanWalk", allowMovement == true)
         protectedCall(actor, "setNoTeeth", true)
-        clearCombatIntent(actor)
-        clearRuntimeIntent(record, actor)
-        applyPostureHumanization(record, actor, "CarrierIsoZombie.applyRelationshipCombatState.neutralized", {
-            neutralized = true,
+        clearCombatIntent(actor, {
+            stopActions = allowMovement ~= true,
+            clearPath = allowMovement ~= true,
         })
-        if harness and harness.holdPosition == true then
+        if allowMovement ~= true then
+            clearRuntimeIntent(record, actor)
+        end
+        applyPostureHumanization(record, actor, "CarrierIsoZombie.applyRelationshipCombatState.neutralized", {
+            neutralized = allowMovement ~= true,
+        })
+        if allowMovement ~= true then
             protectedCall(actor, "setTarget", nil)
             protectedCall(actor, "setLastTargettedBy", nil)
             protectedCall(actor, "setPath2", nil)
@@ -629,9 +667,16 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_AllowCarrierAttackPlayer = policy.allowCarrierAttackPlayer == true
         modData.LWN_CarrierCombatMode = carrierCombatMode(policy)
         modData.LWN_FriendlySuppression = friendlySuppressionSummary(policy)
-        modData.LWN_MovementSuppression = policy.shouldNeutralizeCarrier == true and "clearqueue+cleartarget+clearpath+combat_block" or "hostile_pathing"
+        modData.LWN_MovementSuppression = policy.shouldNeutralizeCarrier == true
+            and (policy.allowMovement == true
+                and (policy.allowAutonomousMovement == true and "non_hostile_mobile+autonomous" or "non_hostile_mobile+command_only")
+                or "clearqueue+cleartarget+clearpath+combat_block")
+            or "hostile_pathing"
         modData.LWN_AudioLeakHint = policy.shouldNeutralizeCarrier == true and "should_be_quiet_non_hostile" or "hostile_vocal_leak_possible"
         modData.LWN_HostilityReason = policy.reason
+        modData.LWN_ShellMode = policy.shellMode or carrierCombatMode(policy)
+        modData.LWN_AllowMovement = policy.allowMovement == true
+        modData.LWN_AllowAutonomousMovement = policy.allowAutonomousMovement == true
         modData.LWN_RelationshipPolicyAppliedAt = worldAgeHours()
         modData.LWN_HumanizationProfile = humanizationProfile(record)
         modData.LWN_HumanizationInitialApplied = illusion and illusion.initialApplied == true or false
@@ -644,6 +689,7 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_TestHarnessEnabled = harness and harness.enabled == true or false
         modData.LWN_TestHarnessHoldPosition = harness and harness.holdPosition == true or false
         modData.LWN_TestHarnessQuarantine = harness and harness.quarantine == true or false
+        modData.LWN_TestHarnessAllowCommandMovement = harness and harness.allowCommandMovement ~= false or false
         modData.LWN_AttackQuarantineUntil = record.embodiment and record.embodiment.attackQuarantineUntilHour or nil
         modData.LWN_AttackQuarantineReason = record.embodiment and record.embodiment.lastAttackQuarantineReason or nil
         modData.LWN_TestHarnessIdentityLock = harness and harness.identityLock == true or false

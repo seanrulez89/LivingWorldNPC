@@ -3,8 +3,22 @@ LWN.ActionIntents = LWN.ActionIntents or {}
 
 local Intents = LWN.ActionIntents
 
-function Intents.moveTo(record, x, y, z)
-    return LWN.Schema.newIntent("move_to", { x = x, y = y, z = z })
+local function mergeData(base, extra)
+    if type(extra) ~= "table" then
+        return base
+    end
+    for key, value in pairs(extra) do
+        base[key] = value
+    end
+    return base
+end
+
+function Intents.moveTo(record, x, y, z, options)
+    return LWN.Schema.newIntent("move_to", mergeData({
+        x = x,
+        y = y,
+        z = z,
+    }, options))
 end
 
 function Intents.followPlayer(record)

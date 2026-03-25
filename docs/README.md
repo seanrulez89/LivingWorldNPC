@@ -4,6 +4,10 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Fresh synthesis / triage
 
+- `NEXT_SESSION_HANDOFF_2026-03-26.md`
+  - restart guide for the new movement-capable non-hostile shell pass: what landed, how the shell-mode split now works, and what to verify next in-game
+- `MOVEMENT_CAPABLE_NON_HOSTILE_SHELL_2026-03-26.md`
+  - implementation note for the new commandable non-hostile `IsoZombie` shell mode, record-side destination command state, and the numbered `TEST 01` to `TEST 04` automation flow
 - `NEXT_SESSION_HANDOFF_2026-03-25.md`
   - end-of-day handoff for the branch after all 2026-03-25 runtime hardening/test work: what improved, what is still broken, and the recommended next-session priority order
 - `MANUAL_ASSISTED_AUTOMATED_TEST_RUNNER_2026-03-25.md`

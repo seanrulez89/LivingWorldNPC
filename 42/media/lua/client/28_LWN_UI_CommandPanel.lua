@@ -122,6 +122,9 @@ function Panel.renderTarget(actor)
     local lastFailure = LWN.ActorFactory and LWN.ActorFactory.getLastFailure and LWN.ActorFactory.getLastFailure() or nil
     local nowHour = getGameTime() and getGameTime():getWorldAgeHours() or 0
     local cooldownLeft = math.max(0, (record.embodiment.cooldownUntilHour or 0) - nowHour)
+    local command = record.companion and record.companion.command or {}
+    local destination = command.destination or {}
+    local modData = actor.getModData and actor:getModData() or nil
 
     local lines = {}
     lines[#lines + 1] = tostring(protectedCall(actor, "getFullName") or npcId)
@@ -141,6 +144,15 @@ function Panel.renderTarget(actor)
     )
     lines[#lines + 1] = "Goal: " .. tostring(record.goals and record.goals.longTerm and record.goals.longTerm.kind or "idle")
     lines[#lines + 1] = "Intent: " .. tostring(record.goals and record.goals.currentIntent or "none")
+    lines[#lines + 1] = "Shell: " .. tostring(modData and modData.LWN_ShellMode or modData and modData.LWN_CarrierCombatMode or "unknown")
+    lines[#lines + 1] = "Command: " .. tostring(command.kind or "none") .. " / " .. tostring(command.status or "idle")
+    lines[#lines + 1] = string.format(
+        "Destination: %s,%s,%s %s",
+        tostring(destination.x or "-"),
+        tostring(destination.y or "-"),
+        tostring(destination.z or "-"),
+        tostring(destination.label or "")
+    )
     lines[#lines + 1] = "Squad Role: " .. tostring(record.companion and record.companion.squadRole or "none")
     lines[#lines + 1] = "Arc: " .. tostring(record.storyArc and record.storyArc.type or "none")
     lines[#lines + 1] = "Clues: " .. tostring(record.storyArc and record.storyArc.clueCount or 0)

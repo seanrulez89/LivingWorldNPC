@@ -74,16 +74,57 @@ end
 local function queueIntent(record, actor, intent, label)
     if not record or not actor or not intent then return false end
 
-    LWN.ActionRuntime.clear(record, actor)
-    LWN.ActionRuntime.enqueue(record, intent)
-    if LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
-        LWN.EmbodimentManager.touchGrace(record)
+    if LWN.ActionRuntime and LWN.ActionRuntime.replaceWithIntent then
+        LWN.ActionRuntime.replaceWithIntent(record, actor, intent)
+    else
+        LWN.ActionRuntime.clear(record, actor)
+        LWN.ActionRuntime.enqueue(record, intent)
+        if LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
+            LWN.EmbodimentManager.touchGrace(record)
+        end
     end
 
     if label then
         say(actor, label)
     end
     return true
+end
+
+local function chooseDesignatedDestination(actor)
+    local player = getPlayer and getPlayer() or nil
+    local cell = getCell and getCell() or nil
+    if not player or not actor or not cell then
+        return nil
+    end
+
+    local px = math.floor(protectedCall(player, "getX") or 0)
+    local py = math.floor(protectedCall(player, "getY") or 0)
+    local pz = math.floor(protectedCall(player, "getZ") or 0)
+    local ax = tonumber(protectedCall(actor, "getX") or px) or px
+    local ay = tonumber(protectedCall(actor, "getY") or py) or py
+    local candidates = {
+        { x = px + 6, y = py, z = pz, label = "TEST EAST 6" },
+        { x = px - 6, y = py, z = pz, label = "TEST WEST 6" },
+        { x = px, y = py + 6, z = pz, label = "TEST SOUTH 6" },
+        { x = px, y = py - 6, z = pz, label = "TEST NORTH 6" },
+    }
+
+    local best = nil
+    local bestD2 = -1
+    for i = 1, #candidates do
+        local candidate = candidates[i]
+        if cell:getGridSquare(candidate.x, candidate.y, candidate.z) then
+            local dx = candidate.x - ax
+            local dy = candidate.y - ay
+            local d2 = dx * dx + dy * dy
+            if d2 > bestD2 then
+                best = candidate
+                bestD2 = d2
+            end
+        end
+    end
+
+    return best
 end
 
 local function commandAccepted(record, actor, command)
@@ -144,6 +185,19 @@ function UIRadial.onCommand(command)
     if command == "follow" then
         record.companion.squadRole = "follow"
         queueIntent(record, actor, LWN.ActionIntents.followPlayer(record), "Following.")
+    elseif command == "move" then
+        local destination = chooseDesignatedDestination(actor)
+        if not destination then
+            say(actor, "No test destination found.")
+            return
+        end
+        record.companion.squadRole = "move"
+        queueIntent(record, actor, LWN.ActionIntents.moveTo(record, destination.x, destination.y, destination.z, {
+            commandKind = "designated_location",
+            commandSource = "ui_radial",
+            commandReason = "player_designated_move",
+            destinationLabel = destination.label,
+        }), string.format("Moving to %s.", tostring(destination.label)))
     elseif command == "wait" then
         record.companion.squadRole = "wait"
         LWN.ActionRuntime.clear(record, actor)
@@ -180,6 +234,7 @@ function UIRadial.showFor(actor)
     menu:setY((UIManager.getLastMouseY and UIManager.getLastMouseY() or 300) - LWN.Config.UI.QuickMenuOuterRadius)
 
     menu:addSlice("Follow", nil, UIRadial.onCommand, "follow")
+    menu:addSlice("Move", nil, UIRadial.onCommand, "move")
     menu:addSlice("Wait", nil, UIRadial.onCommand, "wait")
     menu:addSlice("Guard", nil, UIRadial.onCommand, "guard")
     menu:addSlice("Search", nil, UIRadial.onCommand, "search")

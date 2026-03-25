@@ -21,6 +21,7 @@ local function automationState()
         scenario = nil,
         phase = nil,
         npcId = nil,
+        destination = nil,
         startedAt = nil,
         updatedAt = nil,
         step = 0,
@@ -53,6 +54,13 @@ local function sayInfo(player, text)
         player:Say(text)
     end
     print("[LWN][Debug] " .. tostring(text))
+end
+
+local function sayChecklist(player, title, lines)
+    sayInfo(player, tostring(title))
+    for i = 1, #lines do
+        sayInfo(player, tostring(lines[i]))
+    end
 end
 
 local function isManagedActor(obj)
@@ -194,7 +202,8 @@ local function applyDebugHarnessDefaults(record, carrierKind)
     record.debugHarness.identityLock = debugConfig("DebugTestIdentityLock", true) == true
     record.debugHarness.holdPosition = debugConfig("DebugTestHoldPosition", true) == true
     record.debugHarness.forceFriendly = debugConfig("DebugTestForceFriendly", true) == true
-    record.debugHarness.quarantine = debugConfig("DebugTestQuarantine", true) == true
+    record.debugHarness.quarantine = debugConfig("DebugTestQuarantine", false) == true
+    record.debugHarness.allowCommandMovement = true
     record.debugHarness.allowForcedHostile = debugConfig("DebugTestAllowForcedHostile", false) == true
     record.debugHarness.carrierKind = carrierKind or "isoplayer"
     record.identity.firstName = tostring(record.debugHarness.label)
@@ -385,7 +394,7 @@ local function actorDebugLine(actor)
     local path2 = protectedCall(actor, "getPath2")
 
     return string.format(
-        "actor=%s kind=%s shell=%s session=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f role=%s skin=%s itemVisuals=%d wornItems=%d policy=%s stance=%s safety=%s moveSupp=%s moving=%s path2=%s audioHint=%s audioHuman=%s posture=%s illusion=%s testLabel=%s hold=%s quarantine=%s attackLock=%s lock=%s humanInit=%s humanProfile=%s maintMode=%s drift=%s appearanceDiff=%s",
+        "actor=%s kind=%s shell=%s session=%s world=%s ghost=%s invisible=%s culled=%s x=%.1f y=%.1f z=%.1f role=%s skin=%s itemVisuals=%d wornItems=%d policy=%s stance=%s shellMode=%s safety=%s moveSupp=%s moving=%s path2=%s allowMove=%s autoMove=%s audioHint=%s audioHuman=%s posture=%s illusion=%s testLabel=%s hold=%s quarantine=%s cmdMove=%s attackLock=%s lock=%s humanInit=%s humanProfile=%s maintMode=%s drift=%s appearanceDiff=%s",
         tostring(actor:getObjectName()),
         tostring(modData and modData.LWN_ActorKind or "unknown"),
         tostring(modData and modData.LWN_ShellMarker or (modData and modData.LWN_NpcId and ("isozombie:" .. tostring(modData.LWN_NpcId)) or "none")),
@@ -403,10 +412,13 @@ local function actorDebugLine(actor)
         safeSize(wornItems),
         tostring(modData and (modData.LWN_RelationshipPolicySummary or modData.LWN_RelationState) or "unknown"),
         tostring(modData and modData.LWN_CarrierCombatMode or "unknown"),
+        tostring(modData and modData.LWN_ShellMode or "unknown"),
         tostring(modData and modData.LWN_FriendlySuppression or "unknown"),
         tostring(modData and modData.LWN_MovementSuppression or "unknown"),
         tostring(protectedCall(actor, "isMoving")),
         tostring(path2 ~= nil),
+        tostring(modData and modData.LWN_AllowMovement or false),
+        tostring(modData and modData.LWN_AllowAutonomousMovement or false),
         tostring(modData and modData.LWN_AudioLeakHint or "none"),
         tostring(modData and modData.LWN_AudioHumanization or "none"),
         tostring(modData and modData.LWN_PostureHumanization or "none"),
@@ -414,6 +426,7 @@ local function actorDebugLine(actor)
         tostring(modData and modData.LWN_TestHarnessLabel or "none"),
         tostring(modData and modData.LWN_TestHarnessHoldPosition or false),
         tostring(modData and modData.LWN_TestHarnessQuarantine or false),
+        tostring(modData and modData.LWN_TestHarnessAllowCommandMovement or false),
         tostring(modData and modData.LWN_AttackQuarantineUntil or "none"),
         tostring(modData and modData.LWN_TestHarnessIdentityLock or false),
         tostring(modData and modData.LWN_HumanizationInitialApplied or modData and modData.LWN_InitialHumanizationApplied or false),
@@ -498,6 +511,8 @@ local function dumpRecordSummary(record, actor, player)
     local currentIntent = record.goals and record.goals.currentIntent or nil
     local currentPlan = record.goals and record.goals.currentPlan or {}
     local policy = relationshipPolicy(record)
+    local command = record.companion and record.companion.command or {}
+    local destination = command.destination or {}
     local speechLine = string.format(
         "NPC %s %s %s",
         tostring(record.id),
@@ -603,6 +618,22 @@ local function dumpRecordSummary(record, actor, player)
         tostring(record.debugHarness and record.debugHarness.sterileRadius or "nil"),
         tostring(record.embodiment and record.embodiment.attackQuarantineUntilHour or "nil"),
         tostring(record.embodiment and record.embodiment.lastAttackQuarantineReason or "nil")
+    ))
+    print(string.format(
+        "[LWN][Debug] npc command :: kind=%s status=%s source=%s dest=%s,%s,%s label=%s issuedAt=%s startedAt=%s completedAt=%s outcome=%s reason=%s distance=%s",
+        tostring(command.kind or "nil"),
+        tostring(command.status or "nil"),
+        tostring(command.source or "nil"),
+        tostring(destination.x or "nil"),
+        tostring(destination.y or "nil"),
+        tostring(destination.z or "nil"),
+        tostring(destination.label or "nil"),
+        tostring(command.issuedAt or "nil"),
+        tostring(command.startedAt or "nil"),
+        tostring(command.completedAt or "nil"),
+        tostring(command.lastOutcome or "nil"),
+        tostring(command.lastReason or "nil"),
+        tostring(command.lastDistance or "nil")
     ))
     return true
 end
@@ -736,6 +767,7 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind)
             actorModData.LWN_TestHarnessSterileRadius = sterileRadius
             actorModData.LWN_TestHarnessIdentityLock = record.debugHarness and record.debugHarness.identityLock == true or false
             actorModData.LWN_TestHarnessHoldPosition = record.debugHarness and record.debugHarness.holdPosition == true or false
+            actorModData.LWN_TestHarnessAllowCommandMovement = record.debugHarness and record.debugHarness.allowCommandMovement ~= false or false
         end
         sayInfo(player, string.format("Spawned sterile test NPC %s via %s", record.id, tostring(record.embodiment and record.embodiment.carrierKind or carrierKind)))
     else
@@ -773,11 +805,12 @@ local function resetAutomation(player, reason)
     state.scenario = nil
     state.phase = nil
     state.npcId = nil
+    state.destination = nil
     state.startedAt = nil
     state.updatedAt = worldAgeHours()
     state.step = 0
     if player and reason then
-        sayInfo(player, string.format("자동화 테스트 상태를 초기화했습니다 (%s)", tostring(reason)))
+        sayInfo(player, string.format("TEST RESET (%s)", tostring(reason)))
     end
     return state
 end
@@ -787,6 +820,20 @@ local function getAutomationRecord()
     if not state.npcId then return nil, state end
     local record = Store.getNPC and Store.getNPC(state.npcId) or nil
     return record, state
+end
+
+local function setAutomationDestination(state, destination)
+    if not state then return end
+    if not destination then
+        state.destination = nil
+        return
+    end
+    state.destination = {
+        x = destination.x,
+        y = destination.y,
+        z = destination.z,
+        label = destination.label,
+    }
 end
 
 local function dumpMovementAudioForRecord(record, player)
@@ -799,8 +846,10 @@ local function dumpMovementAudioForRecord(record, player)
     local modData = actor and actor.getModData and actor:getModData() or nil
     local debugState = record.embodiment and record.embodiment.debug or nil
     local currentPlan = record.goals and record.goals.currentPlan or {}
+    local command = record.companion and record.companion.command or {}
+    local destination = command.destination or {}
     local line = string.format(
-        "MOVE/AUDIO %s queue=%s source=%s util=%s behavior=%s chosen=%s neutralized=%s moving=%s path2=%s supp=%s audio=%s humanize=%s posture=%s illusion=%s testLabel=%s hold=%s quarantine=%s attackLock=%s lock=%s init=%s profile=%s maint=%s drift=%s",
+        "MOVE/AUDIO %s queue=%s source=%s util=%s behavior=%s chosen=%s neutralized=%s moving=%s path2=%s shell=%s cmd=%s cmdStatus=%s dest=%s,%s,%s cmdLabel=%s supp=%s audio=%s humanize=%s posture=%s illusion=%s testLabel=%s hold=%s quarantine=%s attackLock=%s lock=%s init=%s profile=%s maint=%s drift=%s",
         tostring(record.id),
         summarizePlan(currentPlan, 8),
         tostring(debugState and debugState.source or "nil"),
@@ -810,6 +859,13 @@ local function dumpMovementAudioForRecord(record, player)
         tostring(debugState and debugState.neutralized or "nil"),
         tostring(actor and protectedCall(actor, "isMoving") or nil),
         tostring(actor and protectedCall(actor, "getPath2") ~= nil or nil),
+        tostring(modData and modData.LWN_ShellMode or modData and modData.LWN_CarrierCombatMode or "none"),
+        tostring(command.kind or "none"),
+        tostring(command.status or "idle"),
+        tostring(destination.x or "nil"),
+        tostring(destination.y or "nil"),
+        tostring(destination.z or "nil"),
+        tostring(destination.label or "nil"),
         tostring(modData and modData.LWN_MovementSuppression or "none"),
         tostring(modData and modData.LWN_AudioLeakHint or "none"),
         tostring(modData and modData.LWN_AudioHumanization or "none"),
@@ -881,18 +937,109 @@ local function forceRelationshipCombatPolicyForRecord(record, targetState, playe
     return true, record, policy
 end
 
-local function runStandardAutomationStart(player)
+local function chooseDesignatedTestDestination(player, actor)
+    local cell = getCell and getCell() or nil
+    if not player or not actor or not cell then
+        return nil
+    end
+
+    local px = math.floor(protectedCall(player, "getX") or 0)
+    local py = math.floor(protectedCall(player, "getY") or 0)
+    local pz = math.floor(protectedCall(player, "getZ") or 0)
+    local ax = tonumber(protectedCall(actor, "getX") or px) or px
+    local ay = tonumber(protectedCall(actor, "getY") or py) or py
+    local candidates = {
+        { x = px + 6, y = py, z = pz, label = "TEST EAST 6" },
+        { x = px - 6, y = py, z = pz, label = "TEST WEST 6" },
+        { x = px, y = py + 6, z = pz, label = "TEST SOUTH 6" },
+        { x = px, y = py - 6, z = pz, label = "TEST NORTH 6" },
+    }
+
+    local best = nil
+    local bestD2 = -1
+    for i = 1, #candidates do
+        local candidate = candidates[i]
+        if cell:getGridSquare(candidate.x, candidate.y, candidate.z) then
+            local dx = candidate.x - ax
+            local dy = candidate.y - ay
+            local d2 = dx * dx + dy * dy
+            if d2 > bestD2 then
+                best = candidate
+                bestD2 = d2
+            end
+        end
+    end
+
+    return best
+end
+
+local function issueDesignatedMoveCommand(record, player, options)
+    if not record then
+        sayInfo(player, "No NPCs found")
+        return false
+    end
+
+    local actor = findActorForRecord(record)
+    if not actor then
+        sayInfo(player, string.format("NPC %s has no live actor", tostring(record.id)))
+        return false
+    end
+
+    local destination = options and options.destination or chooseDesignatedTestDestination(player, actor)
+    if not destination then
+        sayInfo(player, string.format("NPC %s has no test destination", tostring(record.id)))
+        return false
+    end
+
+    if record.debugHarness then
+        record.debugHarness.allowCommandMovement = true
+    end
+
+    local intent = LWN.ActionIntents.moveTo(record, destination.x, destination.y, destination.z, {
+        commandKind = "designated_location",
+        commandSource = options and options.commandSource or "debug_tools",
+        commandReason = options and options.commandReason or "debug_designated_move",
+        destinationLabel = destination.label,
+    })
+
+    local issued = false
+    if LWN.ActionRuntime and LWN.ActionRuntime.replaceWithIntent then
+        issued = LWN.ActionRuntime.replaceWithIntent(record, actor, intent) == true
+    else
+        LWN.ActionRuntime.clear(record, actor)
+        issued = LWN.ActionRuntime.enqueue(record, intent) == true
+    end
+
+    if issued ~= true then
+        sayInfo(player, string.format("Move command not queued for %s", tostring(record.id)))
+        return false
+    end
+
+    syncRecordCarrier(record, player, "DebugTools.issueDesignatedMoveCommand")
+    sayInfo(player, string.format(
+        "MOVE CMD %s -> %s (%s,%s,%s)",
+        tostring(record.id),
+        tostring(destination.label),
+        tostring(destination.x),
+        tostring(destination.y),
+        tostring(destination.z)
+    ))
+    return true, record, destination
+end
+
+local function runMovementAutomationTest01(player)
     local record, actor = spawnOneNearPlayerWithCarrier(player, "isozombie")
     if not record then
-        sayInfo(player, "자동화 테스트 시작 실패: NPC 스폰 실패")
+        sayInfo(player, "TEST 01 failed: spawn failed")
         return false
     end
 
     local state = automationState()
     state.active = true
-    state.scenario = "standard_isozombie"
-    state.phase = "await_policy_cycle"
+    state.scenario = "appearance_move_return_v1"
+    state.phase = "test_02_ready"
     state.npcId = record.id
+    state.destination = nil
     state.startedAt = worldAgeHours()
     state.updatedAt = state.startedAt
     state.step = 1
@@ -900,58 +1047,132 @@ local function runStandardAutomationStart(player)
     dumpRecordSummary(record, actor or findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
 
-    sayInfo(player, "자동화 테스트 1/3 완료. 지금 NPC 소리/외형/자세/애니메이션을 관찰하시오. 준비되면 'Continue Automated Test'를 클릭하시오.")
+    sayChecklist(player, "TEST 01 CHECK", {
+        "Look: same face, hair, and clothes stay stable.",
+        "Look: idle posture reads human, not feral zombie.",
+        "Listen: zombie audio should stay quiet.",
+        "Then click TEST 02.",
+    })
+    return true
+end
+
+local function runMovementAutomationTest02(player)
+    local record, state = getAutomationRecord()
+    if not state.active or state.scenario ~= "appearance_move_return_v1" then
+        sayInfo(player, "No active test. Run TEST 01 first.")
+        return false
+    end
+    if not record then
+        sayInfo(player, string.format("Tracked NPC %s missing. Use TEST RESET.", tostring(state.npcId)))
+        return false
+    end
+    if state.phase ~= "test_02_ready" then
+        sayInfo(player, string.format("TEST 02 unavailable at phase %s", tostring(state.phase)))
+        return false
+    end
+
+    local ok, _, destination = issueDesignatedMoveCommand(record, player, {
+        commandSource = "automation_test_02",
+        commandReason = "automation_designated_walk",
+    })
+    if ok ~= true then
+        return false
+    end
+
+    setAutomationDestination(state, destination)
+    dumpRecordSummary(record, findActorForRecord(record), player)
+    dumpMovementAudioForRecord(record, player)
+    state.phase = "test_03_ready"
+    state.updatedAt = worldAgeHours()
+    state.step = 2
+    sayChecklist(player, "TEST 02 CHECK", {
+        string.format("Watch: NPC walks to %s.", tostring(destination and destination.label or "TEST MARK")),
+        "Look: movement/posture should read human, not zombie.",
+        "Look: appearance stays stable while walking.",
+        "Listen: audio should stay quiet during the walk.",
+        "After the walk settles, click TEST 03.",
+    })
+    return true
+end
+
+local function runMovementAutomationTest03(player)
+    local record, state = getAutomationRecord()
+    if not state.active or state.scenario ~= "appearance_move_return_v1" then
+        sayInfo(player, "No active test. Run TEST 01 first.")
+        return false
+    end
+    if not record then
+        sayInfo(player, string.format("Tracked NPC %s missing. Use TEST RESET.", tostring(state.npcId)))
+        return false
+    end
+    if state.phase ~= "test_03_ready" then
+        sayInfo(player, string.format("TEST 03 unavailable at phase %s", tostring(state.phase)))
+        return false
+    end
+
+    dumpRecordSummary(record, findActorForRecord(record), player)
+    dumpMovementAudioForRecord(record, player)
+    DebugTools.dumpLastActorFailure(player)
+    state.phase = "test_04_ready"
+    state.updatedAt = worldAgeHours()
+    state.step = 3
+    sayChecklist(player, "TEST 03 CHECK", {
+        "Confirm: destination walk succeeded or failed.",
+        "Check: final command status matches what you saw.",
+        "Now walk far away, then return to this NPC.",
+        "After you return, click TEST 04.",
+    })
+    return true
+end
+
+local function runMovementAutomationTest04(player)
+    local record, state = getAutomationRecord()
+    if not state.active or state.scenario ~= "appearance_move_return_v1" then
+        sayInfo(player, "No active test. Run TEST 01 first.")
+        return false
+    end
+    if not record then
+        sayInfo(player, string.format("Tracked NPC %s missing. Use TEST RESET.", tostring(state.npcId)))
+        return false
+    end
+    if state.phase ~= "test_04_ready" then
+        sayInfo(player, string.format("TEST 04 unavailable at phase %s", tostring(state.phase)))
+        return false
+    end
+
+    dumpRecordSummary(record, findActorForRecord(record), player)
+    dumpMovementAudioForRecord(record, player)
+    DebugTools.dumpNearbyZombieLikeObjects(player)
+    DebugTools.dumpLastActorFailure(player)
+    state.phase = "complete"
+    state.updatedAt = worldAgeHours()
+    state.step = 4
+    sayChecklist(player, "TEST 04 CHECK", {
+        "Look: appearance still matches after return.",
+        "Look: posture and movement still read human-ish.",
+        "Listen: no fresh zombie audio leak.",
+        "Watch: no hostile reversion, lunge, bite, or chase.",
+    })
     return true
 end
 
 local function runStandardAutomationContinue(player)
-    local record, state = getAutomationRecord()
-    if not state.active or state.scenario ~= "standard_isozombie" then
-        sayInfo(player, "진행 중인 자동화 테스트가 없습니다. 먼저 Start Automated Test를 클릭하시오.")
-        return false
+    local _, state = getAutomationRecord()
+    if not state.active then
+        return runMovementAutomationTest01(player)
     end
-    if not record then
-        sayInfo(player, string.format("자동화 테스트 대상 NPC %s 를 찾지 못했습니다. Reset 후 다시 시작하시오.", tostring(state.npcId)))
-        return false
-    end
-
-    if state.phase == "await_policy_cycle" then
-        sayInfo(player, "자동화 테스트 2/3 실행: hostile -> friendly 정책 변경과 덤프를 자동 수행합니다.")
-        forceRelationshipCombatPolicyForRecord(record, "hostile", player, {
-            allowHostileOverride = true,
-            source = "DebugTools.automation.hostile",
-            reason = "automation_hostile_probe",
-        })
-        dumpRecordSummary(record, findActorForRecord(record), player)
-        dumpMovementAudioForRecord(record, player)
-        forceRelationshipCombatPolicyForRecord(record, "friendly", player, {
-            source = "DebugTools.automation.friendly",
-            reason = "automation_friendly_reset",
-        })
-        dumpRecordSummary(record, findActorForRecord(record), player)
-        dumpMovementAudioForRecord(record, player)
-        state.phase = "await_distance_return"
-        state.updatedAt = worldAgeHours()
-        state.step = 2
-        sayInfo(player, "자동화 테스트 2/3 완료. 현재 상태를 잠깐 확인한 뒤, 캐릭터를 멀리 이동했다가 다시 돌아오시오. 돌아온 뒤 'Continue Automated Test'를 다시 클릭하시오.")
-        return true
-    elseif state.phase == "await_distance_return" then
-        sayInfo(player, "자동화 테스트 3/3 실행: 복귀 후 덤프와 주변 zombie census 를 수집합니다.")
-        dumpRecordSummary(record, findActorForRecord(record), player)
-        dumpMovementAudioForRecord(record, player)
-        DebugTools.dumpNearbyZombieLikeObjects(player)
-        DebugTools.dumpLastActorFailure(player)
-        state.phase = "complete"
-        state.updatedAt = worldAgeHours()
-        state.step = 3
-        sayInfo(player, "자동화 테스트 완료. 현재 NPC 소리/외형/자세/애니메이션/공격 여부를 체크하시오. 필요하면 Clean Nearby Ordinary Zombies 또는 Delete NPC 를 사용하시오.")
-        return true
+    if state.phase == "test_02_ready" then
+        return runMovementAutomationTest02(player)
+    elseif state.phase == "test_03_ready" then
+        return runMovementAutomationTest03(player)
+    elseif state.phase == "test_04_ready" then
+        return runMovementAutomationTest04(player)
     elseif state.phase == "complete" then
-        sayInfo(player, string.format("자동화 테스트는 이미 완료되었습니다 (npc=%s). 필요하면 Reset Automated Test를 클릭하시오.", tostring(state.npcId)))
+        sayInfo(player, string.format("Test already complete for npc=%s. Use TEST RESET.", tostring(state.npcId)))
         return true
     end
 
-    sayInfo(player, string.format("알 수 없는 자동화 단계입니다 (%s). Reset 후 다시 시작하시오.", tostring(state.phase)))
+    sayInfo(player, string.format("Unknown test phase %s. Use TEST RESET.", tostring(state.phase)))
     return false
 end
 
@@ -1115,12 +1336,36 @@ function DebugTools.forceNearestRelationshipCombatPolicy(player, targetState)
     })
 end
 
+function DebugTools.commandNearestNpcToDesignatedLocation(player)
+    local record = findNearestRecord(player)
+    return issueDesignatedMoveCommand(record, player, {
+        commandSource = "debug_menu",
+        commandReason = "debug_menu_designated_move",
+    })
+end
+
 function DebugTools.startAutomatedIsoZombieTest(player)
-    return runStandardAutomationStart(player)
+    return runMovementAutomationTest01(player)
 end
 
 function DebugTools.continueAutomatedIsoZombieTest(player)
     return runStandardAutomationContinue(player)
+end
+
+function DebugTools.runAutomatedIsoZombieTest01(player)
+    return runMovementAutomationTest01(player)
+end
+
+function DebugTools.runAutomatedIsoZombieTest02(player)
+    return runMovementAutomationTest02(player)
+end
+
+function DebugTools.runAutomatedIsoZombieTest03(player)
+    return runMovementAutomationTest03(player)
+end
+
+function DebugTools.runAutomatedIsoZombieTest04(player)
+    return runMovementAutomationTest04(player)
 end
 
 function DebugTools.resetAutomatedIsoZombieTest(player)
@@ -1130,15 +1375,21 @@ end
 
 function DebugTools.dumpAutomatedIsoZombieTestStatus(player)
     local record, state = getAutomationRecord()
+    local destination = state.destination or {}
     sayInfo(player, string.format(
-        "자동화 상태 scenario=%s phase=%s npcId=%s active=%s",
+        "TEST STATUS scenario=%s phase=%s npcId=%s active=%s dest=%s,%s,%s %s",
         tostring(state.scenario),
         tostring(state.phase),
         tostring(state.npcId),
-        tostring(state.active)
+        tostring(state.active),
+        tostring(destination.x or "nil"),
+        tostring(destination.y or "nil"),
+        tostring(destination.z or "nil"),
+        tostring(destination.label or "")
     ))
     if record then
         dumpRecordSummary(record, findActorForRecord(record), player)
+        dumpMovementAudioForRecord(record, player)
         return true
     end
     return false

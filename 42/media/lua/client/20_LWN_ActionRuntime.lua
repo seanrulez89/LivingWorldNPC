@@ -19,6 +19,119 @@ local function protectedCall(obj, methodName, ...)
     return nil
 end
 
+local function worldAgeHours()
+    return getGameTime() and getGameTime():getWorldAgeHours() or 0
+end
+
+local function ensureCommandState(record)
+    if not record then return nil end
+    record.companion = record.companion or {}
+    record.companion.command = record.companion.command or {}
+    local command = record.companion.command
+    command.destination = command.destination or {}
+    if command.status == nil then command.status = "idle" end
+    if command.active == nil then command.active = false end
+    return command
+end
+
+local function setCommandDestination(command, data)
+    if not command then return end
+    command.destination = command.destination or {}
+    if type(data) ~= "table" then
+        command.destination.x = nil
+        command.destination.y = nil
+        command.destination.z = nil
+        command.destination.label = nil
+        return
+    end
+    command.destination.x = data.x
+    command.destination.y = data.y
+    command.destination.z = data.z
+    command.destination.label = data.destinationLabel or data.label or command.destination.label
+end
+
+local function moveIntentDistance(actor, intent)
+    if not actor or not intent or intent.kind ~= "move_to" or not intent.data then
+        return nil
+    end
+    local dx = (protectedCall(actor, "getX") or intent.data.x or 0) - (intent.data.x or 0)
+    local dy = (protectedCall(actor, "getY") or intent.data.y or 0) - (intent.data.y or 0)
+    return math.sqrt(dx * dx + dy * dy)
+end
+
+local function updateMoveCommand(record, intent, status, reason, actor)
+    if not record or not intent or intent.kind ~= "move_to" then
+        return
+    end
+
+    local command = ensureCommandState(record)
+    if not command then return end
+
+    command.kind = intent.data and (intent.data.commandKind or "move_to") or "move_to"
+    command.source = intent.data and (intent.data.commandSource or intent.data.source) or command.source
+    command.intentKind = intent.kind
+    setCommandDestination(command, intent.data)
+    command.status = status or command.status or "queued"
+    command.lastReason = reason or command.lastReason
+    command.lastDistance = moveIntentDistance(actor, intent)
+
+    local now = worldAgeHours()
+    if command.issuedAt == nil then
+        command.issuedAt = now
+    end
+    if status == "pathing" and command.startedAt == nil then
+        command.startedAt = now
+    end
+    if status == "arrived" or status == "failed" or status == "cleared" then
+        command.active = false
+        command.completedAt = now
+        command.lastOutcome = status
+    else
+        command.active = true
+    end
+end
+
+local function clearActiveCommand(record, reason)
+    local command = ensureCommandState(record)
+    if not command or command.active ~= true then
+        return
+    end
+    command.status = "cleared"
+    command.active = false
+    command.completedAt = worldAgeHours()
+    command.lastOutcome = "cleared"
+    command.lastReason = reason or "runtime_clear"
+    command.lastDistance = nil
+end
+
+local function noteIssuedIntent(record, intent)
+    if not record or not intent then return end
+
+    local command = ensureCommandState(record)
+    if not command then return end
+
+    if intent.kind == "move_to" then
+        command.kind = intent.data and (intent.data.commandKind or "move_to") or "move_to"
+        command.source = intent.data and (intent.data.commandSource or intent.data.source) or command.source
+        command.intentKind = intent.kind
+        command.status = "queued"
+        command.active = true
+        command.issuedAt = worldAgeHours()
+        command.startedAt = nil
+        command.completedAt = nil
+        command.lastOutcome = nil
+        command.lastReason = intent.data and intent.data.commandReason or nil
+        command.lastDistance = nil
+        setCommandDestination(command, intent.data)
+        return
+    end
+
+    if command.active ~= true then
+        command.intentKind = intent.kind
+        command.status = "idle"
+    end
+end
+
 local function queueFor(id)
     Runtime.Queues[id] = Runtime.Queues[id] or {}
     return Runtime.Queues[id]
@@ -124,6 +237,7 @@ local function resolveAttackTarget(actor, intent)
 end
 
 function Runtime.clear(record, actor)
+    clearActiveCommand(record, "runtime_clear")
     Runtime.Queues[record.id] = {}
     syncPlanMirror(record)
     if actor and actor.StopAllActionQueue then
@@ -164,6 +278,20 @@ function Runtime.enqueue(record, intent)
     table.insert(q, intent)
     syncPlanMirror(record)
     return true
+end
+
+function Runtime.replaceWithIntent(record, actor, intent)
+    if not record or not intent then
+        return false
+    end
+
+    Runtime.clear(record, actor)
+    noteIssuedIntent(record, intent)
+    local inserted = Runtime.enqueue(record, intent)
+    if inserted and LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
+        LWN.EmbodimentManager.touchGrace(record)
+    end
+    return inserted
 end
 
 function Runtime.peek(record)
@@ -229,6 +357,7 @@ function Runtime._startMovement(record, actor, intent)
     local pf = actor:getPathFindBehavior2()
     if not pf then
         intent.failed = true
+        updateMoveCommand(record, intent, "failed", "path_behavior_missing", actor)
         return
     end
 
@@ -251,20 +380,37 @@ function Runtime._startMovement(record, actor, intent)
     end
 
     intent.started = true
+    updateMoveCommand(record, intent, "pathing", "path_started", actor)
 end
 
-function Runtime._tickMovementIntent(actor, intent)
+function Runtime._tickMovementIntent(record, actor, intent)
+    if intent.kind == "move_to" then
+        local distance = moveIntentDistance(actor, intent)
+        if distance ~= nil and distance <= 1.1 then
+            intent.done = true
+            updateMoveCommand(record, intent, "arrived", "distance_threshold", actor)
+            return true
+        end
+    end
+
     local pf = actor:getPathFindBehavior2()
-    if not pf then return false end
+    if not pf then
+        intent.failed = true
+        updateMoveCommand(record, intent, "failed", "path_behavior_lost", actor)
+        return true
+    end
 
     local result = pf:update()
     if tostring(result) == "Succeeded" then
         intent.done = true
+        updateMoveCommand(record, intent, "arrived", "path_succeeded", actor)
         return true
     elseif tostring(result) == "Failed" then
         intent.failed = true
+        updateMoveCommand(record, intent, "failed", "path_failed", actor)
         return true
     end
+    updateMoveCommand(record, intent, "pathing", "path_running", actor)
     return false
 end
 
@@ -301,13 +447,13 @@ function Runtime.tick(record, actor)
                         actor:faceThisObject(player)
                         current.done = true
                     else
-                        Runtime._tickMovementIntent(actor, current)
+                        Runtime._tickMovementIntent(record, actor, current)
                     end
                 else
                     current.failed = true
                 end
             else
-                Runtime._tickMovementIntent(actor, current)
+                Runtime._tickMovementIntent(record, actor, current)
             end
         end
     elseif current.kind == "talk" then

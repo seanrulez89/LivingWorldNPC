@@ -274,6 +274,25 @@ function Schema.newNPCRecord(id, seed)
         companion = {
             recruited = false,
             squadRole = nil,
+            command = {
+                kind = nil,
+                source = nil,
+                intentKind = nil,
+                status = "idle",
+                active = false,
+                issuedAt = nil,
+                startedAt = nil,
+                completedAt = nil,
+                lastOutcome = nil,
+                lastReason = nil,
+                lastDistance = nil,
+                destination = {
+                    x = nil,
+                    y = nil,
+                    z = nil,
+                    label = nil,
+                },
+            },
         },
     }
 end

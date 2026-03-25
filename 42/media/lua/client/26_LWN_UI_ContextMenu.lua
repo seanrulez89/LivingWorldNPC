@@ -353,27 +353,45 @@ local function addDebugSubmenu(context, player, actor)
     local automationSub = isoTestSub:getNew(isoTestSub)
     isoTestSub:addSubMenu(automationOpt, automationSub)
 
-    automationSub:addOption("Start Automated Test", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.startAutomatedIsoZombieTest then
-            LWN.DebugTools.startAutomatedIsoZombieTest(p)
+    automationSub:addOption("TEST 01 - Spawn Baseline", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest01 then
+            LWN.DebugTools.runAutomatedIsoZombieTest01(p)
         end
     end)
 
-    automationSub:addOption("Continue Automated Test", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.continueAutomatedIsoZombieTest then
-            LWN.DebugTools.continueAutomatedIsoZombieTest(p)
+    automationSub:addOption("TEST 02 - Command Walk", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest02 then
+            LWN.DebugTools.runAutomatedIsoZombieTest02(p)
         end
     end)
 
-    automationSub:addOption("Dump Automated Test Status", player, function(p)
+    automationSub:addOption("TEST 03 - Capture Walk", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest03 then
+            LWN.DebugTools.runAutomatedIsoZombieTest03(p)
+        end
+    end)
+
+    automationSub:addOption("TEST 04 - Return Capture", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest04 then
+            LWN.DebugTools.runAutomatedIsoZombieTest04(p)
+        end
+    end)
+
+    automationSub:addOption("TEST STATUS - Dump Current", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.dumpAutomatedIsoZombieTestStatus then
             LWN.DebugTools.dumpAutomatedIsoZombieTestStatus(p)
         end
     end)
 
-    automationSub:addOption("Reset Automated Test", player, function(p)
+    automationSub:addOption("TEST RESET - Clear State", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.resetAutomatedIsoZombieTest then
             LWN.DebugTools.resetAutomatedIsoZombieTest(p)
+        end
+    end)
+
+    isoTestSub:addOption("Command Nearest NPC To Test Destination", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.commandNearestNpcToDesignatedLocation then
+            LWN.DebugTools.commandNearestNpcToDesignatedLocation(p)
         end
     end)
 
