@@ -474,3 +474,67 @@ For every new test cycle, append a new section using this structure:
 - simplify experiments by removing neutral/hostile policy churn from the main test lane and using a locked-friendly companion baseline first
 - split big-surgery work into a dedicated branch so the current `spike/isozombie` line remains a readable pre-surgery baseline
 - in the surgery branch, prioritize role separation, generation-based identity, failed-shell rebuild, and a deterministic movement path for the friendly companion shell
+
+## 2026-03-28 02:30 KST — First real minimal-dummy progress: no zombie vocal, no aggression, real displacement
+
+### In-game result
+- TEST 01:
+  - the dummy still rendered with a zombie-looking exterior
+  - zombie vocal sound was gone
+  - other game sounds remained normal
+  - no active aggression was observed
+- TEST 02:
+  - the dummy still looked zombie-like
+  - zombie vocal remained suppressed
+  - aggression still did not appear
+  - most importantly, the dummy **actually moved** for the first time in this reduced architecture
+- TEST 03:
+  - no major new visual change was observed beyond the movement success already seen in TEST 02
+- return / TEST 04 was intentionally skipped because the current milestone focus is movement-first, not recovery-first
+
+### Log signals
+- repeated hard dummy idle enforcement showed:
+  - `lane=dummy_idle`
+  - `target=false`
+  - `moving=false`
+  - `path2=false`
+- after move command, repeated hard dummy move enforcement showed:
+  - `lane=dummy_move`
+  - `target=false`
+  - `moving=true`
+  - mostly `path2=false`
+- the crucial movement summary changed shape for the first time:
+  - `motor=stepping`
+  - `totalDelta=1.41`
+  - `squareChanged=yes`
+  - `canWalk=yes`
+  - `useless=no`
+- old zombie-native path dependence weakened:
+  - the successful movement summary no longer depended on `path2=true`
+  - the deterministic motor path was active instead
+- the shell was still visually wrong according to the human observer, even though the summary still reported positive humanization flags
+
+### Interpretation / lesson
+- this run is the first proof that the minimal-dummy reset is actually working at the right layer
+- the major progress did **not** come from more relationship tuning or more combat suppression flags alone
+- it came from changing the architecture in three important ways:
+  1. removing social/story/goal churn from the active test lane,
+  2. turning the shell into a repeatedly enforced hard dummy contract,
+  3. bypassing zombie-native locomotion with a deterministic move motor
+- this means the main blocker has narrowed sharply:
+  - movement and aggression are no longer the dominant mystery
+  - **visual humanization is now the clearest remaining blocker**
+- the current humanization probe is now suspected to be too optimistic or partially false-positive, because the player still saw a zombie-looking shell while the debug summary claimed `humanInit=yes` and `probeOk=yes`
+
+### Code or document changes that followed
+- no additional code patch is recorded in this test-log entry itself; the test is important because it validates the direction of the new minimal-dummy branch
+- the correct follow-up after this run is:
+  - document why progress finally happened,
+  - then prioritize full spawn-time appearance path replacement / stronger appearance truth checks,
+  - only after that return to recovery generation work
+
+### Next thing to verify
+- replace or harden the appearance success probe so it better matches what the human actually sees on screen
+- promote the rebuild-based appearance path further into the default initial spawn path for minimal dummy shells
+- keep deterministic movement intact while improving final arrived/stalled classification
+- do not re-introduce relationship complexity before the visual shell stops reading as a zombie
