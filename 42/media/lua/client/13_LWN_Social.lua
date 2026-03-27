@@ -35,9 +35,34 @@ function Social.isMinimalDummyRecord(record)
         and record.dummy.enabled == true
 end
 
+function Social.isMinimalDummyMoveActive(record)
+    if not Social.isMinimalDummyRecord(record) then
+        return false
+    end
+
+    local dummy = record and record.dummy or nil
+    local motor = dummy and dummy.motor or nil
+    local command = record and record.companion and record.companion.command or nil
+
+    if dummy and dummy.state == "move_to" then
+        return true
+    end
+    if dummy and dummy.command and dummy.command.kind == "move_to" then
+        return true
+    end
+    if motor and (motor.state == "started" or motor.state == "stepping") then
+        return true
+    end
+    if command and command.active == true then
+        if command.intentKind == "move_to" or command.kind == "move_to" or command.kind == "designated_location" then
+            return true
+        end
+    end
+    return false
+end
+
 function Social.minimalDummyPolicy(record)
     local harness = record and record.debugHarness or nil
-    local dummy = record and record.dummy or nil
     if harness and harness.quarantine == true then
         return {
             state = "neutral",
@@ -50,7 +75,7 @@ function Social.minimalDummyPolicy(record)
             reason = "minimal_dummy_quarantine",
         }
     end
-    local moving = dummy and dummy.state == "move_to"
+    local moving = Social.isMinimalDummyMoveActive(record)
     return {
         state = "neutral",
         allowPlayerAttack = true,

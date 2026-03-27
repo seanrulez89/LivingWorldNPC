@@ -69,6 +69,7 @@ motor 상태를 modData / telemetry에 기록하는 데 사용된다.
 - `92_LWN_DebugTools.lua`
 - MOVE SUMMARY에
   - `motor=<state>`
+  - `commit=<square>`
   가 추가되었다.
 
 예상 state:

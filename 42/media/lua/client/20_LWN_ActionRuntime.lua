@@ -31,6 +31,10 @@ local function isAllowedDummyIntent(intent)
     return intent and intent.kind == "move_to"
 end
 
+local function isDummyMoveAuthorityActive(record)
+    return LWN.Social and LWN.Social.isMinimalDummyMoveActive and LWN.Social.isMinimalDummyMoveActive(record)
+end
+
 local function syncDummyMirror(record, queue)
     if not isMinimalDummyRecord(record) then return end
     record.dummy = record.dummy or {}
@@ -46,6 +50,9 @@ local function syncDummyMirror(record, queue)
                 label = current.data.destinationLabel or current.data.label,
             } or nil,
         }
+    elseif isDummyMoveAuthorityActive(record) then
+        record.dummy.state = "move_to"
+        record.dummy.command = record.dummy.command or { kind = "move_to" }
     else
         record.dummy.state = "idle"
         record.dummy.command = nil
@@ -257,12 +264,17 @@ local function clearActiveCommand(record, reason)
     command.lastDistance = nil
     if isMinimalDummyRecord(record) then
         record.dummy = record.dummy or {}
-        record.dummy.state = "idle"
-        record.dummy.command = nil
         record.dummy.lastMoveResult = reason or "runtime_clear"
-        if record.dummy.motor then
-            record.dummy.motor.state = "idle"
-            record.dummy.motor.detail = reason or "runtime_clear"
+        if isDummyMoveAuthorityActive(record) then
+            record.dummy.state = "move_to"
+            record.dummy.command = record.dummy.command or { kind = "move_to" }
+        else
+            record.dummy.state = "idle"
+            record.dummy.command = nil
+            if record.dummy.motor then
+                record.dummy.motor.state = "idle"
+                record.dummy.motor.detail = reason or "runtime_clear"
+            end
         end
     end
 end
@@ -551,6 +563,36 @@ local function gridSquareAt(x, y, z)
     return cell and protectedCall(cell, "getGridSquare", x, y, z) or nil
 end
 
+local function commitDummyPosition(record, actor, square, source)
+    if not (record and actor and square) then return nil end
+    local sx = tonumber(protectedCall(square, "getX") or 0) or 0
+    local sy = tonumber(protectedCall(square, "getY") or 0) or 0
+    local sz = tonumber(protectedCall(square, "getZ") or 0) or 0
+    if LWN.EmbodimentManager and LWN.EmbodimentManager.commitActorPosition then
+        return LWN.EmbodimentManager.commitActorPosition(record, actor, {
+            x = sx + 0.5,
+            y = sy + 0.5,
+            z = sz,
+            source = source or "ActionRuntime.commitDummyPosition",
+        })
+    end
+    record.anchor = record.anchor or {}
+    record.anchor.x = sx
+    record.anchor.y = sy
+    record.anchor.z = sz
+    record.embodiment = record.embodiment or {}
+    record.embodiment.lastKnownX = sx + 0.5
+    record.embodiment.lastKnownY = sy + 0.5
+    record.embodiment.lastKnownZ = sz
+    record.embodiment.lastKnownSquare = string.format("%d,%d,%d", sx, sy, sz)
+    if record.dummy then
+        record.dummy.lastCommittedSquare = record.embodiment.lastKnownSquare
+        record.dummy.lastCommittedAt = worldAgeHours()
+        record.dummy.lastCommittedSource = source or "ActionRuntime.commitDummyPosition"
+    end
+    return { x = sx + 0.5, y = sy + 0.5, z = sz }
+end
+
 local function ensureActorAtSquare(actor, square)
     if not (actor and square) then return false end
     if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
@@ -602,6 +644,16 @@ local function setDummyMotorState(record, actor, state, detail)
     motor.state = state
     motor.detail = detail or motor.detail
     motor.updatedAt = worldAgeHours()
+
+    if isMinimalDummyRecord(record) then
+        record.dummy = record.dummy or {}
+        if state == "started" or state == "stepping" then
+            record.dummy.state = "move_to"
+            record.dummy.command = record.dummy.command or { kind = "move_to" }
+        elseif state == "arrived" or state == "stalled" or state == "failed" or state == "idle" then
+            record.dummy.state = "idle"
+        end
+    end
 
     local command = ensureCommandState(record)
     if command then
@@ -665,6 +717,18 @@ function Runtime._startDummyMoveMotor(record, actor, intent)
         return
     end
 
+    record.dummy = record.dummy or {}
+    record.dummy.state = "move_to"
+    record.dummy.command = {
+        kind = "move_to",
+        destination = intent.data and {
+            x = intent.data.x,
+            y = intent.data.y,
+            z = intent.data.z,
+            label = intent.data.destinationLabel or intent.data.label,
+        } or nil,
+    }
+
     motor.mode = "deterministic"
     motor.startedAt = worldAgeHours()
     motor.updatedAt = motor.startedAt
@@ -692,6 +756,9 @@ function Runtime._tickDummyMoveMotor(record, actor, intent)
     local distance = moveIntentDistance(actor, intent)
     if distance ~= nil and distance <= 0.55 then
         protectedCall(actor, "setMoving", false)
+        record.dummy = record.dummy or {}
+        record.dummy.state = "idle"
+        commitDummyPosition(record, actor, protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare"), "ActionRuntime._tickDummyMoveMotor.arrived_pre")
         setDummyMotorState(record, actor, "arrived", "dummy_move_arrived")
         intent.done = true
         updateMoveCommand(record, intent, "arrived", "dummy_move_arrived", actor)
@@ -739,11 +806,15 @@ function Runtime._tickDummyMoveMotor(record, actor, intent)
     motor.updatedAt = worldAgeHours()
     motor.lastSquare = squareKey(nextSquare)
     protectedCall(actor, "setMoving", true)
+    commitDummyPosition(record, actor, nextSquare, "ActionRuntime._tickDummyMoveMotor")
     setDummyMotorState(record, actor, "stepping", motor.lastSquare)
 
     distance = moveIntentDistance(actor, intent)
     if distance ~= nil and distance <= 0.55 then
         protectedCall(actor, "setMoving", false)
+        record.dummy = record.dummy or {}
+        record.dummy.state = "idle"
+        commitDummyPosition(record, actor, protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare"), "ActionRuntime._tickDummyMoveMotor.arrived_post")
         setDummyMotorState(record, actor, "arrived", "dummy_move_arrived")
         intent.done = true
         updateMoveCommand(record, intent, "arrived", "dummy_move_arrived", actor)

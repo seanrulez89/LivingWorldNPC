@@ -994,6 +994,62 @@ function Embody.getActor(record)
     return Embody._actors[record.id]
 end
 
+function Embody.commitActorPosition(record, actor, overrides)
+    record = ensureRecordShape(record)
+    if not record or not actor then return nil end
+
+    local lastKnown = updateLastKnownPosition(record, actor, overrides)
+    if not lastKnown then return nil end
+
+    record.anchor = record.anchor or {}
+    record.anchor.x = lastKnown.x
+    record.anchor.y = lastKnown.y
+    record.anchor.z = lastKnown.z
+    record.anchor.lastCommittedAt = worldAgeHours()
+    record.anchor.lastCommittedSource = overrides and overrides.source or "Embody.commitActorPosition"
+
+    if Store and Store.setEmbodiedMeta then
+        Store.setEmbodiedMeta(record.id, {
+            state = record.embodiment and record.embodiment.state or "embodied",
+            x = math.floor(lastKnown.x),
+            y = math.floor(lastKnown.y),
+            z = math.floor(lastKnown.z),
+            lastSeenHour = worldAgeHours() or 0,
+        })
+    end
+
+    record.embodiment = record.embodiment or {}
+    record.embodiment.lastKnownSquare = string.format("%d,%d,%d", math.floor(lastKnown.x), math.floor(lastKnown.y), math.floor(lastKnown.z))
+    record.embodiment.lastCommittedAt = worldAgeHours()
+    record.embodiment.lastCommittedSource = overrides and overrides.source or "Embody.commitActorPosition"
+
+    local handle = Embody.getCarrierHandle(record)
+    if handle then
+        handle.runtime = handle.runtime or {}
+        handle.runtime.lastCommittedX = lastKnown.x
+        handle.runtime.lastCommittedY = lastKnown.y
+        handle.runtime.lastCommittedZ = lastKnown.z
+        handle.runtime.lastCommittedSquare = record.embodiment.lastKnownSquare
+        handle.runtime.lastCommittedAt = worldAgeHours()
+        handle.runtime.lastCommittedSource = overrides and overrides.source or "Embody.commitActorPosition"
+    end
+
+    if record.dummy and record.dummy.enabled == true then
+        record.dummy.lastCommittedSquare = record.embodiment.lastKnownSquare
+        record.dummy.lastCommittedAt = worldAgeHours()
+        record.dummy.lastCommittedSource = overrides and overrides.source or "Embody.commitActorPosition"
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_DummyCommittedSquare = record.embodiment.lastKnownSquare
+        modData.LWN_DummyCommittedAt = worldAgeHours()
+        modData.LWN_DummyCommittedSource = overrides and overrides.source or "Embody.commitActorPosition"
+    end
+
+    return lastKnown
+end
+
 function Embody.getUsableActorByNpcId(npcId)
     if not npcId or not Store or not Store.getNPC then return nil, nil end
 

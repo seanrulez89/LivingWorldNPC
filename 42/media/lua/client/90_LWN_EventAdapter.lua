@@ -130,6 +130,10 @@ local function isMinimalDummyRecord(record)
     return LWN.Social and LWN.Social.isMinimalDummyRecord and LWN.Social.isMinimalDummyRecord(record)
 end
 
+local function isDummyMoveAuthorityActive(record)
+    return LWN.Social and LWN.Social.isMinimalDummyMoveActive and LWN.Social.isMinimalDummyMoveActive(record)
+end
+
 local function harnessQuarantine(record)
     local harness = record and record.debugHarness or nil
     return harness and harness.enabled == true and harness.quarantine == true or false
@@ -1370,7 +1374,7 @@ local function tickEmbodiedRecord(record, actor, player)
         LWN.Carriers.isozombie.enforceHardDummyShell(
             record,
             actor,
-            record and record.dummy and record.dummy.state == "move_to" and "move" or "idle",
+            isDummyMoveAuthorityActive(record) and "move" or "idle",
             "EventAdapter.tickEmbodiedRecord.pre_decision"
         )
     end
@@ -1504,7 +1508,7 @@ local function tickEmbodiedRecord(record, actor, player)
         LWN.Carriers.isozombie.enforceHardDummyShell(
             record,
             actor,
-            record and record.dummy and record.dummy.state == "move_to" and "move" or "idle",
+            isDummyMoveAuthorityActive(record) and "move" or "idle",
             "EventAdapter.tickEmbodiedRecord.post_runtime"
         )
     end
