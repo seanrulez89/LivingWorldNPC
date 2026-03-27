@@ -85,11 +85,12 @@ local function movementSummaryLine(record, actor)
     local command = record and record.companion and record.companion.command or {}
     local telemetry = command and command.movementTelemetry or {}
     return string.format(
-        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s moving=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s",
+        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s motor=%s moving=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s",
         tostring(record and record.id or "nil"),
         tostring(modData and modData.LWN_ShellLaneContract or modData and modData.LWN_ShellMode or "none"),
         tostring(command.kind or "none"),
         tostring(command.status or "idle"),
+        tostring(modData and modData.LWN_DummyMoveMotorState or "none"),
         boolText(modData and modData.LWN_MoveTelemetryMoving),
         boolText(modData and modData.LWN_MoveTelemetryPath2),
         numberText(modData and modData.LWN_MoveTelemetryTotalDelta, 2),
@@ -1354,6 +1355,7 @@ local function runMovementAutomationTest02(player)
     sayChecklist(player, "TEST 02 CHECK", {
         string.format("Watch: NPC walks to %s.", tostring(destination and destination.label or "TEST MARK")),
         "Check: shell lane should stay non_hostile_commandable during movement.",
+        "Check: motor should move from started to stepping during actual movement.",
         "Check: totalDelta should rise above 0.00 once the body actually moves.",
         "Check: squareChanged should flip to yes if real displacement happens.",
         "Look: movement/posture should read human, not zombie.",
@@ -1389,6 +1391,7 @@ local function runMovementAutomationTest03(player)
     sayChecklist(player, "TEST 03 CHECK", {
         "Confirm: destination walk succeeded or failed.",
         "Check: final command status matches what you saw.",
+        "Check: motor should end as arrived or stalled.",
         "Check: watchdog should stay NO; if YES, pathing happened without real displacement.",
         "Check: totalDelta and squareChanged tell you whether movement was real or statue-like.",
         "If failed, note whether it was hostile leak, path-only, or watchdog no-displacement.",

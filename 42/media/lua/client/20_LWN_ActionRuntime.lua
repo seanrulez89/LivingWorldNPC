@@ -260,6 +260,10 @@ local function clearActiveCommand(record, reason)
         record.dummy.state = "idle"
         record.dummy.command = nil
         record.dummy.lastMoveResult = reason or "runtime_clear"
+        if record.dummy.motor then
+            record.dummy.motor.state = "idle"
+            record.dummy.motor.detail = reason or "runtime_clear"
+        end
     end
 end
 
@@ -538,6 +542,218 @@ local function invokeActorPath(actor, methodName, ...)
     return ok == true
 end
 
+local function actorTilePosition(actor)
+    return math.floor(tonumber(protectedCall(actor, "getX") or 0) or 0), math.floor(tonumber(protectedCall(actor, "getY") or 0) or 0), math.floor(tonumber(protectedCall(actor, "getZ") or 0) or 0)
+end
+
+local function gridSquareAt(x, y, z)
+    local cell = getCell and getCell() or nil
+    return cell and protectedCall(cell, "getGridSquare", x, y, z) or nil
+end
+
+local function ensureActorAtSquare(actor, square)
+    if not (actor and square) then return false end
+    if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
+        return LWN.ActorFactory.ensureActorInWorld(actor, square) == true
+    end
+    local sx = tonumber(protectedCall(square, "getX") or 0) or 0
+    local sy = tonumber(protectedCall(square, "getY") or 0) or 0
+    local sz = tonumber(protectedCall(square, "getZ") or 0) or 0
+    protectedCall(actor, "setX", sx + 0.5)
+    protectedCall(actor, "setY", sy + 0.5)
+    protectedCall(actor, "setZ", sz)
+    protectedCall(actor, "setCurrent", square)
+    protectedCall(actor, "setCurrentSquare", square)
+    protectedCall(actor, "setSquare", square)
+    protectedCall(actor, "setMovingSquareNow")
+    if protectedCall(actor, "isExistInTheWorld") ~= true then
+        protectedCall(square, "AddMovingObject", actor)
+        protectedCall(actor, "addToWorld")
+    end
+    return (protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")) ~= nil
+end
+
+local function ensureDummyMotorState(record, actor)
+    if not isMinimalDummyRecord(record) then return nil end
+    record.dummy = record.dummy or {}
+    record.dummy.motor = record.dummy.motor or {
+        mode = "deterministic",
+        state = "idle",
+        startedAt = nil,
+        updatedAt = nil,
+        lastSquare = nil,
+        steps = 0,
+        stallTicks = 0,
+    }
+    local motor = record.dummy.motor
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_DummyMoveMotor = motor.mode
+        modData.LWN_DummyMoveMotorState = motor.state
+        modData.LWN_DummyMoveMotorSteps = motor.steps or 0
+        modData.LWN_DummyMoveMotorLastSquare = motor.lastSquare
+    end
+    return motor
+end
+
+local function setDummyMotorState(record, actor, state, detail)
+    local motor = ensureDummyMotorState(record, actor)
+    if not motor then return nil end
+    motor.state = state
+    motor.detail = detail or motor.detail
+    motor.updatedAt = worldAgeHours()
+
+    local command = ensureCommandState(record)
+    if command then
+        command.movementTelemetry = command.movementTelemetry or {}
+        command.movementTelemetry.motorState = state
+        command.movementTelemetry.motorDetail = detail
+        command.movementTelemetry.motorUpdatedAt = motor.updatedAt
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_DummyMoveMotor = motor.mode
+        modData.LWN_DummyMoveMotorState = state
+        modData.LWN_DummyMoveMotorDetail = detail
+        modData.LWN_DummyMoveMotorUpdatedAt = motor.updatedAt
+        modData.LWN_DummyMoveMotorSteps = motor.steps or 0
+        modData.LWN_DummyMoveMotorLastSquare = motor.lastSquare
+    end
+    return motor
+end
+
+local function chooseDummyMotorStepSquare(actor, intent)
+    if not (actor and intent and intent.data) then
+        return nil, "dummy_move_missing_intent"
+    end
+
+    local cx, cy, cz = actorTilePosition(actor)
+    local tx = math.floor(tonumber(intent.data.x or cx) or cx)
+    local ty = math.floor(tonumber(intent.data.y or cy) or cy)
+    local tz = math.floor(tonumber(intent.data.z or cz) or cz)
+    if cx == tx and cy == ty and cz == tz then
+        return nil, "dummy_move_arrived"
+    end
+
+    local dx = tx > cx and 1 or (tx < cx and -1 or 0)
+    local dy = ty > cy and 1 or (ty < cy and -1 or 0)
+    local candidates = {
+        { x = cx + dx, y = cy + dy, z = tz },
+        { x = cx + dx, y = cy, z = tz },
+        { x = cx, y = cy + dy, z = tz },
+    }
+
+    for i = 1, #candidates do
+        local c = candidates[i]
+        if not (c.x == cx and c.y == cy and c.z == cz) then
+            local square = gridSquareAt(c.x, c.y, c.z)
+            if square then
+                return square, "dummy_move_step"
+            end
+        end
+    end
+
+    return nil, "dummy_move_no_square"
+end
+
+function Runtime._startDummyMoveMotor(record, actor, intent)
+    local motor = ensureDummyMotorState(record, actor)
+    if not motor then
+        intent.failed = true
+        updateMoveCommand(record, intent, "failed", "dummy_move_motor_unavailable", actor)
+        return
+    end
+
+    motor.mode = "deterministic"
+    motor.startedAt = worldAgeHours()
+    motor.updatedAt = motor.startedAt
+    motor.steps = 0
+    motor.stallTicks = 0
+    motor.lastSquare = squareKey(protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare"))
+    intent.started = true
+    intent.pathMethod = "dummy:deterministic"
+    intent.lastProgressAt = worldAgeHours()
+    intent.lastObservedDistance = moveIntentDistance(actor, intent)
+    protectedCall(actor, "setPath2", nil)
+    protectedCall(actor, "setMoving", true)
+    setDummyMotorState(record, actor, "started", "dummy_move_motor_started")
+    updateMoveCommand(record, intent, "pathing", "dummy_move_motor_started", actor)
+end
+
+function Runtime._tickDummyMoveMotor(record, actor, intent)
+    local motor = ensureDummyMotorState(record, actor)
+    if not motor then
+        intent.failed = true
+        updateMoveCommand(record, intent, "failed", "dummy_move_motor_missing", actor)
+        return true
+    end
+
+    local distance = moveIntentDistance(actor, intent)
+    if distance ~= nil and distance <= 0.55 then
+        protectedCall(actor, "setMoving", false)
+        setDummyMotorState(record, actor, "arrived", "dummy_move_arrived")
+        intent.done = true
+        updateMoveCommand(record, intent, "arrived", "dummy_move_arrived", actor)
+        return true
+    end
+
+    local nextSquare, reason = chooseDummyMotorStepSquare(actor, intent)
+    if not nextSquare then
+        if reason == "dummy_move_arrived" then
+            protectedCall(actor, "setMoving", false)
+            setDummyMotorState(record, actor, "arrived", reason)
+            intent.done = true
+            updateMoveCommand(record, intent, "arrived", reason, actor)
+            return true
+        end
+
+        motor.stallTicks = (motor.stallTicks or 0) + 1
+        setDummyMotorState(record, actor, "stalled", reason)
+        if motor.stallTicks >= 10 then
+            protectedCall(actor, "setMoving", false)
+            intent.failed = true
+            updateMoveCommand(record, intent, "failed", "dummy_move_stalled", actor)
+            return true
+        end
+        updateMoveCommand(record, intent, "pathing", reason or "dummy_move_waiting", actor)
+        return false
+    end
+
+    local ok = ensureActorAtSquare(actor, nextSquare)
+    if ok ~= true then
+        motor.stallTicks = (motor.stallTicks or 0) + 1
+        setDummyMotorState(record, actor, "stalled", "dummy_move_reposition_failed")
+        if motor.stallTicks >= 10 then
+            protectedCall(actor, "setMoving", false)
+            intent.failed = true
+            updateMoveCommand(record, intent, "failed", "dummy_move_reposition_failed", actor)
+            return true
+        end
+        updateMoveCommand(record, intent, "pathing", "dummy_move_reposition_retry", actor)
+        return false
+    end
+
+    motor.steps = (motor.steps or 0) + 1
+    motor.stallTicks = 0
+    motor.updatedAt = worldAgeHours()
+    motor.lastSquare = squareKey(nextSquare)
+    protectedCall(actor, "setMoving", true)
+    setDummyMotorState(record, actor, "stepping", motor.lastSquare)
+
+    distance = moveIntentDistance(actor, intent)
+    if distance ~= nil and distance <= 0.55 then
+        protectedCall(actor, "setMoving", false)
+        setDummyMotorState(record, actor, "arrived", "dummy_move_arrived")
+        intent.done = true
+        updateMoveCommand(record, intent, "arrived", "dummy_move_arrived", actor)
+        return true
+    end
+
+    updateMoveCommand(record, intent, "pathing", "dummy_move_step", actor)
+    return false
+end
+
 function Runtime._startMovement(record, actor, intent)
     local pf = actor:getPathFindBehavior2()
     local started = false
@@ -565,7 +781,10 @@ function Runtime._startMovement(record, actor, intent)
         LWN.Carriers.isozombie.enforceHardDummyShell(record, actor, "move", "ActionRuntime._startMovement")
     end
 
-    if intent.kind == "move_to" then
+    if isMinimalDummyRecord(record) and intent.kind == "move_to" then
+        Runtime._startDummyMoveMotor(record, actor, intent)
+        return
+    elseif intent.kind == "move_to" then
         started = invokeActorPath(actor, "pathToLocation", intent.data.x, intent.data.y, intent.data.z)
         pathMethod = started and "actor:pathToLocation" or nil
         if not started and pf then
@@ -647,6 +866,10 @@ function Runtime._tickMovementIntent(record, actor, intent)
     end
     if isMinimalDummyRecord(record) and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
         LWN.Carriers.isozombie.enforceHardDummyShell(record, actor, "move", "ActionRuntime._tickMovementIntent")
+    end
+
+    if isMinimalDummyRecord(record) and intent.pathMethod == "dummy:deterministic" then
+        return Runtime._tickDummyMoveMotor(record, actor, intent)
     end
 
     if intent.kind == "move_to" then
@@ -803,6 +1026,10 @@ function Runtime.tick(record, actor)
         if isMinimalDummyRecord(record) then
             record.dummy = record.dummy or {}
             record.dummy.lastMoveResult = current.done and "done" or "failed"
+            if record.dummy.motor then
+                record.dummy.motor.state = current.done and "arrived" or "failed"
+                record.dummy.motor.detail = current.done and (current.pathMethod == "dummy:deterministic" and "dummy_move_arrived" or "done") or (current.pathMethod == "dummy:deterministic" and "dummy_move_failed" or "failed")
+            end
         end
         Runtime.pop(record)
     end
