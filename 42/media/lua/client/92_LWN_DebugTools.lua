@@ -63,6 +63,75 @@ local function sayChecklist(player, title, lines)
     end
 end
 
+local function boolText(value)
+    if value == true then return "yes" end
+    if value == false then return "no" end
+    return tostring(value)
+end
+
+local function numberText(value, decimals)
+    if type(value) ~= "number" then return tostring(value) end
+    return string.format("%." .. tostring(decimals or 2) .. "f", value)
+end
+
+local function actorModData(record, actor)
+    actor = actor or findActorForRecord(record)
+    return actor and actor.getModData and actor:getModData() or nil, actor
+end
+
+local function movementSummaryLine(record, actor)
+    local modData
+    modData, actor = actorModData(record, actor)
+    local command = record and record.companion and record.companion.command or {}
+    local telemetry = command and command.movementTelemetry or {}
+    return string.format(
+        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s moving=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s",
+        tostring(record and record.id or "nil"),
+        tostring(modData and modData.LWN_ShellLaneContract or modData and modData.LWN_ShellMode or "none"),
+        tostring(command.kind or "none"),
+        tostring(command.status or "idle"),
+        boolText(modData and modData.LWN_MoveTelemetryMoving),
+        boolText(modData and modData.LWN_MoveTelemetryPath2),
+        numberText(modData and modData.LWN_MoveTelemetryTotalDelta, 2),
+        numberText(modData and modData.LWN_MoveTelemetryDeltaX, 2),
+        numberText(modData and modData.LWN_MoveTelemetryDeltaY, 2),
+        boolText((modData and modData.LWN_MoveTelemetrySquareChangedAt) ~= nil),
+        boolText(command.lastReason == "watchdog:no_displacement_3s" or telemetry.lastReason == "watchdog:no_displacement_3s"),
+        boolText(modData and modData.LWN_MoveTelemetryCanWalk),
+        boolText(modData and modData.LWN_MoveTelemetryUseless)
+    )
+end
+
+local function recoverySummaryLine(record, actor)
+    local modData
+    modData, actor = actorModData(record, actor)
+    local state = record and record.embodiment and record.embodiment.state or "unknown"
+    return string.format(
+        "RECOVERY SUMMARY npc=%s state=%s lane=%s replacementPrecheck=%s attackLock=%s handleRef=%s",
+        tostring(record and record.id or "nil"),
+        tostring(state),
+        tostring(modData and modData.LWN_ShellLaneContract or modData and modData.LWN_ShellMode or "none"),
+        "check console for tryEmbody.replacement_precheck + recovery.cached_* + handle_*",
+        tostring(record and record.embodiment and record.embodiment.attackQuarantineUntilHour or "none"),
+        tostring(LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) and LWN.EmbodimentManager.getCarrierHandle(record).actor or nil)
+    )
+end
+
+local function dumpAutomationOneLineSummary(record, actor, player, label)
+    if not record then
+        sayInfo(player, tostring(label or "TEST SUMMARY") .. " npc=nil")
+        return false
+    end
+    local moveLine = movementSummaryLine(record, actor)
+    local recoveryLine = recoverySummaryLine(record, actor)
+    sayInfo(player, tostring(label or "TEST SUMMARY"))
+    sayInfo(player, moveLine)
+    sayInfo(player, recoveryLine)
+    print("[LWN][Debug] automation summary :: " .. moveLine)
+    print("[LWN][Debug] automation summary :: " .. recoveryLine)
+    return true
+end
+
 local function isManagedActor(obj)
     if not obj then return false end
     if LWN.ActorFactory and LWN.ActorFactory.isManagedActor then
@@ -649,6 +718,8 @@ local function dumpRecordSummary(record, actor, player)
         tostring(command.lastReason or "nil"),
         tostring(command.lastDistance or "nil")
     ))
+    print("[LWN][Debug] npc move_summary :: " .. movementSummaryLine(record, actor))
+    print("[LWN][Debug] npc recovery_summary :: " .. recoverySummaryLine(record, actor))
     return true
 end
 
@@ -1168,9 +1239,12 @@ local function runMovementAutomationTest01(player)
 
     dumpRecordSummary(record, actor or findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
+    dumpAutomationOneLineSummary(record, actor or findActorForRecord(record), player, "TEST 01 SUMMARY")
 
     sayChecklist(player, "TEST 01 CHECK", {
         "Look: only ONE test NPC should exist.",
+        "Check: shell lane should read non_hostile_commandable.",
+        "Check: canWalk=yes and useless=no in the summary.",
         "Look: same face, hair, and clothes stay stable.",
         "Look: idle posture reads human, not feral zombie.",
         "Listen: zombie audio should stay quiet.",
@@ -1205,11 +1279,15 @@ local function runMovementAutomationTest02(player)
     setAutomationDestination(state, destination)
     dumpRecordSummary(record, findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
+    dumpAutomationOneLineSummary(record, findActorForRecord(record), player, "TEST 02 SUMMARY")
     state.phase = "test_03_ready"
     state.updatedAt = worldAgeHours()
     state.step = 2
     sayChecklist(player, "TEST 02 CHECK", {
         string.format("Watch: NPC walks to %s.", tostring(destination and destination.label or "TEST MARK")),
+        "Check: shell lane should stay non_hostile_commandable during movement.",
+        "Check: totalDelta should rise above 0.00 once the body actually moves.",
+        "Check: squareChanged should flip to yes if real displacement happens.",
         "Look: movement/posture should read human, not zombie.",
         "Look: appearance stays stable while walking.",
         "Listen: audio should stay quiet during the walk.",
@@ -1235,6 +1313,7 @@ local function runMovementAutomationTest03(player)
 
     dumpRecordSummary(record, findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
+    dumpAutomationOneLineSummary(record, findActorForRecord(record), player, "TEST 03 SUMMARY")
     DebugTools.dumpLastActorFailure(player)
     state.phase = "test_04_ready"
     state.updatedAt = worldAgeHours()
@@ -1242,6 +1321,9 @@ local function runMovementAutomationTest03(player)
     sayChecklist(player, "TEST 03 CHECK", {
         "Confirm: destination walk succeeded or failed.",
         "Check: final command status matches what you saw.",
+        "Check: watchdog should stay NO; if YES, pathing happened without real displacement.",
+        "Check: totalDelta and squareChanged tell you whether movement was real or statue-like.",
+        "If failed, note whether it was hostile leak, path-only, or watchdog no-displacement.",
         "Now walk far away, then return to this NPC.",
         "After you return, click TEST 04.",
     })
@@ -1265,6 +1347,7 @@ local function runMovementAutomationTest04(player)
 
     dumpRecordSummary(record, findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
+    dumpAutomationOneLineSummary(record, findActorForRecord(record), player, "TEST 04 SUMMARY")
     DebugTools.dumpNearbyZombieLikeObjects(player)
     DebugTools.dumpLastActorFailure(player)
     state.phase = "complete"
@@ -1276,6 +1359,9 @@ local function runMovementAutomationTest04(player)
         "Listen: no fresh zombie audio leak.",
         "Watch: no hostile reversion, lunge, bite, or chase.",
         "Watch: no duplicate replacement shells appear.",
+        "Check console: recovery.cached_hit is best-case before nearby scan.",
+        "Check console: handle_recovered is okay; replacement_precheck means a new shell path was considered.",
+        "Check console: cached_miss + handle_rejected + candidate_missing together means continuity is still broken.",
     })
     return true
 end
