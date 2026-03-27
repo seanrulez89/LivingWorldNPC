@@ -884,6 +884,8 @@ local function findRecoveryCandidateNearSquare(record, square, radius, source)
     local best = nil
     local bestScore = -1
     local bestD2 = math.huge
+    local seenObjects = 0
+    local usableCandidates = 0
 
     for y = cy - scanRadius, cy + scanRadius do
         for x = cx - scanRadius, cx + scanRadius do
@@ -891,7 +893,9 @@ local function findRecoveryCandidateNearSquare(record, square, radius, source)
             if scanSquare and scanSquare:getMovingObjects() then
                 for i = 0, scanSquare:getMovingObjects():size() - 1 do
                     local obj = scanSquare:getMovingObjects():get(i)
+                    seenObjects = seenObjects + 1
                     if isRecoverableShellCandidate(record, obj) then
+                        usableCandidates = usableCandidates + 1
                         local modData = protectedCall(obj, "getModData")
                         local score = 0
                         if handle and handle.actor == obj then score = score + 60 end
@@ -920,6 +924,17 @@ local function findRecoveryCandidateNearSquare(record, square, radius, source)
 
     if best then
         restampManagedActor(record, best, source or "findRecoveryCandidateNearSquare")
+        traceStage("recovery.candidate_selected", record, best, {
+            source = source or "findRecoveryCandidateNearSquare",
+            square = square,
+            detail = string.format("radius=%s seen=%s usable=%s bestScore=%s bestD2=%s", tostring(scanRadius), tostring(seenObjects), tostring(usableCandidates), tostring(bestScore), tostring(bestD2)),
+        })
+    else
+        traceStage("recovery.candidate_missing", record, nil, {
+            source = source or "findRecoveryCandidateNearSquare",
+            square = square,
+            detail = string.format("radius=%s seen=%s usable=%s handleActor=%s", tostring(scanRadius), tostring(seenObjects), tostring(usableCandidates), tostring(handle and handle.actor or nil)),
+        })
     end
     return best
 end
@@ -931,8 +946,16 @@ local function findCachedManagedShell(record, source)
     local actor = LWN.Carriers.isozombie.getKnownShellByNpcId(record.id)
     if actor and isRecoverableShellCandidate(record, actor) then
         restampManagedActor(record, actor, source or "findCachedManagedShell")
+        traceStage("recovery.cached_hit", record, actor, {
+            source = source or "findCachedManagedShell",
+            detail = "cached managed shell accepted",
+        })
         return actor
     end
+    traceStage("recovery.cached_miss", record, actor, {
+        source = source or "findCachedManagedShell",
+        detail = actor and "cached shell rejected by recoverable-candidate check" or "no cached managed shell",
+    })
     return nil
 end
 
@@ -1110,6 +1133,26 @@ local function resolveEmbodiedActor(record)
     end
     if actor and isCarrierActorUsable(record, actor) then
         return actor
+    end
+
+    local handle = getCarrierHandle(record)
+    local handleActor = handle and handle.actor or nil
+    if handleActor and isCarrierActorUsable(record, handleActor) then
+        traceStage("resolveEmbodiedActor.handle_recovered", record, handleActor, {
+            source = "resolveEmbodiedActor",
+            detail = "using carrier handle actor before nearby scan",
+        })
+        return handleActor
+    elseif handleActor then
+        traceStage("resolveEmbodiedActor.handle_rejected", record, handleActor, {
+            source = "resolveEmbodiedActor",
+            detail = "carrier handle actor unusable before nearby scan",
+        })
+    else
+        traceStage("resolveEmbodiedActor.handle_missing", record, nil, {
+            source = "resolveEmbodiedActor",
+            detail = "no carrier handle actor before nearby scan",
+        })
     end
 
     actor = findActorNearAnchor(record)

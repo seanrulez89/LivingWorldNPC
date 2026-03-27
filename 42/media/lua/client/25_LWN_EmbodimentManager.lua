@@ -703,9 +703,15 @@ function Embody.tryEmbody(record, player)
         return nil
     end
 
+    local handle = Embody.getCarrierHandle and Embody.getCarrierHandle(record) or nil
+    local cachedManagedShell = LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.getKnownShellByNpcId and LWN.Carriers.isozombie.getKnownShellByNpcId(record.id) or nil
     traceStage("tryEmbody.start", record, nil, {
         source = "tryEmbody",
-        detail = string.format("radius=%.2f distance=%.2f origin=%s originPos=%.0f,%.0f,%.0f", radius, math.sqrt(d2), tostring(originSource), originX, originY, originZ),
+        detail = string.format("radius=%.2f distance=%.2f origin=%s originPos=%.0f,%.0f,%.0f handleActor=%s cachedShell=%s", radius, math.sqrt(d2), tostring(originSource), originX, originY, originZ, tostring(handle and handle.actor or nil), tostring(cachedManagedShell)),
+    })
+    traceStage("tryEmbody.replacement_precheck", record, nil, {
+        source = "tryEmbody",
+        detail = string.format("spawning_new_shell because existing handle=%s cachedManaged=%s", tostring(handle and handle.actor or nil), tostring(cachedManagedShell)),
     })
     touchRecordStage(record, "spawning", "tryEmbody.start")
 

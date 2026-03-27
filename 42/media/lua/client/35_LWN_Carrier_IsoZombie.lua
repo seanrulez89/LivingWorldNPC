@@ -557,6 +557,46 @@ local function applyManagedShellContract(record, actor, policy, options)
     return registerManagedShell(record, actor, options.source or "CarrierIsoZombie.applyManagedShellContract")
 end
 
+local function applyShellLaneContract(record, actor, policy, options)
+    if not actor then return nil end
+    policy = policy or relationshipCombatPolicy(record)
+    options = options or {}
+    local lane = options.forceLane or policy.shellMode or "non_hostile_mobile"
+    local laneOptions = {
+        source = options.source or "CarrierIsoZombie.applyShellLaneContract",
+        stopAudio = options.stopAudio,
+    }
+
+    if lane == "debug_quarantine" then
+        laneOptions.allowMovement = false
+        laneOptions.neutralized = true
+        laneOptions.clearCombat = true
+    elseif lane == "non_hostile_hold" then
+        laneOptions.allowMovement = false
+        laneOptions.neutralized = true
+        laneOptions.clearCombat = true
+    elseif lane == "non_hostile_commandable" or lane == "non_hostile_mobile" or lane == "recovery_non_hostile_mobile" then
+        laneOptions.allowMovement = true
+        laneOptions.neutralized = false
+        laneOptions.clearCombat = true
+    else
+        laneOptions.allowMovement = options.allowMovement
+        laneOptions.neutralized = options.neutralized
+        laneOptions.clearCombat = options.clearCombat
+    end
+
+    local applied = applyManagedShellContract(record, actor, policy, laneOptions)
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_ShellLaneContract = lane
+        modData.LWN_ShellLaneContractSource = laneOptions.source
+        modData.LWN_ShellLaneAllowMovement = laneOptions.allowMovement == true
+        modData.LWN_ShellLaneNeutralized = laneOptions.neutralized == true
+        modData.LWN_ShellLaneClearCombat = laneOptions.clearCombat ~= false
+    end
+    return applied
+end
+
 function Carrier.reassertManagedShellContract(record, actor, options)
     options = options or {}
     local policy = options.policy or relationshipCombatPolicy(record)
@@ -568,12 +608,13 @@ function Carrier.reassertManagedShellContract(record, actor, options)
     if neutralized == nil then
         neutralized = policy and policy.shouldNeutralizeCarrier == true and allowMovement ~= true
     end
-    return applyManagedShellContract(record, actor, policy, {
+    return applyShellLaneContract(record, actor, policy, {
         source = options.source or "CarrierIsoZombie.reassertManagedShellContract",
         allowMovement = allowMovement,
         neutralized = neutralized,
         clearCombat = options.clearCombat,
         stopAudio = options.stopAudio,
+        forceLane = options.forceLane,
     })
 end
 
@@ -664,12 +705,13 @@ local function applyEmergencyQuarantine(record, actor, source)
         return
     end
 
-    applyManagedShellContract(record, actor, relationshipCombatPolicy(record), {
+    applyShellLaneContract(record, actor, relationshipCombatPolicy(record), {
         source = source or "CarrierIsoZombie.applyEmergencyQuarantine",
         allowMovement = false,
         neutralized = true,
         clearCombat = true,
         stopAudio = false,
+        forceLane = "debug_quarantine",
     })
     protectedCall(actor, "setTarget", nil)
     protectedCall(actor, "setLastTargettedBy", nil)
@@ -695,12 +737,13 @@ local function applyPersistentIllusionPackage(record, actor, descriptor, policy)
     if not actor then return end
     policy = policy or relationshipCombatPolicy(record)
 
-    applyManagedShellContract(record, actor, policy, {
+    applyShellLaneContract(record, actor, policy, {
         source = "CarrierIsoZombie.applyPersistentIllusionPackage",
         allowMovement = policy.allowMovement == true,
         neutralized = policy.shouldNeutralizeCarrier == true and policy.allowMovement ~= true,
         clearCombat = policy.shouldNeutralizeCarrier == true,
         stopAudio = false,
+        forceLane = policy.shellMode,
     })
     applyPostureHumanization(record, actor, "CarrierIsoZombie.applyPersistentIllusionPackage", {
         neutralized = policy.shouldNeutralizeCarrier == true and policy.allowMovement ~= true,
@@ -734,12 +777,13 @@ local function applyRelationshipCombatState(record, actor, options, policy)
     end
 
     protectedCall(actor, "setGodMod", policy.allowPlayerAttack ~= true)
-    applyManagedShellContract(record, actor, policy, {
+    applyShellLaneContract(record, actor, policy, {
         source = "CarrierIsoZombie.applyRelationshipCombatState",
         allowMovement = allowMovement,
         neutralized = policy.shouldNeutralizeCarrier == true and allowMovement ~= true,
         clearCombat = policy.shouldNeutralizeCarrier == true,
         stopAudio = policy.shouldNeutralizeCarrier == true,
+        forceLane = policy.shellMode,
     })
 
     if policy.shouldNeutralizeCarrier == true then

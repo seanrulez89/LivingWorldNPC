@@ -59,6 +59,89 @@ local function moveIntentDistance(actor, intent)
     return math.sqrt(dx * dx + dy * dy)
 end
 
+local function squareKey(square)
+    if not square then return nil end
+    local x = protectedCall(square, "getX")
+    local y = protectedCall(square, "getY")
+    local z = protectedCall(square, "getZ")
+    if x == nil or y == nil or z == nil then return nil end
+    return string.format("%d,%d,%d", x, y, z)
+end
+
+local function updateMovementTelemetry(record, intent, command, actor, status, reason)
+    if not (record and intent and command and actor) then
+        return
+    end
+
+    command.movementTelemetry = command.movementTelemetry or {}
+    local telemetry = command.movementTelemetry
+    local now = worldAgeHours()
+    local x = tonumber(protectedCall(actor, "getX") or 0) or 0
+    local y = tonumber(protectedCall(actor, "getY") or 0) or 0
+    local z = tonumber(protectedCall(actor, "getZ") or 0) or 0
+    local square = protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare")
+    local squareId = squareKey(square)
+    local moving = protectedCall(actor, "isMoving") == true
+    local path2 = protectedCall(actor, "getPath2")
+    local deltaX = telemetry.lastX and (x - telemetry.lastX) or 0
+    local deltaY = telemetry.lastY and (y - telemetry.lastY) or 0
+    local displacement = math.sqrt(deltaX * deltaX + deltaY * deltaY)
+
+    telemetry.lastStatus = status or telemetry.lastStatus
+    telemetry.lastReason = reason or telemetry.lastReason
+    telemetry.lastObservedAt = now
+    telemetry.lastX = x
+    telemetry.lastY = y
+    telemetry.lastZ = z
+    telemetry.lastSquare = squareId
+    telemetry.lastDeltaX = deltaX
+    telemetry.lastDeltaY = deltaY
+    telemetry.lastDisplacement = displacement
+    telemetry.isMoving = moving
+    telemetry.path2 = path2 ~= nil
+    telemetry.walkType = protectedCall(actor, "getVariableString", "BanditWalkType") or protectedCall(actor, "getWalkType") or "unknown"
+    telemetry.canWalk = protectedCall(actor, "isCanWalk")
+    telemetry.useless = protectedCall(actor, "isUseless")
+
+    if telemetry.startX == nil then
+        telemetry.startX = x
+        telemetry.startY = y
+        telemetry.startZ = z
+        telemetry.startSquare = squareId
+        telemetry.startedAt = now
+    end
+
+    if displacement > 0.05 or (telemetry.lastSquare ~= nil and telemetry.prevSquare ~= nil and telemetry.lastSquare ~= telemetry.prevSquare) then
+        telemetry.lastMovedAt = now
+        telemetry.squareChangedAt = telemetry.lastSquare ~= telemetry.prevSquare and now or telemetry.squareChangedAt
+        telemetry.noDisplacementSince = nil
+    else
+        telemetry.noDisplacementSince = telemetry.noDisplacementSince or now
+    end
+
+    telemetry.prevSquare = squareId
+    telemetry.totalDelta = math.sqrt((x - (telemetry.startX or x)) ^ 2 + (y - (telemetry.startY or y)) ^ 2)
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_MoveTelemetryStatus = telemetry.lastStatus
+        modData.LWN_MoveTelemetryReason = telemetry.lastReason
+        modData.LWN_MoveTelemetrySquare = telemetry.lastSquare
+        modData.LWN_MoveTelemetryDeltaX = telemetry.lastDeltaX
+        modData.LWN_MoveTelemetryDeltaY = telemetry.lastDeltaY
+        modData.LWN_MoveTelemetryDisplacement = telemetry.lastDisplacement
+        modData.LWN_MoveTelemetryTotalDelta = telemetry.totalDelta
+        modData.LWN_MoveTelemetryPath2 = telemetry.path2
+        modData.LWN_MoveTelemetryMoving = telemetry.isMoving
+        modData.LWN_MoveTelemetryWalkType = telemetry.walkType
+        modData.LWN_MoveTelemetryCanWalk = telemetry.canWalk
+        modData.LWN_MoveTelemetryUseless = telemetry.useless
+        modData.LWN_MoveTelemetryNoDisplacementSince = telemetry.noDisplacementSince
+        modData.LWN_MoveTelemetryLastMovedAt = telemetry.lastMovedAt
+        modData.LWN_MoveTelemetrySquareChangedAt = telemetry.squareChangedAt
+    end
+end
+
 local function updateMoveCommand(record, intent, status, reason, actor)
     if not record or not intent or intent.kind ~= "move_to" then
         return
@@ -82,6 +165,10 @@ local function updateMoveCommand(record, intent, status, reason, actor)
     if status == "pathing" and command.startedAt == nil then
         command.startedAt = now
     end
+    if actor then
+        updateMovementTelemetry(record, intent, command, actor, status, reason)
+    end
+
     if status == "arrived" or status == "failed" or status == "cleared" then
         command.active = false
         command.completedAt = now
@@ -122,6 +209,7 @@ local function noteIssuedIntent(record, intent)
         command.lastOutcome = nil
         command.lastReason = intent.data and intent.data.commandReason or nil
         command.lastDistance = nil
+        command.movementTelemetry = {}
         setCommandDestination(command, intent.data)
         return
     end
@@ -452,6 +540,17 @@ function Runtime._startMovement(record, actor, intent)
 end
 
 function Runtime._tickMovementIntent(record, actor, intent)
+    if LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.reassertManagedShellContract then
+        LWN.Carriers.isozombie.reassertManagedShellContract(record, actor, {
+            source = "ActionRuntime._tickMovementIntent",
+            allowMovement = true,
+            neutralized = false,
+            clearCombat = false,
+            stopAudio = false,
+            forceLane = "non_hostile_commandable",
+        })
+    end
+
     if intent.kind == "move_to" then
         local distance = moveIntentDistance(actor, intent)
         if distance ~= nil and distance <= 1.1 then
@@ -465,6 +564,19 @@ function Runtime._tickMovementIntent(record, actor, intent)
                 intent.lastProgressAt = worldAgeHours()
             end
             intent.lastObservedDistance = distance
+        end
+    end
+
+    local command = ensureCommandState(record)
+    local telemetry = command and command.movementTelemetry or nil
+    local noDisplacementSince = telemetry and tonumber(telemetry.noDisplacementSince) or nil
+    local moving = telemetry and telemetry.isMoving == true or false
+    local hasPath = telemetry and telemetry.path2 == true or false
+    if moving and hasPath and noDisplacementSince and (worldAgeHours() - noDisplacementSince) >= (3 / 3600) then
+        if telemetry.lastNoDisplacementWarnAt == nil or (worldAgeHours() - telemetry.lastNoDisplacementWarnAt) >= (2 / 3600) then
+            telemetry.lastNoDisplacementWarnAt = worldAgeHours()
+            intent.watchdogTriggered = true
+            updateMoveCommand(record, intent, "pathing", "watchdog:no_displacement_3s", actor)
         end
     end
 
