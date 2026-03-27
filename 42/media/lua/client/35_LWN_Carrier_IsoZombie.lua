@@ -5,6 +5,10 @@ local Carrier = {}
 LWN.Carriers.isozombie = Carrier
 
 local Store = LWN.PopulationStore
+Carrier.ManagedShellCache = Carrier.ManagedShellCache or {
+    byNpcId = {},
+    byActorRef = {},
+}
 
 local function ensureRecordShape(record)
     if Store and Store.ensureRecordShape then
@@ -218,13 +222,13 @@ end
 
 local function friendlySuppressionSummary(policy)
     if policy.allowPlayerAttack ~= true then
-        return "godmod+clearqueue"
+        return "godmod+managed_shell_contract"
     end
     if policy.shouldNeutralizeCarrier == true and policy.allowMovement == true then
-        return "no_teeth+no_lunge+clear_target_keep_path"
+        return "managed_shell_contract+clear_target+keep_path+walktype_guard"
     end
     if policy.shouldNeutralizeCarrier == true then
-        return "clearqueue"
+        return "managed_shell_contract+clearqueue+clearpath"
     end
     return "attackable"
 end
@@ -445,11 +449,132 @@ local function clearCombatIntent(actor, options)
     end
     protectedCall(actor, "setTarget", nil)
     protectedCall(actor, "setAttackedBy", nil)
+    protectedCall(actor, "setLastTargettedBy", nil)
+    protectedCall(actor, "setEatBodyTarget", nil, false)
     protectedCall(actor, "setTargetSeenTime", 0)
     if not (options and options.clearPath == false) then
         protectedCall(actor, "setPath2", nil)
         protectedCall(actor, "setMoving", false)
     end
+end
+
+local stopZombieCodedAudio
+
+local function shellObjectRef(actor)
+    if not actor then return nil end
+    return tostring(actor)
+end
+
+local function registerManagedShell(record, actor, source)
+    if not (record and record.id and actor) then return nil end
+    local ref = shellObjectRef(actor)
+    local cache = Carrier.ManagedShellCache
+    if not cache then return nil end
+
+    cache.byNpcId[record.id] = actor
+    if ref then
+        cache.byActorRef[ref] = {
+            actor = actor,
+            npcId = record.id,
+            source = source or "CarrierIsoZombie.registerManagedShell",
+            seenAt = worldAgeHours(),
+        }
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_ManagedShellContract = true
+        modData.LWN_ManagedShellCacheSource = source or "CarrierIsoZombie.registerManagedShell"
+        modData.LWN_ManagedShellCacheSeenAt = worldAgeHours()
+        modData.LWN_ManagedShellRef = ref
+        modData.LWN_ManagedShellLastX = protectedCall(actor, "getX")
+        modData.LWN_ManagedShellLastY = protectedCall(actor, "getY")
+        modData.LWN_ManagedShellLastZ = protectedCall(actor, "getZ")
+    end
+
+    return actor
+end
+
+function Carrier.getKnownShellByNpcId(npcId)
+    if not npcId then return nil end
+    local cache = Carrier.ManagedShellCache
+    local actor = cache and cache.byNpcId and cache.byNpcId[npcId] or nil
+    if not actor then return nil end
+    if protectedCall(actor, "isDestroyed") == true then return nil end
+    if protectedCall(actor, "isZombie") ~= true then return nil end
+    if protectedCall(actor, "isExistInTheWorld") == false then return nil end
+    return actor
+end
+
+function Carrier.isKnownManagedShell(actor)
+    if not actor then return false end
+    local ref = shellObjectRef(actor)
+    local cache = Carrier.ManagedShellCache
+    if ref and cache and cache.byActorRef and cache.byActorRef[ref] then
+        return true
+    end
+    local modData = protectedCall(actor, "getModData")
+    return modData and modData.LWN_ManagedShellContract == true or false
+end
+
+local function applyManagedShellContract(record, actor, policy, options)
+    if not actor then return nil end
+    policy = policy or relationshipCombatPolicy(record)
+    options = options or {}
+    local allowMovement = options.allowMovement
+    if allowMovement == nil then
+        allowMovement = policy and policy.allowMovement == true
+    end
+    local neutralized = options.neutralized
+    if neutralized == nil then
+        neutralized = policy and policy.shouldNeutralizeCarrier == true and allowMovement ~= true
+    end
+
+    protectedCall(actor, "setVariable", "LWNManagedShell", true)
+    protectedCall(actor, "setVariable", "NoLungeTarget", true)
+    protectedCall(actor, "setVariable", "ZombieHitReaction", "Chainsaw")
+    protectedCall(actor, "setWalkType", "Walk")
+    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    protectedCall(actor, "setNoTeeth", policy and policy.allowCarrierAttackPlayer ~= true)
+    protectedCall(actor, "setPrimaryHandItem", nil)
+    protectedCall(actor, "setSecondaryHandItem", nil)
+    protectedCall(actor, "resetEquippedHandsModels")
+    protectedCall(actor, "clearAttachedItems")
+    protectedCall(actor, "setUseless", neutralized == true)
+    protectedCall(actor, "setCanWalk", allowMovement == true)
+
+    if options.clearCombat ~= false then
+        clearCombatIntent(actor, {
+            stopActions = allowMovement == true,
+            clearPath = allowMovement ~= true,
+        })
+    end
+
+    if options.stopAudio == true then
+        stopZombieCodedAudio(actor)
+    end
+
+    return registerManagedShell(record, actor, options.source or "CarrierIsoZombie.applyManagedShellContract")
+end
+
+function Carrier.reassertManagedShellContract(record, actor, options)
+    options = options or {}
+    local policy = options.policy or relationshipCombatPolicy(record)
+    local allowMovement = options.allowMovement
+    if allowMovement == nil then
+        allowMovement = policy and policy.allowMovement == true
+    end
+    local neutralized = options.neutralized
+    if neutralized == nil then
+        neutralized = policy and policy.shouldNeutralizeCarrier == true and allowMovement ~= true
+    end
+    return applyManagedShellContract(record, actor, policy, {
+        source = options.source or "CarrierIsoZombie.reassertManagedShellContract",
+        allowMovement = allowMovement,
+        neutralized = neutralized,
+        clearCombat = options.clearCombat,
+        stopAudio = options.stopAudio,
+    })
 end
 
 local function getPrimaryPlayer(options)
@@ -467,7 +592,7 @@ local function clearRuntimeIntent(record, actor)
     end
 end
 
-local function stopZombieCodedAudio(actor)
+stopZombieCodedAudio = function(actor)
     local emitter = protectedCall(actor, "getEmitter")
     if emitter then
         protectedCall(emitter, "stopAll")
@@ -480,11 +605,13 @@ local function applyPostureHumanization(record, actor, source, options)
     if not actor then return end
     local neutralized = options and options.neutralized == true or false
 
-    protectedCall(actor, "setVariable", "LWNManagedShell", true)
-    protectedCall(actor, "setVariable", "NoLungeTarget", true)
-    protectedCall(actor, "setVariable", "ZombieHitReaction", "Chainsaw")
-    protectedCall(actor, "setWalkType", "Walk")
-    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    applyManagedShellContract(record, actor, relationshipCombatPolicy(record), {
+        source = source or "CarrierIsoZombie.applyPostureHumanization",
+        allowMovement = neutralized ~= true,
+        neutralized = neutralized,
+        clearCombat = neutralized == true,
+        stopAudio = false,
+    })
     if neutralized == true or protectedCall(actor, "isMoving") ~= true then
         protectedCall(actor, "setIdleAnimatorState")
     end
@@ -537,12 +664,13 @@ local function applyEmergencyQuarantine(record, actor, source)
         return
     end
 
-    protectedCall(actor, "setVariable", "LWNManagedShell", true)
-    protectedCall(actor, "setVariable", "NoLungeTarget", true)
-    protectedCall(actor, "setWalkType", "Walk")
-    protectedCall(actor, "setUseless", true)
-    protectedCall(actor, "setCanWalk", false)
-    protectedCall(actor, "setNoTeeth", true)
+    applyManagedShellContract(record, actor, relationshipCombatPolicy(record), {
+        source = source or "CarrierIsoZombie.applyEmergencyQuarantine",
+        allowMovement = false,
+        neutralized = true,
+        clearCombat = true,
+        stopAudio = false,
+    })
     protectedCall(actor, "setTarget", nil)
     protectedCall(actor, "setLastTargettedBy", nil)
     protectedCall(actor, "setPath2", nil)
@@ -567,11 +695,13 @@ local function applyPersistentIllusionPackage(record, actor, descriptor, policy)
     if not actor then return end
     policy = policy or relationshipCombatPolicy(record)
 
-    protectedCall(actor, "setVariable", "LWNManagedShell", true)
-    protectedCall(actor, "setVariable", "NoLungeTarget", true)
-    protectedCall(actor, "setVariable", "ZombieHitReaction", "Chainsaw")
-    protectedCall(actor, "setWalkType", "Walk")
-    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    applyManagedShellContract(record, actor, policy, {
+        source = "CarrierIsoZombie.applyPersistentIllusionPackage",
+        allowMovement = policy.allowMovement == true,
+        neutralized = policy.shouldNeutralizeCarrier == true and policy.allowMovement ~= true,
+        clearCombat = policy.shouldNeutralizeCarrier == true,
+        stopAudio = false,
+    })
     applyPostureHumanization(record, actor, "CarrierIsoZombie.applyPersistentIllusionPackage", {
         neutralized = policy.shouldNeutralizeCarrier == true and policy.allowMovement ~= true,
     })
@@ -604,15 +734,15 @@ local function applyRelationshipCombatState(record, actor, options, policy)
     end
 
     protectedCall(actor, "setGodMod", policy.allowPlayerAttack ~= true)
+    applyManagedShellContract(record, actor, policy, {
+        source = "CarrierIsoZombie.applyRelationshipCombatState",
+        allowMovement = allowMovement,
+        neutralized = policy.shouldNeutralizeCarrier == true and allowMovement ~= true,
+        clearCombat = policy.shouldNeutralizeCarrier == true,
+        stopAudio = policy.shouldNeutralizeCarrier == true,
+    })
 
     if policy.shouldNeutralizeCarrier == true then
-        protectedCall(actor, "setUseless", allowMovement ~= true)
-        protectedCall(actor, "setCanWalk", allowMovement == true)
-        protectedCall(actor, "setNoTeeth", true)
-        clearCombatIntent(actor, {
-            stopActions = allowMovement ~= true,
-            clearPath = allowMovement ~= true,
-        })
         if allowMovement ~= true then
             clearRuntimeIntent(record, actor)
         end
@@ -695,6 +825,8 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_TestHarnessIdentityLock = harness and harness.identityLock == true or false
         modData.LWN_TestHarnessSterileRadius = harness and harness.sterileRadius or nil
     end
+
+    registerManagedShell(record, actor, "CarrierIsoZombie.applyBasicZombieCarrierFlags")
 
     stampHybridSummary(record, actor, summary, descriptor, appearanceDetail)
     applyPersistentIllusionPackage(record, actor, descriptor, policy)

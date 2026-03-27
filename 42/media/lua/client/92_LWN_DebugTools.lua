@@ -156,7 +156,10 @@ local function clearNearbyWorldNoise(player, radius, protectedNpcId)
         if npcId and npcId == protectedNpcId then
             return
         end
-        if hasAnyLwnMarker(obj) or isBoundToAnyLiveRecord(obj) then
+        if hasAnyLwnMarker(obj)
+            or isBoundToAnyLiveRecord(obj)
+            or (LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.isKnownManagedShell and LWN.Carriers.isozombie.isKnownManagedShell(obj))
+        then
             return
         end
         local objectName = tostring(protectedCall(obj, "getObjectName") or "")

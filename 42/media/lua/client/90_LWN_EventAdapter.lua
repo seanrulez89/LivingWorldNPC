@@ -171,8 +171,18 @@ local function restampManagedActor(record, actor, source)
     end
     modData.LWN_AttackQuarantineUntil = record.embodiment and record.embodiment.attackQuarantineUntilHour or nil
     modData.LWN_AttackQuarantineReason = record.embodiment and record.embodiment.lastAttackQuarantineReason or nil
+    modData.LWN_ManagedShellContract = true
     modData.LWN_LastRestampSource = source or "EventAdapter.restampManagedActor"
     modData.LWN_LastRestampAt = getGameTime() and getGameTime():getWorldAgeHours() or nil
+    if LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.reassertManagedShellContract then
+        LWN.Carriers.isozombie.reassertManagedShellContract(record, actor, {
+            source = source or "EventAdapter.restampManagedActor",
+            allowMovement = not harnessQuarantine(record),
+            neutralized = harnessQuarantine(record),
+            clearCombat = harnessQuarantine(record),
+            stopAudio = harnessQuarantine(record),
+        })
+    end
     return true
 end
 
@@ -914,9 +924,26 @@ local function findRecoveryCandidateNearSquare(record, square, radius, source)
     return best
 end
 
+local function findCachedManagedShell(record, source)
+    if not (record and record.id and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.getKnownShellByNpcId) then
+        return nil
+    end
+    local actor = LWN.Carriers.isozombie.getKnownShellByNpcId(record.id)
+    if actor and isRecoverableShellCandidate(record, actor) then
+        restampManagedActor(record, actor, source or "findCachedManagedShell")
+        return actor
+    end
+    return nil
+end
+
 local function findActorNearAnchor(record)
     if not record or isCleanupBlocked(record.id) then
         return nil
+    end
+
+    local cached = findCachedManagedShell(record, "findActorNearAnchor.cached")
+    if cached then
+        return cached
     end
 
     local cell = getCell and getCell() or nil
@@ -936,6 +963,10 @@ end
 local function findActorNearPlayerForHarness(record, player)
     if not (record and player and harnessEnabled(record)) then
         return nil
+    end
+    local cached = findCachedManagedShell(record, "findActorNearPlayerForHarness.cached")
+    if cached then
+        return cached
     end
     local square = protectedCall(player, "getSquare")
     local radius = math.max(18, tonumber(record.debugHarness and record.debugHarness.sterileRadius or 0) or 0)

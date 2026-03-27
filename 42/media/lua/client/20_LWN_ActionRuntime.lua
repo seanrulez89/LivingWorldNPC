@@ -373,6 +373,15 @@ function Runtime._startMovement(record, actor, intent)
     protectedCall(actor, "setWalkType", "Walk")
     protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
     protectedCall(actor, "clearVariable", "bPathfind")
+    if LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.reassertManagedShellContract then
+        LWN.Carriers.isozombie.reassertManagedShellContract(record, actor, {
+            source = "ActionRuntime._startMovement",
+            allowMovement = true,
+            neutralized = false,
+            clearCombat = false,
+            stopAudio = false,
+        })
+    end
 
     if intent.kind == "move_to" then
         started = invokeActorPath(actor, "pathToLocation", intent.data.x, intent.data.y, intent.data.z)
