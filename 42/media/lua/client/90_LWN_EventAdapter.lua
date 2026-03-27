@@ -1373,6 +1373,20 @@ local function tickEmbodiedRecord(record, actor, player)
     local allowMovement = relationPolicy and relationPolicy.allowMovement == true
     local allowAutonomousMovement = relationPolicy and relationPolicy.allowAutonomousMovement == true
     local suppressForNeutralized = relationPolicy and relationPolicy.shouldNeutralizeCarrier == true and allowMovement ~= true
+    local dummyMode = isMinimalDummyRecord(record)
+
+    if dummyMode and queueBefore and queueBefore.kind ~= "move_to" then
+        LWN.ActionRuntime.clear(record, actor)
+        stampEmbodiedDecision(record, {
+            source = "dummy_invalid_queue_cleared",
+            chosen = queueBefore.kind,
+            neutralized = true,
+            queueBefore = queueBefore.kind,
+            utility = nil,
+            behavior = nil,
+        })
+        queueBefore = nil
+    end
 
     if suppressForNeutralized then
         if queueBefore then
@@ -1401,12 +1415,21 @@ local function tickEmbodiedRecord(record, actor, player)
     elseif relationPolicy and relationPolicy.shouldNeutralizeCarrier == true then
         if queueBefore then
             stampEmbodiedDecision(record, {
-                source = isMinimalDummyRecord(record) and "dummy_command_queue" or "non_hostile_command_queue",
+                source = dummyMode and "dummy_command_queue" or "non_hostile_command_queue",
                 chosen = queueBefore.kind,
                 neutralized = true,
                 queueBefore = queueBefore.kind,
                 utility = nil,
                 behavior = queueBefore.kind,
+            })
+        elseif dummyMode then
+            stampEmbodiedDecision(record, {
+                source = "dummy_idle",
+                chosen = nil,
+                neutralized = true,
+                queueBefore = nil,
+                utility = nil,
+                behavior = nil,
             })
         elseif allowAutonomousMovement then
             local chosen = LWN.UtilityAI.choose(record, {})
@@ -1425,7 +1448,7 @@ local function tickEmbodiedRecord(record, actor, player)
             end
         else
             stampEmbodiedDecision(record, {
-                source = isMinimalDummyRecord(record) and "dummy_idle" or "non_hostile_hold",
+                source = "non_hostile_hold",
                 chosen = nil,
                 neutralized = true,
                 queueBefore = nil,

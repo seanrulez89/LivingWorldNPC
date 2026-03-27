@@ -23,6 +23,35 @@ local function worldAgeHours()
     return getGameTime() and getGameTime():getWorldAgeHours() or 0
 end
 
+local function isMinimalDummyRecord(record)
+    return LWN.Social and LWN.Social.isMinimalDummyRecord and LWN.Social.isMinimalDummyRecord(record)
+end
+
+local function isAllowedDummyIntent(intent)
+    return intent and intent.kind == "move_to"
+end
+
+local function syncDummyMirror(record, queue)
+    if not isMinimalDummyRecord(record) then return end
+    record.dummy = record.dummy or {}
+    local current = queue and queue[1] or nil
+    if current and current.kind == "move_to" then
+        record.dummy.state = "move_to"
+        record.dummy.command = {
+            kind = "move_to",
+            destination = current.data and {
+                x = current.data.x,
+                y = current.data.y,
+                z = current.data.z,
+                label = current.data.destinationLabel or current.data.label,
+            } or nil,
+        }
+    else
+        record.dummy.state = "idle"
+        record.dummy.command = nil
+    end
+end
+
 local function ensureCommandState(record)
     if not record then return nil end
     record.companion = record.companion or {}
@@ -226,6 +255,12 @@ local function clearActiveCommand(record, reason)
     command.lastOutcome = "cleared"
     command.lastReason = reason or "runtime_clear"
     command.lastDistance = nil
+    if isMinimalDummyRecord(record) then
+        record.dummy = record.dummy or {}
+        record.dummy.state = "idle"
+        record.dummy.command = nil
+        record.dummy.lastMoveResult = reason or "runtime_clear"
+    end
 end
 
 local function noteIssuedIntent(record, intent)
@@ -233,6 +268,12 @@ local function noteIssuedIntent(record, intent)
 
     local command = ensureCommandState(record)
     if not command then return end
+
+    if isMinimalDummyRecord(record) and not isAllowedDummyIntent(intent) then
+        command.intentKind = intent.kind
+        command.status = "idle"
+        return
+    end
 
     if intent.kind == "move_to" then
         command.kind = intent.data and (intent.data.commandKind or "move_to") or "move_to"
@@ -268,6 +309,7 @@ local function syncPlanMirror(record)
     record.goals.currentPlan = {}
 
     local q = queueFor(record.id)
+    syncDummyMirror(record, q)
     for i = 1, #q do
         record.goals.currentPlan[i] = q[i].kind
     end
@@ -395,10 +437,17 @@ local function intentsEquivalent(a, b)
 end
 
 function Runtime.enqueue(record, intent)
+    if isMinimalDummyRecord(record) and not isAllowedDummyIntent(intent) then
+        return false
+    end
     local q = queueFor(record.id)
     local last = q[#q]
     if intentsEquivalent(last, intent) then
         return false
+    end
+    if isMinimalDummyRecord(record) then
+        Runtime.Queues[record.id] = {}
+        q = queueFor(record.id)
     end
     table.insert(q, intent)
     syncPlanMirror(record)
@@ -506,6 +555,7 @@ function Runtime._startMovement(record, actor, intent)
             neutralized = false,
             clearCombat = false,
             stopAudio = false,
+            forceLane = isMinimalDummyRecord(record) and "dummy_move" or nil,
         })
     end
 
@@ -586,7 +636,7 @@ function Runtime._tickMovementIntent(record, actor, intent)
             neutralized = false,
             clearCombat = false,
             stopAudio = false,
-            forceLane = "non_hostile_commandable",
+            forceLane = isMinimalDummyRecord(record) and "dummy_move" or "non_hostile_commandable",
         })
     end
 
@@ -659,7 +709,18 @@ end
 
 function Runtime.tick(record, actor)
     local current = Runtime.peek(record)
-    if not current then return end
+    if not current then
+        if isMinimalDummyRecord(record) then
+            syncDummyMirror(record, nil)
+        end
+        return
+    end
+
+    if isMinimalDummyRecord(record) and current.kind ~= "move_to" then
+        current.failed = true
+        Runtime.pop(record)
+        return
+    end
 
     if current.kind == "move_to" or current.kind == "follow_player" or current.kind == "guard_player" or current.kind == "retreat" or current.kind == "wander_short" then
         if not current.started then
@@ -730,6 +791,10 @@ function Runtime.tick(record, actor)
     end
 
     if current.done or current.failed then
+        if isMinimalDummyRecord(record) then
+            record.dummy = record.dummy or {}
+            record.dummy.lastMoveResult = current.done and "done" or "failed"
+        end
         Runtime.pop(record)
     end
 end
