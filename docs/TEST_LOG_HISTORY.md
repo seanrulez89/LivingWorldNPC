@@ -418,3 +418,59 @@ For every new test cycle, append a new section using this structure:
 - use the automated flow to check whether `attackLock` is present at the exact moment of return-path hostility
 - verify again whether nearby-zombie cleanup removes only the visible shell while relationship/debug controls still target the logical record
 - decide whether posture work should pause behind behavior-authority/recovery fixes, since posture improvements currently do not survive user perception testing
+
+## 2026-03-27 23:39 KST — Repeated failure shape confirms pre-surgery reset is needed
+
+### In-game result
+- overall game audio returned to normal after the targeted-mute hotfix, so the earlier total-silence issue is no longer contaminating tests
+- zombie vocal/read returned too, confirming earlier "quiet NPC" impressions were likely mixed with the broader audio failure
+- the test NPC still rendered as a full zombie and did not produce any real displacement
+- after leaving and returning, the familiar split pattern repeated:
+  - the original NPC read as a normal roaming zombie
+  - a different-looking replacement appeared near the anchor
+  - this time the replacement also showed in-place attack-like stepping instead of staying completely still
+- using nearby ordinary-zombie cleanup removed the roaming original shell from view
+- a new and important clue appeared: forcing the replacement friendly changed its appearance and that new appearance then stayed stable; later relationship forcing no longer caused obvious further rerolls
+
+### Log signals
+- the test harness now really does release hold during movement tests:
+  - `hold=false` appeared during TEST 02/03
+- but movement still failed at the deeper level:
+  - `moving=true`
+  - `path2=true`
+  - `totalDelta=0.00`
+  - `squareChanged=no`
+- non-hostile command flow still carried `neutralized=true` while trying to path, so the command lane is still partially mixed with suppression/quarantine semantics
+- spawn-time humanization still failed baseline checks:
+  - `presentationRole=reanimated_zombie`
+  - `humanInit=false`
+  - probe remained negative on the default spawn path
+- forcing the shell into a stronger friendly/trusted-companion style later in the run triggered real presentation work:
+  - appearance changed
+  - the changed appearance remained stable
+  - the actor state shifted toward non-hostile mobile maintenance instead of the earlier command-only shell read
+- return/recovery still broke continuity hard:
+  - repeated `recovery.cached_miss`
+  - repeated `handle_reclaim_failed`
+  - repeated `handle_rejected`
+  - repeated `candidate_missing`
+- the protected managed shell logic in nearby cleanup now works better for the known managed object, but the broader gameplay problem remains because the logical/original shell split is still happening before cleanup time
+
+### Interpretation / lesson
+- the last few hardening passes did improve observability and fixed the worst global-audio regression, but the core runtime failure shape barely moved
+- the strongest remaining blockers are now clearer than before:
+  1. spawn-time humanization still does not truly succeed on the default path
+  2. same-shell friendly command locomotion still does not translate pathing into real world movement even after hold release
+  3. return-path continuity still collapses into original-shell-versus-replacement split behavior
+- the friendly/neutral/hostile relationship matrix is now making experiments noisier instead of more informative
+- the most important positive clue in this run is that later friendly/trusted-companion reapply can visibly change and then stabilize appearance; that suggests the appearance system is not universally impossible, but the initial spawn pipeline and same-actor authority model are likely wrong
+
+### Code or document changes that followed
+- no new runtime patch is recorded in this test-log entry itself; instead, the project state is being frozen and documented before a larger surgery phase
+- the pre-surgery docs and branch plan are the meaningful follow-up output from this point
+
+### Next thing to verify
+- freeze the current baseline cleanly in docs and git before further structural work
+- simplify experiments by removing neutral/hostile policy churn from the main test lane and using a locked-friendly companion baseline first
+- split big-surgery work into a dedicated branch so the current `spike/isozombie` line remains a readable pre-surgery baseline
+- in the surgery branch, prioritize role separation, generation-based identity, failed-shell rebuild, and a deterministic movement path for the friendly companion shell
