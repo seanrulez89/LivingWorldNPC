@@ -158,7 +158,14 @@ local function spawnZombieAtSquare(square, record)
     return actor, "addZombiesInOutfit"
 end
 
+local function isMinimalDummyRecord(record)
+    return LWN.Social and LWN.Social.isMinimalDummyRecord and LWN.Social.isMinimalDummyRecord(record)
+end
+
 local function relationshipCombatPolicy(record)
+    if isMinimalDummyRecord(record) and LWN.Social and LWN.Social.minimalDummyPolicy then
+        return LWN.Social.minimalDummyPolicy(record)
+    end
     local harness = record and record.debugHarness or nil
     if harness and harness.enabled == true and harness.quarantine == true then
         return {
@@ -434,6 +441,9 @@ local function stageBaseForAction(actionName, runtimeOk)
 end
 
 local function humanizationProfile(record)
+    if isMinimalDummyRecord(record) then
+        return "neutral_dummy"
+    end
     local harness = record and record.debugHarness or nil
     if harness and harness.enabled == true and harness.forceFriendly == true then
         return "friendly"

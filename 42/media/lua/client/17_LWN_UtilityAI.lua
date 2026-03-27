@@ -3,8 +3,16 @@ LWN.UtilityAI = LWN.UtilityAI or {}
 
 local Utility = LWN.UtilityAI
 
+local function isMinimalDummyRecord(record)
+    return LWN.Social and LWN.Social.isMinimalDummyRecord and LWN.Social.isMinimalDummyRecord(record)
+end
+
 function Utility.buildCandidates(record, context)
     local out = {}
+    if isMinimalDummyRecord(record) then
+        table.insert(out, { kind = "dummy_idle" })
+        return out
+    end
     local goal = record.goals.longTerm and record.goals.longTerm.kind or "idle"
 
     if goal == "secure_food" then
@@ -29,6 +37,10 @@ function Utility.buildCandidates(record, context)
 end
 
 function Utility.score(record, candidate, context)
+    if isMinimalDummyRecord(record) then
+        candidate.score = candidate.kind == "dummy_idle" and 1 or -1
+        return candidate.score
+    end
     local stats = record.stats
     local rel = record.relationshipToPlayer
     local p = record.personality

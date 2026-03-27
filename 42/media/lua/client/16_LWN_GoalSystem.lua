@@ -3,7 +3,18 @@ LWN.GoalSystem = LWN.GoalSystem or {}
 
 local GoalSystem = LWN.GoalSystem
 
+local function isMinimalDummyRecord(record)
+    return LWN.Social and LWN.Social.isMinimalDummyRecord and LWN.Social.isMinimalDummyRecord(record)
+end
+
 function GoalSystem.update(record, context)
+    if isMinimalDummyRecord(record) then
+        record.goals = record.goals or {}
+        record.goals.longTerm = LWN.Schema.newGoal("idle", 1.0)
+        record.goals.shortTerm = nil
+        return { record.goals.longTerm }
+    end
+
     local stats = record.stats
     local rel = record.relationshipToPlayer
 

@@ -29,19 +29,63 @@ local function ensureCombatPolicyTables(record)
     return record.relationshipToPlayer, record.drama, record.companion
 end
 
+function Social.isMinimalDummyRecord(record)
+    return type(record) == "table"
+        and type(record.dummy) == "table"
+        and record.dummy.enabled == true
+end
+
+function Social.minimalDummyPolicy(record)
+    local harness = record and record.debugHarness or nil
+    local dummy = record and record.dummy or nil
+    if harness and harness.quarantine == true then
+        return {
+            state = "neutral",
+            allowPlayerAttack = true,
+            allowCarrierAttackPlayer = false,
+            shouldNeutralizeCarrier = true,
+            allowMovement = false,
+            allowAutonomousMovement = false,
+            shellMode = "debug_quarantine",
+            reason = "minimal_dummy_quarantine",
+        }
+    end
+    return {
+        state = "neutral",
+        allowPlayerAttack = true,
+        allowCarrierAttackPlayer = false,
+        shouldNeutralizeCarrier = true,
+        allowMovement = true,
+        allowAutonomousMovement = false,
+        shellMode = dummy and dummy.state == "move_to" and "dummy_move" or "dummy_idle",
+        reason = "minimal_dummy_lock",
+    }
+end
+
 function Social.adjustTrust(record, delta, reason)
     local rel = ensureCombatPolicyTables(record)
+    if Social.isMinimalDummyRecord(record) then
+        rel.trust = 0
+        return
+    end
     rel.trust = clamp((tonumber(rel.trust or 0) or 0) + delta, -1, 1)
     remember(record, reason or "trust_shift", math.abs(delta), { delta = delta })
 end
 
 function Social.adjustResentment(record, delta, reason)
     local rel = ensureCombatPolicyTables(record)
+    if Social.isMinimalDummyRecord(record) then
+        rel.resentment = 0
+        return
+    end
     rel.resentment = clamp((tonumber(rel.resentment or 0) or 0) + delta, 0, 1.5)
     remember(record, reason or "resentment_shift", math.abs(delta), { delta = delta })
 end
 
 function Social.commandResponse(record, command, context)
+    if Social.isMinimalDummyRecord(record) then
+        return { kind = "accept", reason = "minimal_dummy" }
+    end
     context = context or {}
     local rel = record.relationshipToPlayer
     local stats = record.stats
@@ -73,6 +117,9 @@ function Social.commandResponse(record, command, context)
 end
 
 function Social.betrayalScore(record)
+    if Social.isMinimalDummyRecord(record) then
+        return -999
+    end
     local rel = record.relationshipToPlayer
     local p = record.personality
     local score = 0
@@ -85,10 +132,16 @@ function Social.betrayalScore(record)
 end
 
 function Social.canRecruit(record)
+    if Social.isMinimalDummyRecord(record) then
+        return false
+    end
     return record.relationshipToPlayer.trust >= LWN.Config.Social.RecruitTrustFloor
 end
 
 function Social.relationshipCombatPolicy(record)
+    if Social.isMinimalDummyRecord(record) then
+        return Social.minimalDummyPolicy(record)
+    end
     local rel, drama, companion = ensureCombatPolicyTables(record)
     local trust = tonumber(rel.trust or 0) or 0
     local betrayalScore = Social.betrayalScore(record)
@@ -136,6 +189,15 @@ end
 function Social.combatPolicySummary(record, policy)
     local rel = ensureCombatPolicyTables(record)
     policy = policy or Social.relationshipCombatPolicy(record)
+    if Social.isMinimalDummyRecord(record) then
+        return string.format(
+            "%s/%s dummy=%s state=%s",
+            tostring(policy and policy.state or "unknown"),
+            tostring(policy and policy.reason or "unknown"),
+            tostring(record and record.id or nil),
+            tostring(record and record.dummy and record.dummy.state or "nil")
+        )
+    end
     return string.format(
         "%s/%s t=%.2f",
         tostring(policy and policy.state or "unknown"),
@@ -147,6 +209,9 @@ end
 function Social.forceRelationshipCombatPolicy(record, targetState, reason)
     if type(record) ~= "table" then
         return nil, "record=nil"
+    end
+    if Social.isMinimalDummyRecord(record) then
+        return Social.minimalDummyPolicy(record), nil
     end
 
     local rel, drama, companion = ensureCombatPolicyTables(record)
@@ -183,6 +248,9 @@ function Social.forceRelationshipCombatPolicy(record, targetState, reason)
 end
 
 function Social.maybeSuggest(record)
+    if Social.isMinimalDummyRecord(record) then
+        return nil
+    end
     local stats = record.stats
     if stats.hunger > 0.7 then
         return { kind = "suggest", topic = "find_food" }

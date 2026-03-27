@@ -126,6 +126,10 @@ local function harnessEnabled(record)
     return harness and harness.enabled == true or false
 end
 
+local function isMinimalDummyRecord(record)
+    return LWN.Social and LWN.Social.isMinimalDummyRecord and LWN.Social.isMinimalDummyRecord(record)
+end
+
 local function harnessQuarantine(record)
     local harness = record and record.debugHarness or nil
     return harness and harness.enabled == true and harness.quarantine == true or false
@@ -1342,8 +1346,8 @@ local function tickEmbodiedRecord(record, actor, player)
     end
     LWN.ActorSync.pullActorToRecord(record, actor)
     LWN.EmbodimentManager.registerActor(record, actor)
-    if not harnessQuarantine(record) then
-        LWN.GoalSystem.update(record, {})
+    if not harnessQuarantine(record) and LWN.GoalSystem and LWN.GoalSystem.update then
+        LWN.GoalSystem.update(record, { minimalDummy = isMinimalDummyRecord(record) == true })
     end
 
     local relationPolicy = LWN.Social and LWN.Social.relationshipCombatPolicy and LWN.Social.relationshipCombatPolicy(record) or nil
@@ -1386,7 +1390,7 @@ local function tickEmbodiedRecord(record, actor, player)
             })
         else
             stampEmbodiedDecision(record, {
-                source = "policy_suppressed_combat",
+                source = isMinimalDummyRecord(record) and "dummy_suppressed_combat" or "policy_suppressed_combat",
                 chosen = nil,
                 neutralized = true,
                 queueBefore = queueBefore and queueBefore.kind or nil,
@@ -1397,7 +1401,7 @@ local function tickEmbodiedRecord(record, actor, player)
     elseif relationPolicy and relationPolicy.shouldNeutralizeCarrier == true then
         if queueBefore then
             stampEmbodiedDecision(record, {
-                source = "non_hostile_command_queue",
+                source = isMinimalDummyRecord(record) and "dummy_command_queue" or "non_hostile_command_queue",
                 chosen = queueBefore.kind,
                 neutralized = true,
                 queueBefore = queueBefore.kind,
@@ -1421,7 +1425,7 @@ local function tickEmbodiedRecord(record, actor, player)
             end
         else
             stampEmbodiedDecision(record, {
-                source = "non_hostile_hold",
+                source = isMinimalDummyRecord(record) and "dummy_idle" or "non_hostile_hold",
                 chosen = nil,
                 neutralized = true,
                 queueBefore = nil,

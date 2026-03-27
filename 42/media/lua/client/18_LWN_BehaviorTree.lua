@@ -9,7 +9,14 @@ local function intents()
     return Intents
 end
 
+local function isMinimalDummyRecord(record)
+    return LWN.Social and LWN.Social.isMinimalDummyRecord and LWN.Social.isMinimalDummyRecord(record)
+end
+
 function BT.tick(record, actor, context, chosen)
+    if isMinimalDummyRecord(record) then
+        return intents().idleObserve(record)
+    end
     if not chosen then
         return intents().idleObserve(record)
     end
