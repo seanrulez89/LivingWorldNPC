@@ -85,7 +85,7 @@ local function movementSummaryLine(record, actor)
     local command = record and record.companion and record.companion.command or {}
     local telemetry = command and command.movementTelemetry or {}
     return string.format(
-        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s moving=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s",
+        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s moving=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s",
         tostring(record and record.id or "nil"),
         tostring(modData and modData.LWN_ShellLaneContract or modData and modData.LWN_ShellMode or "none"),
         tostring(command.kind or "none"),
@@ -96,9 +96,16 @@ local function movementSummaryLine(record, actor)
         numberText(modData and modData.LWN_MoveTelemetryDeltaX, 2),
         numberText(modData and modData.LWN_MoveTelemetryDeltaY, 2),
         boolText((modData and modData.LWN_MoveTelemetrySquareChangedAt) ~= nil),
-        boolText(command.lastReason == "watchdog:no_displacement_3s" or telemetry.lastReason == "watchdog:no_displacement_3s"),
+        boolText(
+            command.lastReason == "watchdog:no_displacement_3s"
+                or telemetry.lastReason == "watchdog:no_displacement_3s"
+                or command.lastReason == "watchdog:path_only_statue"
+                or telemetry.lastReason == "watchdog:path_only_statue"
+        ),
         boolText(modData and modData.LWN_MoveTelemetryCanWalk),
-        boolText(modData and modData.LWN_MoveTelemetryUseless)
+        boolText(modData and modData.LWN_MoveTelemetryUseless),
+        boolText(modData and (modData.LWN_HumanizationInitialApplied or modData.LWN_InitialHumanizationApplied)),
+        boolText(modData and modData.LWN_HumanizationProbeOk)
     )
 end
 
@@ -223,12 +230,15 @@ local function clearNearbyWorldNoise(player, radius, protectedNpcId)
         seen[obj] = true
         local npcId = getNpcId(obj)
         if npcId and npcId == protectedNpcId then
+            print(string.format("[LWN][Debug] debug_cleanup.protected_managed_shell :: reason=protectedNpcId npcId=%s actorRef=%s", tostring(npcId), tostring(obj)))
             return
         end
-        if hasAnyLwnMarker(obj)
+        if npcId ~= nil
+            or hasAnyLwnMarker(obj)
             or isBoundToAnyLiveRecord(obj)
             or (LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.isKnownManagedShell and LWN.Carriers.isozombie.isKnownManagedShell(obj))
         then
+            print(string.format("[LWN][Debug] debug_cleanup.protected_managed_shell :: reason=marker_or_cache npcId=%s actorRef=%s", tostring(npcId), tostring(obj)))
             return
         end
         local objectName = tostring(protectedCall(obj, "getObjectName") or "")
@@ -236,6 +246,7 @@ local function clearNearbyWorldNoise(player, radius, protectedNpcId)
         local isZombie = protectedCall(obj, "isZombie") == true
         local isDeadBody = string.find(objectName, "DeadBody", 1, true) ~= nil
         if (isZombie and not managed) or isDeadBody then
+            print(string.format("[LWN][Debug] debug_cleanup.removed_ordinary_zombie :: object=%s npcId=%s actorRef=%s", tostring(objectName), tostring(npcId), tostring(obj)))
             protectedCall(obj, "removeFromWorld")
             protectedCall(obj, "removeFromSquare")
             removed = removed + 1
@@ -1178,6 +1189,19 @@ local function issueDesignatedMoveCommand(record, player, options)
     if record.debugHarness then
         record.debugHarness.allowCommandMovement = true
         record.debugHarness.quarantine = false
+        record.debugHarness.holdPosition = false
+        record.embodiment = record.embodiment or {}
+        record.embodiment.debug = record.embodiment.debug or {}
+        record.embodiment.debug.commandHoldReleasedAt = worldAgeHours()
+        record.embodiment.debug.commandHoldReleaseSource = options and options.commandSource or "DebugTools.issueDesignatedMoveCommand"
+        local modData = actor and actor.getModData and actor:getModData() or nil
+        if modData then
+            modData.LWN_TestHarnessHoldPosition = false
+            modData.LWN_TestHarnessQuarantine = false
+            modData.LWN_TestHarnessAllowCommandMovement = true
+            modData.LWN_CommandHoldReleasedAt = worldAgeHours()
+            modData.LWN_CommandHoldReleaseSource = options and options.commandSource or "DebugTools.issueDesignatedMoveCommand"
+        end
         actor = findActorForRecord(record) or actor
     end
 
@@ -1245,6 +1269,7 @@ local function runMovementAutomationTest01(player)
         "Look: only ONE test NPC should exist.",
         "Check: shell lane should read non_hostile_commandable.",
         "Check: canWalk=yes and useless=no in the summary.",
+        "Check: actor dump should show humanInit=true; if false, spawn humanization already failed.",
         "Look: same face, hair, and clothes stay stable.",
         "Look: idle posture reads human, not feral zombie.",
         "Listen: zombie audio should stay quiet.",

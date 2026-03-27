@@ -1062,6 +1062,54 @@ local function missingActorThreshold(record)
     return 10
 end
 
+local function tryReclaimHandleActor(record, actor, source)
+    if not (record and actor) then return false end
+    local knownNpcId = getKnownNpcId(actor)
+    local modData = protectedCall(actor, "getModData")
+    local shellMarker = modData and modData.LWN_ShellMarker or nil
+    local reclaimable = knownNpcId == record.id
+        or shellMarker == string.format("isozombie:%s", tostring(record.id))
+        or (modData and modData.LWN_ManagedShellContract == true)
+    if reclaimable ~= true then
+        return false
+    end
+
+    traceStage("resolveEmbodiedActor.handle_reclaim_attempt", record, actor, {
+        source = source or "tryReclaimHandleActor",
+        square = getAnchorSquare(record),
+        detail = string.format("knownNpcId=%s shellMarker=%s world=%s sceneCulled=%s alpha=%s", tostring(knownNpcId), tostring(shellMarker), tostring(protectedCall(actor, "isExistInTheWorld")), tostring(protectedCall(actor, "isSceneCulled")), tostring(protectedCall(actor, "getAlpha", 0))),
+    })
+
+    restampManagedActor(record, actor, source or "tryReclaimHandleActor")
+    if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
+        LWN.ActorFactory.ensureActorInWorld(actor, getAnchorSquare(record))
+    end
+    protectedCall(actor, "setInvisible", false)
+    protectedCall(actor, "setTarget", nil)
+    protectedCall(actor, "setLastTargettedBy", nil)
+    protectedCall(actor, "setAttackedBy", nil)
+    protectedCall(actor, "setMoving", false)
+    protectedCall(actor, "setPath2", nil)
+    if LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.reassertManagedShellContract then
+        LWN.Carriers.isozombie.reassertManagedShellContract(record, actor, {
+            source = source or "tryReclaimHandleActor",
+            allowMovement = true,
+            neutralized = false,
+            clearCombat = true,
+            stopAudio = true,
+            forceLane = "recovery_non_hostile_mobile",
+        })
+    end
+
+    local ok = isCarrierActorUsable(record, actor)
+    traceStage(ok and "resolveEmbodiedActor.handle_reclaim_success" or "resolveEmbodiedActor.handle_reclaim_failed", record, actor, {
+        source = source or "tryReclaimHandleActor",
+        square = getAnchorSquare(record),
+        detail = string.format("knownNpcId=%s shellMarker=%s world=%s squarePresent=%s", tostring(knownNpcId), tostring(shellMarker), tostring(protectedCall(actor, "isExistInTheWorld")), tostring((protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")) ~= nil)),
+    })
+    return ok == true
+end
+
 local function resolveEmbodiedActor(record)
     if not record then
         traceStage("resolveEmbodiedActor.lifecycle_blocked", record, nil, {
@@ -1142,6 +1190,8 @@ local function resolveEmbodiedActor(record)
             source = "resolveEmbodiedActor",
             detail = "using carrier handle actor before nearby scan",
         })
+        return handleActor
+    elseif handleActor and tryReclaimHandleActor(record, handleActor, "resolveEmbodiedActor.handle") then
         return handleActor
     elseif handleActor then
         traceStage("resolveEmbodiedActor.handle_rejected", record, handleActor, {

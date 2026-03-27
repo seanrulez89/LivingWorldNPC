@@ -636,9 +636,15 @@ end
 stopZombieCodedAudio = function(actor)
     local emitter = protectedCall(actor, "getEmitter")
     if emitter then
-        protectedCall(emitter, "stopAll")
         protectedCall(emitter, "stopSoundByName", "MaleZombieCombined")
         protectedCall(emitter, "stopSoundByName", "FemaleZombieCombined")
+        protectedCall(emitter, "stopSoundByName", "ZombieIdle")
+        protectedCall(emitter, "stopSoundByName", "ZombieAttack")
+    end
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_AudioHumanization = "descriptor_voiceprefix+targeted_zombie_mute"
+        modData.LWN_AudioStopAllDisabled = true
     end
 end
 
@@ -758,9 +764,9 @@ local function applyPersistentIllusionPackage(record, actor, descriptor, policy)
     local modData = protectedCall(actor, "getModData")
     if modData then
         modData.LWN_PersistentIllusionPackage = policy.shouldNeutralizeCarrier == true
-            and "walk_human+no_lunge+voice_notazombie+audio_stopall+hitreaction_guard+posture_idle_reset"
-            or "walk_human+no_lunge+voice_notazombie+audio_stopall+hitreaction_guard+posture_idle_reset"
-        modData.LWN_AudioHumanization = "descriptor_voiceprefix+emitter_stopall"
+            and "walk_human+no_lunge+voice_notazombie+targeted_audio_mute+hitreaction_guard+posture_idle_reset"
+            or "walk_human+no_lunge+voice_notazombie+targeted_audio_mute+hitreaction_guard+posture_idle_reset"
+        modData.LWN_AudioHumanization = "descriptor_voiceprefix+targeted_zombie_mute"
         modData.LWN_AnimationHumanization = "walktype=Walk+idle_anim_reset+clear_attack_vars"
     end
 end
@@ -974,6 +980,48 @@ local function runHumanizationPass(record, actor, options, actionName, runtimeOk
     return descriptor, appearanceDetail, true, appearanceGateDetail
 end
 
+local function probeHumanizationState(record, actor, appearanceDetail, source)
+    if not actor then
+        return false, "actor=nil"
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    local humanInit = modData and modData.LWN_HumanizationInitialApplied == true or false
+    local skin = modData and modData.LWN_HybridCurrentSkin or nil
+    local profile = modData and modData.LWN_HumanizationProfile or humanizationProfile(record)
+    local itemVisuals = protectedCall(actor, "getItemVisuals")
+    local itemVisualCount = itemVisuals and itemVisuals.size and itemVisuals:size() or 0
+    local role = protectedCall(actor, "isZombie") == true and "reanimated_zombie" or "alive_npc"
+    local descriptor = protectedCall(actor, "getDescriptor")
+    local humanVisual = protectedCall(actor, "getHumanVisual")
+
+    local ok = humanInit == true
+        or (appearanceDetail and appearanceDetail.applied == true)
+        or (descriptor ~= nil and humanVisual ~= nil and itemVisualCount > 0 and skin ~= nil)
+
+    if modData then
+        modData.LWN_HumanizationProbeOk = ok == true
+        modData.LWN_HumanizationProbeSource = source or "CarrierIsoZombie.probeHumanizationState"
+        modData.LWN_HumanizationProbeRole = role
+        modData.LWN_HumanizationProbeSkin = skin
+        modData.LWN_HumanizationProbeItemVisuals = itemVisualCount
+    end
+
+    local detail = string.format(
+        "role=%s humanInit=%s skin=%s itemVisuals=%s descriptor=%s humanVisual=%s profile=%s",
+        tostring(role),
+        tostring(humanInit),
+        tostring(skin),
+        tostring(itemVisualCount),
+        tostring(descriptor ~= nil),
+        tostring(humanVisual ~= nil),
+        tostring(profile)
+    )
+
+    trace(ok and "spawn.humanization_probe" or "spawn.humanization_failed", record, detail)
+    return ok, detail
+end
+
 local function markNoAutoRearm(record)
     if record and record.embodiment then
         record.embodiment.noAutoRearm = true
@@ -1079,12 +1127,25 @@ function Carrier.spawn(record, options)
         "spawn",
         runtimeOk
     )
+    local humanizationOk, humanizationDetail = probeHumanizationState(record, actor, appearanceDetail, "CarrierIsoZombie.spawn")
+    if humanizationOk ~= true then
+        trace("spawn.humanization_retry", record, humanizationDetail)
+        _, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
+            record,
+            actor,
+            options,
+            "spawn_retry",
+            runtimeOk
+        )
+        humanizationOk, humanizationDetail = probeHumanizationState(record, actor, appearanceDetail, "CarrierIsoZombie.spawn.retry")
+    end
     local spawnedAt = worldAgeHours()
     trace(runtimeOk and "spawn.runtime_ready" or "spawn.pending_settle", record, string.format(
-        "spawn=%s | humanization=%s mode=%s | %s",
+        "spawn=%s | humanization=%s mode=%s probe=%s | %s",
         tostring(spawnDetail),
         appearanceEligible == true and tostring(appearanceDetail and appearanceDetail.stage or "eligible") or tostring(appearanceGateDetail),
         tostring(appearanceDetail and appearanceDetail.mode or "nil"),
+        tostring(humanizationDetail),
         tostring(runtimeDetail)
     ))
 
@@ -1114,6 +1175,8 @@ function Carrier.spawn(record, options)
                 humanizationMode = appearanceDetail and appearanceDetail.mode or nil,
                 humanizationProfile = appearanceDetail and appearanceDetail.profile or humanizationProfile(record),
                 initialHumanizationApplied = record.embodiment and record.embodiment.illusion and record.embodiment.illusion.initialApplied == true or false,
+                humanizationProbeOk = humanizationOk == true,
+                humanizationProbeDetail = humanizationDetail,
                 neutralized = true,
                 settlePending = runtimeOk ~= true,
                 settleAttempts = 0,
@@ -1144,6 +1207,7 @@ function Carrier.sync(record, handle, options)
         "sync",
         runtimeOk
     )
+    local humanizationOk, humanizationDetail = probeHumanizationState(record, actor, appearanceDetail, "CarrierIsoZombie.sync")
     handle.runtime.appearanceEligible = appearanceEligible == true
     handle.runtime.appearanceEligibilityDetail = appearanceGateDetail
     handle.runtime.appearanceExperiment = appearanceDetail and appearanceDetail.experiment or nil
@@ -1153,6 +1217,8 @@ function Carrier.sync(record, handle, options)
     handle.runtime.humanizationMode = appearanceDetail and appearanceDetail.mode or nil
     handle.runtime.humanizationProfile = appearanceDetail and appearanceDetail.profile or humanizationProfile(record)
     handle.runtime.initialHumanizationApplied = record.embodiment and record.embodiment.illusion and record.embodiment.illusion.initialApplied == true or false
+    handle.runtime.humanizationProbeOk = humanizationOk == true
+    handle.runtime.humanizationProbeDetail = humanizationDetail
     handle.runtime.runtimeDetail = runtimeDetail
     if runtimeOk ~= true then
         local settleAttempts = (tonumber(handle.runtime.settleAttempts) or 0) + 1

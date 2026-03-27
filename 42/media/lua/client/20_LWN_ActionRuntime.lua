@@ -68,6 +68,42 @@ local function squareKey(square)
     return string.format("%d,%d,%d", x, y, z)
 end
 
+local function releaseCommandMovementHold(record, actor, source)
+    if not record then return false end
+    record.debugHarness = record.debugHarness or {}
+    local harness = record.debugHarness
+    local changed = false
+
+    if harness.holdPosition == true then
+        harness.holdPosition = false
+        changed = true
+    end
+    if harness.quarantine == true then
+        harness.quarantine = false
+        changed = true
+    end
+    if harness.allowCommandMovement ~= true then
+        harness.allowCommandMovement = true
+        changed = true
+    end
+
+    record.embodiment = record.embodiment or {}
+    record.embodiment.debug = record.embodiment.debug or {}
+    record.embodiment.debug.commandHoldReleasedAt = worldAgeHours()
+    record.embodiment.debug.commandHoldReleaseSource = source or "ActionRuntime.releaseCommandMovementHold"
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_TestHarnessHoldPosition = false
+        modData.LWN_TestHarnessQuarantine = false
+        modData.LWN_TestHarnessAllowCommandMovement = true
+        modData.LWN_CommandHoldReleasedAt = worldAgeHours()
+        modData.LWN_CommandHoldReleaseSource = source or "ActionRuntime.releaseCommandMovementHold"
+    end
+
+    return changed
+end
+
 local function updateMovementTelemetry(record, intent, command, actor, status, reason)
     if not (record and intent and command and actor) then
         return
@@ -137,6 +173,7 @@ local function updateMovementTelemetry(record, intent, command, actor, status, r
         modData.LWN_MoveTelemetryCanWalk = telemetry.canWalk
         modData.LWN_MoveTelemetryUseless = telemetry.useless
         modData.LWN_MoveTelemetryNoDisplacementSince = telemetry.noDisplacementSince
+        modData.LWN_MoveTelemetryPathOnlyStatueSince = telemetry.pathOnlyStatueSince
         modData.LWN_MoveTelemetryLastMovedAt = telemetry.lastMovedAt
         modData.LWN_MoveTelemetrySquareChangedAt = telemetry.squareChangedAt
     end
@@ -454,6 +491,7 @@ function Runtime._startMovement(record, actor, intent)
     local started = false
     local pathMethod = nil
 
+    releaseCommandMovementHold(record, actor, "ActionRuntime._startMovement")
     protectedCall(actor, "setUseless", false)
     protectedCall(actor, "setCanWalk", true)
     protectedCall(actor, "setNoTeeth", true)
@@ -540,6 +578,7 @@ function Runtime._startMovement(record, actor, intent)
 end
 
 function Runtime._tickMovementIntent(record, actor, intent)
+    releaseCommandMovementHold(record, actor, "ActionRuntime._tickMovementIntent")
     if LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.reassertManagedShellContract then
         LWN.Carriers.isozombie.reassertManagedShellContract(record, actor, {
             source = "ActionRuntime._tickMovementIntent",
@@ -569,14 +608,22 @@ function Runtime._tickMovementIntent(record, actor, intent)
 
     local command = ensureCommandState(record)
     local telemetry = command and command.movementTelemetry or nil
-    local noDisplacementSince = telemetry and tonumber(telemetry.noDisplacementSince) or nil
     local moving = telemetry and telemetry.isMoving == true or false
     local hasPath = telemetry and telemetry.path2 == true or false
-    if moving and hasPath and noDisplacementSince and (worldAgeHours() - noDisplacementSince) >= (3 / 3600) then
+    local totalDelta = telemetry and tonumber(telemetry.totalDelta) or nil
+    local squareChanged = telemetry and telemetry.squareChangedAt ~= nil or false
+    local statueSince = telemetry and tonumber(telemetry.pathOnlyStatueSince) or nil
+    if moving and hasPath and (totalDelta == nil or totalDelta <= 0.05) and squareChanged ~= true then
+        telemetry.pathOnlyStatueSince = statueSince or worldAgeHours()
+    else
+        telemetry.pathOnlyStatueSince = nil
+    end
+    statueSince = telemetry and tonumber(telemetry.pathOnlyStatueSince) or nil
+    if moving and hasPath and statueSince and (worldAgeHours() - statueSince) >= (2.5 / 3600) then
         if telemetry.lastNoDisplacementWarnAt == nil or (worldAgeHours() - telemetry.lastNoDisplacementWarnAt) >= (2 / 3600) then
             telemetry.lastNoDisplacementWarnAt = worldAgeHours()
             intent.watchdogTriggered = true
-            updateMoveCommand(record, intent, "pathing", "watchdog:no_displacement_3s", actor)
+            updateMoveCommand(record, intent, "pathing", "watchdog:path_only_statue", actor)
         end
     end
 
