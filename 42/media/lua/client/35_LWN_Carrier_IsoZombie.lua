@@ -581,11 +581,11 @@ local function applyShellLaneContract(record, actor, policy, options)
         laneOptions.allowMovement = false
         laneOptions.neutralized = true
         laneOptions.clearCombat = true
-    elseif lane == "non_hostile_hold" then
+    elseif lane == "non_hostile_hold" or lane == "dummy_idle" then
         laneOptions.allowMovement = false
         laneOptions.neutralized = true
         laneOptions.clearCombat = true
-    elseif lane == "non_hostile_commandable" or lane == "non_hostile_mobile" or lane == "recovery_non_hostile_mobile" then
+    elseif lane == "non_hostile_commandable" or lane == "non_hostile_mobile" or lane == "recovery_non_hostile_mobile" or lane == "dummy_move" then
         laneOptions.allowMovement = true
         laneOptions.neutralized = false
         laneOptions.clearCombat = true
@@ -650,11 +650,49 @@ stopZombieCodedAudio = function(actor)
         protectedCall(emitter, "stopSoundByName", "FemaleZombieCombined")
         protectedCall(emitter, "stopSoundByName", "ZombieIdle")
         protectedCall(emitter, "stopSoundByName", "ZombieAttack")
+        protectedCall(emitter, "stopSoundByName", "MaleZombieAttack")
+        protectedCall(emitter, "stopSoundByName", "FemaleZombieAttack")
+        protectedCall(emitter, "stopSoundByName", "MaleZombieIdle")
+        protectedCall(emitter, "stopSoundByName", "FemaleZombieIdle")
     end
     local modData = protectedCall(actor, "getModData")
     if modData then
         modData.LWN_AudioHumanization = "descriptor_voiceprefix+targeted_zombie_mute"
         modData.LWN_AudioStopAllDisabled = true
+    end
+end
+
+local function applyDummyVoicePrefix(actor)
+    local descriptor = protectedCall(actor, "getDescriptor")
+    if descriptor then
+        protectedCall(descriptor, "setVoicePrefix", "NotAZombie")
+    end
+end
+
+local function clearAllZombieAggro(actor, options)
+    options = options or {}
+    clearCombatIntent(actor, {
+        stopActions = options.stopActions,
+        clearPath = options.clearPath,
+    })
+    protectedCall(actor, "clearVariable", "AttackAnim")
+    protectedCall(actor, "clearVariable", "isattacking")
+    protectedCall(actor, "clearVariable", "bdoshove")
+    protectedCall(actor, "clearVariable", "bDoShove")
+    protectedCall(actor, "clearVariable", "bShoveAiming")
+    protectedCall(actor, "clearVariable", "ZombieTurnAlerted")
+    protectedCall(actor, "clearVariable", "ZombieTurnRight")
+    protectedCall(actor, "clearVariable", "ZombieTurnLeft")
+end
+
+local function applyDummyAudioMute(actor, source)
+    applyDummyVoicePrefix(actor)
+    stopZombieCodedAudio(actor)
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_DummyAudioMuteAppliedAt = worldAgeHours()
+        modData.LWN_DummyAudioMuteSource = source or "CarrierIsoZombie.applyDummyAudioMute"
+        modData.LWN_AudioLeakHint = "dummy_targeted_zombie_mute"
     end
 end
 
@@ -712,6 +750,63 @@ local function applyPostureHumanization(record, actor, source, options)
             or "idle_anim_reset+walktype=Walk+anti_hunch_active"
         modData.LWN_PostureHumanizationSource = source or "CarrierIsoZombie.applyPostureHumanization"
     end
+end
+
+local function applyHardDummyShellContract(record, actor, mode, source)
+    if not (actor and isMinimalDummyRecord(record)) then return nil end
+    mode = mode == "move" and "move" or "idle"
+    local lane = mode == "move" and "dummy_move" or "dummy_idle"
+    local applied = applyShellLaneContract(record, actor, relationshipCombatPolicy(record), {
+        source = source or "CarrierIsoZombie.applyHardDummyShellContract",
+        allowMovement = mode == "move",
+        neutralized = mode ~= "move",
+        clearCombat = true,
+        stopAudio = true,
+        forceLane = lane,
+    })
+
+    clearAllZombieAggro(actor, {
+        stopActions = mode ~= "move",
+        clearPath = mode ~= "move",
+    })
+    applyDummyVoicePrefix(actor)
+    applyDummyAudioMute(actor, source or "CarrierIsoZombie.applyHardDummyShellContract")
+    applyPostureHumanization(record, actor, (source or "CarrierIsoZombie.applyHardDummyShellContract") .. ".posture", {
+        neutralized = mode ~= "move",
+    })
+
+    if mode ~= "move" then
+        protectedCall(actor, "setMoving", false)
+        protectedCall(actor, "setPath2", nil)
+        protectedCall(actor, "setUseless", true)
+        protectedCall(actor, "setCanWalk", false)
+    else
+        protectedCall(actor, "setUseless", false)
+        protectedCall(actor, "setCanWalk", true)
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_DummyHardShellMode = mode
+        modData.LWN_DummyHardShellSource = source or "CarrierIsoZombie.applyHardDummyShellContract"
+        modData.LWN_DummyAggroClearedAt = worldAgeHours()
+        modData.LWN_DummyAggroClearPath = mode ~= "move"
+        modData.LWN_DummyAggroTarget = protectedCall(actor, "getTarget") ~= nil
+    end
+
+    trace(mode == "move" and "dummy_contract_move_applied" or "dummy_contract_idle_applied", record, string.format(
+        "lane=%s target=%s moving=%s path2=%s",
+        tostring(lane),
+        tostring(protectedCall(actor, "getTarget") ~= nil),
+        tostring(protectedCall(actor, "isMoving") == true),
+        tostring(protectedCall(actor, "getPath2") ~= nil)
+    ))
+
+    return applied
+end
+
+function Carrier.enforceHardDummyShell(record, actor, mode, source)
+    return applyHardDummyShellContract(record, actor, mode, source or "CarrierIsoZombie.enforceHardDummyShell")
 end
 
 local function applyEmergencyQuarantine(record, actor, source)
@@ -884,6 +979,10 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_AttackQuarantineReason = record.embodiment and record.embodiment.lastAttackQuarantineReason or nil
         modData.LWN_TestHarnessIdentityLock = harness and harness.identityLock == true or false
         modData.LWN_TestHarnessSterileRadius = harness and harness.sterileRadius or nil
+        modData.LWN_DummyEnabled = isMinimalDummyRecord(record)
+        modData.LWN_DummyState = record and record.dummy and record.dummy.state or nil
+        modData.LWN_DummyAppearanceLocked = record and record.dummy and record.dummy.appearanceLocked == true or false
+        modData.LWN_DummyInitialAppearanceOk = record and record.dummy and record.dummy.initialAppearanceOk == true or false
     end
 
     registerManagedShell(record, actor, "CarrierIsoZombie.applyBasicZombieCarrierFlags")
@@ -891,6 +990,9 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
     stampHybridSummary(record, actor, summary, descriptor, appearanceDetail)
     applyPersistentIllusionPackage(record, actor, descriptor, policy)
     applyRelationshipCombatState(record, actor, options, policy)
+    if isMinimalDummyRecord(record) then
+        applyHardDummyShellContract(record, actor, record and record.dummy and record.dummy.state == "move_to" and "move" or "idle", "CarrierIsoZombie.applyBasicZombieCarrierFlags")
+    end
 
     protectedCall(actor, "setFakeDead", false)
     protectedCall(actor, "setCrawler", false)
@@ -990,6 +1092,25 @@ local function runHumanizationPass(record, actor, options, actionName, runtimeOk
     return descriptor, appearanceDetail, true, appearanceGateDetail
 end
 
+local function noteDummyAppearanceState(record, actor, ok, source, detail)
+    if not isMinimalDummyRecord(record) then return end
+    record.dummy = record.dummy or {}
+    record.dummy.initialAppearanceOk = ok == true
+    if ok == true then
+        record.dummy.appearanceLocked = true
+    end
+    record.dummy.lastAppearanceProbeSource = source or "CarrierIsoZombie.noteDummyAppearanceState"
+    record.dummy.lastAppearanceProbeDetail = detail
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_DummyAppearanceLocked = record.dummy.appearanceLocked == true
+        modData.LWN_DummyInitialAppearanceOk = record.dummy.initialAppearanceOk == true
+        modData.LWN_DummyAppearanceProbeSource = source or "CarrierIsoZombie.noteDummyAppearanceState"
+        modData.LWN_DummyAppearanceProbeDetail = detail
+    end
+end
+
 local function probeHumanizationState(record, actor, appearanceDetail, source)
     if not actor then
         return false, "actor=nil"
@@ -1028,8 +1149,44 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
         tostring(profile)
     )
 
+    noteDummyAppearanceState(record, actor, ok, source, detail)
     trace(ok and "spawn.humanization_probe" or "spawn.humanization_failed", record, detail)
     return ok, detail
+end
+
+local function rebuildDummyAppearance(record, actor, source)
+    if not (actor and isMinimalDummyRecord(record)) then
+        return nil, nil, false, "not_minimal_dummy"
+    end
+
+    local profile = humanizationProfile(record)
+    local descriptor = nil
+    local appearanceDetail = nil
+    if LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
+        descriptor, appearanceDetail = LWN.ShellHumanizer.maintain(record, actor, {
+            source = source or "CarrierIsoZombie.rebuildDummyAppearance",
+            profile = profile,
+            forceFull = true,
+            forceInitial = true,
+        })
+    else
+        descriptor, appearanceDetail = applyAppearanceExperiment(record, actor, "dummy_rebuild")
+        appearanceDetail = normalizeAppearanceDetail(appearanceDetail, {
+            stage = "dummy_rebuild",
+            status = appearanceDetail and appearanceDetail.applied == true and "applied" or "skipped",
+            profile = profile,
+            mode = "maintenance_full_reapply",
+        })
+    end
+
+    applyBasicZombieCarrierFlags(record, actor, nil, descriptor, appearanceDetail)
+    local ok, detail = probeHumanizationState(record, actor, appearanceDetail, (source or "CarrierIsoZombie.rebuildDummyAppearance") .. ".probe")
+    trace(ok and "dummy_appearance_locked" or "dummy_appearance_failed", record, string.format(
+        "source=%s detail=%s",
+        tostring(source or "CarrierIsoZombie.rebuildDummyAppearance"),
+        tostring(detail)
+    ))
+    return descriptor, appearanceDetail, ok, detail
 end
 
 local function markNoAutoRearm(record)
@@ -1140,14 +1297,18 @@ function Carrier.spawn(record, options)
     local humanizationOk, humanizationDetail = probeHumanizationState(record, actor, appearanceDetail, "CarrierIsoZombie.spawn")
     if humanizationOk ~= true then
         trace("spawn.humanization_retry", record, humanizationDetail)
-        _, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
-            record,
-            actor,
-            options,
-            "spawn_retry",
-            runtimeOk
-        )
-        humanizationOk, humanizationDetail = probeHumanizationState(record, actor, appearanceDetail, "CarrierIsoZombie.spawn.retry")
+        if isMinimalDummyRecord(record) then
+            _, appearanceDetail, humanizationOk, humanizationDetail = rebuildDummyAppearance(record, actor, "CarrierIsoZombie.spawn.rebuild")
+        else
+            _, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
+                record,
+                actor,
+                options,
+                "spawn_retry",
+                runtimeOk
+            )
+            humanizationOk, humanizationDetail = probeHumanizationState(record, actor, appearanceDetail, "CarrierIsoZombie.spawn.retry")
+        end
     end
     local spawnedAt = worldAgeHours()
     trace(runtimeOk and "spawn.runtime_ready" or "spawn.pending_settle", record, string.format(
@@ -1277,6 +1438,9 @@ function Carrier.sync(record, handle, options)
     end
     if record and record.stats and record.stats.health then
         protectedCall(actor, "setHealth", tonumber(record.stats.health) or 1)
+    end
+    if isMinimalDummyRecord(record) then
+        applyHardDummyShellContract(record, actor, record and record.dummy and record.dummy.state == "move_to" and "move" or "idle", "CarrierIsoZombie.sync")
     end
 
     return {

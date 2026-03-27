@@ -50,15 +50,16 @@ function Social.minimalDummyPolicy(record)
             reason = "minimal_dummy_quarantine",
         }
     end
+    local moving = dummy and dummy.state == "move_to"
     return {
         state = "neutral",
         allowPlayerAttack = true,
         allowCarrierAttackPlayer = false,
         shouldNeutralizeCarrier = true,
-        allowMovement = true,
+        allowMovement = moving == true,
         allowAutonomousMovement = false,
-        shellMode = dummy and dummy.state == "move_to" and "dummy_move" or "dummy_idle",
-        reason = "minimal_dummy_lock",
+        shellMode = moving and "dummy_move" or "dummy_idle",
+        reason = moving and "minimal_dummy_move_lock" or "minimal_dummy_idle_lock",
     }
 end
 

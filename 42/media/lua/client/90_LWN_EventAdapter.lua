@@ -1365,6 +1365,15 @@ local function tickEmbodiedRecord(record, actor, player)
                 or "event_adapter_test_quarantine",
         }
     end
+    local dummyMode = isMinimalDummyRecord(record)
+    if dummyMode and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
+        LWN.Carriers.isozombie.enforceHardDummyShell(
+            record,
+            actor,
+            record and record.dummy and record.dummy.state == "move_to" and "move" or "idle",
+            "EventAdapter.tickEmbodiedRecord.pre_decision"
+        )
+    end
     local queueBefore = LWN.ActionRuntime.peek(record)
     if relationPolicy and relationPolicy.shouldNeutralizeCarrier == true and queueBefore and queueBefore.kind == "attack_melee" then
         LWN.ActionRuntime.clear(record, actor)
@@ -1373,7 +1382,6 @@ local function tickEmbodiedRecord(record, actor, player)
     local allowMovement = relationPolicy and relationPolicy.allowMovement == true
     local allowAutonomousMovement = relationPolicy and relationPolicy.allowAutonomousMovement == true
     local suppressForNeutralized = relationPolicy and relationPolicy.shouldNeutralizeCarrier == true and allowMovement ~= true
-    local dummyMode = isMinimalDummyRecord(record)
 
     if dummyMode and queueBefore and queueBefore.kind ~= "move_to" then
         LWN.ActionRuntime.clear(record, actor)
@@ -1491,6 +1499,14 @@ local function tickEmbodiedRecord(record, actor, player)
         LWN.ActionRuntime.tick(record, actor)
     else
         hardReNeutralize(record, actor, "tickEmbodiedRecord.post_quarantine")
+    end
+    if dummyMode and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
+        LWN.Carriers.isozombie.enforceHardDummyShell(
+            record,
+            actor,
+            record and record.dummy and record.dummy.state == "move_to" and "move" or "idle",
+            "EventAdapter.tickEmbodiedRecord.post_runtime"
+        )
     end
     traceDeathState(record, actor, "tickEmbodiedRecord.pre_despawn")
     traceStage("tickEmbodiedRecord.pre_despawn", record, actor, {

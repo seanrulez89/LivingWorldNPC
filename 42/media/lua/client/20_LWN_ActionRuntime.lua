@@ -410,6 +410,9 @@ function Runtime.clear(record, actor)
     if actor and actor.StopAllActionQueue then
         actor:StopAllActionQueue()
     end
+    if actor and isMinimalDummyRecord(record) and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
+        LWN.Carriers.isozombie.enforceHardDummyShell(record, actor, "idle", "ActionRuntime.clear")
+    end
 end
 
 local function intentsEquivalent(a, b)
@@ -558,6 +561,9 @@ function Runtime._startMovement(record, actor, intent)
             forceLane = isMinimalDummyRecord(record) and "dummy_move" or nil,
         })
     end
+    if isMinimalDummyRecord(record) and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
+        LWN.Carriers.isozombie.enforceHardDummyShell(record, actor, "move", "ActionRuntime._startMovement")
+    end
 
     if intent.kind == "move_to" then
         started = invokeActorPath(actor, "pathToLocation", intent.data.x, intent.data.y, intent.data.z)
@@ -638,6 +644,9 @@ function Runtime._tickMovementIntent(record, actor, intent)
             stopAudio = false,
             forceLane = isMinimalDummyRecord(record) and "dummy_move" or "non_hostile_commandable",
         })
+    end
+    if isMinimalDummyRecord(record) and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
+        LWN.Carriers.isozombie.enforceHardDummyShell(record, actor, "move", "ActionRuntime._tickMovementIntent")
     end
 
     if intent.kind == "move_to" then
