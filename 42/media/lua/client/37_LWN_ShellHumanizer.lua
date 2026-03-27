@@ -308,13 +308,17 @@ function Humanizer.maintain(record, actor, options)
         return descriptor, detail
     end
 
+    local bootstrappedDetail = nil
     if Humanizer.hasInitialApplied(record, actor) ~= true then
-        return Humanizer.applyInitial(record, actor, {
+        descriptor, bootstrappedDetail = Humanizer.applyInitial(record, actor, {
             source = source .. ".bootstrap",
             profile = profile,
             experimentName = options and options.experimentName or DEFAULT_EXPERIMENT,
             force = options and options.forceInitial == true,
         })
+        if not (options and options.forceFull == true) then
+            return descriptor, bootstrappedDetail
+        end
     end
 
     local modData = protectedCall(actor, "getModData")

@@ -85,7 +85,7 @@ local function movementSummaryLine(record, actor)
     local command = record and record.companion and record.companion.command or {}
     local telemetry = command and command.movementTelemetry or {}
     return string.format(
-        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s motor=%s moving=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s",
+        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s motor=%s moving=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s appLock=%s appFail=%s",
         tostring(record and record.id or "nil"),
         tostring(modData and modData.LWN_ShellLaneContract or modData and modData.LWN_ShellMode or "none"),
         tostring(command.kind or "none"),
@@ -106,7 +106,9 @@ local function movementSummaryLine(record, actor)
         boolText(modData and modData.LWN_MoveTelemetryCanWalk),
         boolText(modData and modData.LWN_MoveTelemetryUseless),
         boolText(modData and (modData.LWN_HumanizationInitialApplied or modData.LWN_InitialHumanizationApplied)),
-        boolText(modData and modData.LWN_HumanizationProbeOk)
+        boolText(modData and modData.LWN_HumanizationProbeOk),
+        boolText(modData and modData.LWN_DummyAppearanceLocked),
+        boolText(modData and modData.LWN_DummyAppearanceFailed)
     )
 end
 
@@ -1311,9 +1313,9 @@ local function runMovementAutomationTest01(player)
 
     sayChecklist(player, "TEST 01 CHECK", {
         "Look: only ONE test NPC should exist.",
-        "Check: shell lane should read non_hostile_commandable.",
+        "Check: shell lane should read dummy_idle.",
         "Check: canWalk=yes and useless=no in the summary.",
-        "Check: actor dump should show humanInit=true; if false, spawn humanization already failed.",
+        "Check: probeOk=yes and appLock=yes; appFail=yes means visual rebuild still failed.",
         "Look: same face, hair, and clothes stay stable.",
         "Look: idle posture reads human, not feral zombie.",
         "Listen: zombie audio should stay quiet.",
@@ -1354,7 +1356,7 @@ local function runMovementAutomationTest02(player)
     state.step = 2
     sayChecklist(player, "TEST 02 CHECK", {
         string.format("Watch: NPC walks to %s.", tostring(destination and destination.label or "TEST MARK")),
-        "Check: shell lane should stay non_hostile_commandable during movement.",
+        "Check: shell lane should stay dummy_move during movement.",
         "Check: motor should move from started to stepping during actual movement.",
         "Check: totalDelta should rise above 0.00 once the body actually moves.",
         "Check: squareChanged should flip to yes if real displacement happens.",

@@ -983,6 +983,9 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_DummyState = record and record.dummy and record.dummy.state or nil
         modData.LWN_DummyAppearanceLocked = record and record.dummy and record.dummy.appearanceLocked == true or false
         modData.LWN_DummyInitialAppearanceOk = record and record.dummy and record.dummy.initialAppearanceOk == true or false
+        modData.LWN_DummyAppearanceFailed = record and record.dummy and record.dummy.appearanceFailed == true or false
+        modData.LWN_DummyAppearanceRebuildPending = record and record.dummy and record.dummy.appearanceRebuildPending == true or false
+        modData.LWN_DummyAppearanceFailureCount = record and record.dummy and record.dummy.appearanceFailureCount or 0
     end
 
     registerManagedShell(record, actor, "CarrierIsoZombie.applyBasicZombieCarrierFlags")
@@ -1098,16 +1101,28 @@ local function noteDummyAppearanceState(record, actor, ok, source, detail)
     record.dummy.initialAppearanceOk = ok == true
     if ok == true then
         record.dummy.appearanceLocked = true
+        record.dummy.appearanceFailed = false
+        record.dummy.appearanceRebuildPending = false
+    else
+        record.dummy.appearanceLocked = false
+        record.dummy.appearanceFailed = true
+        record.dummy.appearanceRebuildPending = true
+        record.dummy.appearanceFailureCount = (tonumber(record.dummy.appearanceFailureCount) or 0) + 1
     end
     record.dummy.lastAppearanceProbeSource = source or "CarrierIsoZombie.noteDummyAppearanceState"
     record.dummy.lastAppearanceProbeDetail = detail
+    record.dummy.lastAppearanceProbeAt = worldAgeHours()
 
     local modData = protectedCall(actor, "getModData")
     if modData then
         modData.LWN_DummyAppearanceLocked = record.dummy.appearanceLocked == true
         modData.LWN_DummyInitialAppearanceOk = record.dummy.initialAppearanceOk == true
+        modData.LWN_DummyAppearanceFailed = record.dummy.appearanceFailed == true
+        modData.LWN_DummyAppearanceRebuildPending = record.dummy.appearanceRebuildPending == true
+        modData.LWN_DummyAppearanceFailureCount = record.dummy.appearanceFailureCount or 0
         modData.LWN_DummyAppearanceProbeSource = source or "CarrierIsoZombie.noteDummyAppearanceState"
         modData.LWN_DummyAppearanceProbeDetail = detail
+        modData.LWN_DummyAppearanceProbeAt = record.dummy.lastAppearanceProbeAt
     end
 end
 
@@ -1118,17 +1133,34 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
 
     local modData = protectedCall(actor, "getModData")
     local humanInit = modData and modData.LWN_HumanizationInitialApplied == true or false
-    local skin = modData and modData.LWN_HybridCurrentSkin or nil
     local profile = modData and modData.LWN_HumanizationProfile or humanizationProfile(record)
     local itemVisuals = protectedCall(actor, "getItemVisuals")
     local itemVisualCount = itemVisuals and itemVisuals.size and itemVisuals:size() or 0
-    local role = protectedCall(actor, "isZombie") == true and "reanimated_zombie" or "alive_npc"
+    local wornItems = protectedCall(actor, "getWornItems")
+    local wornItemCount = wornItems and wornItems.size and wornItems:size() or 0
     local descriptor = protectedCall(actor, "getDescriptor")
     local humanVisual = protectedCall(actor, "getHumanVisual")
+    local skin = humanVisual and protectedCall(humanVisual, "getSkinTexture") or modData and modData.LWN_HybridCurrentSkin or nil
+    if skin ~= nil and tostring(skin) == "" then
+        skin = nil
+    end
+    local presentation = LWN.ActorFactory and LWN.ActorFactory.getPresentationState and LWN.ActorFactory.getPresentationState(actor) or nil
+    local role = presentation and presentation.presentationRole or (protectedCall(actor, "isZombie") == true and "reanimated_zombie" or "alive_npc")
+    local hybridApplied = modData and modData.LWN_HybridAppearanceApplied == true or false
+    local strictVisualOk = descriptor ~= nil
+        and humanVisual ~= nil
+        and skin ~= nil
+        and (itemVisualCount > 0 or wornItemCount > 0)
+        and hybridApplied == true
 
-    local ok = humanInit == true
-        or (appearanceDetail and appearanceDetail.applied == true)
-        or (descriptor ~= nil and humanVisual ~= nil and itemVisualCount > 0 and skin ~= nil)
+    local ok
+    if isMinimalDummyRecord(record) then
+        ok = strictVisualOk == true
+    else
+        ok = humanInit == true
+            or (appearanceDetail and appearanceDetail.applied == true)
+            or strictVisualOk == true
+    end
 
     if modData then
         modData.LWN_HumanizationProbeOk = ok == true
@@ -1136,16 +1168,22 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
         modData.LWN_HumanizationProbeRole = role
         modData.LWN_HumanizationProbeSkin = skin
         modData.LWN_HumanizationProbeItemVisuals = itemVisualCount
+        modData.LWN_HumanizationProbeWornItems = wornItemCount
+        modData.LWN_HumanizationProbeHybridApplied = hybridApplied == true
+        modData.LWN_HumanizationVisualTruthOk = strictVisualOk == true
     end
 
     local detail = string.format(
-        "role=%s humanInit=%s skin=%s itemVisuals=%s descriptor=%s humanVisual=%s profile=%s",
+        "role=%s humanInit=%s skin=%s itemVisuals=%s wornItems=%s descriptor=%s humanVisual=%s hybridApplied=%s strictVisualOk=%s profile=%s",
         tostring(role),
         tostring(humanInit),
         tostring(skin),
         tostring(itemVisualCount),
+        tostring(wornItemCount),
         tostring(descriptor ~= nil),
         tostring(humanVisual ~= nil),
+        tostring(hybridApplied == true),
+        tostring(strictVisualOk == true),
         tostring(profile)
     )
 
@@ -1154,39 +1192,58 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
     return ok, detail
 end
 
-local function rebuildDummyAppearance(record, actor, source)
+local function buildInitialDummyAppearance(record, actor, source)
     if not (actor and isMinimalDummyRecord(record)) then
         return nil, nil, false, "not_minimal_dummy"
     end
 
     local profile = humanizationProfile(record)
-    local descriptor = nil
+    local descriptor = protectedCall(actor, "getDescriptor")
     local appearanceDetail = nil
+    local initialDetail = nil
+    local rebuildSource = source or "CarrierIsoZombie.buildInitialDummyAppearance"
+
+    if LWN.ShellHumanizer and LWN.ShellHumanizer.applyInitial then
+        descriptor, initialDetail = LWN.ShellHumanizer.applyInitial(record, actor, {
+            source = rebuildSource .. ".initial",
+            profile = profile,
+            force = true,
+        })
+    end
+
     if LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
         descriptor, appearanceDetail = LWN.ShellHumanizer.maintain(record, actor, {
-            source = source or "CarrierIsoZombie.rebuildDummyAppearance",
+            source = rebuildSource .. ".reapply",
             profile = profile,
             forceFull = true,
             forceInitial = true,
         })
     else
-        descriptor, appearanceDetail = applyAppearanceExperiment(record, actor, "dummy_rebuild")
+        descriptor, appearanceDetail = applyAppearanceExperiment(record, actor, "dummy_initial_rebuild")
         appearanceDetail = normalizeAppearanceDetail(appearanceDetail, {
-            stage = "dummy_rebuild",
+            stage = "dummy_initial_rebuild",
             status = appearanceDetail and appearanceDetail.applied == true and "applied" or "skipped",
             profile = profile,
             mode = "maintenance_full_reapply",
         })
     end
 
+    if initialDetail and appearanceDetail and appearanceDetail.applied ~= true then
+        appearanceDetail = initialDetail
+    end
+
     applyBasicZombieCarrierFlags(record, actor, nil, descriptor, appearanceDetail)
-    local ok, detail = probeHumanizationState(record, actor, appearanceDetail, (source or "CarrierIsoZombie.rebuildDummyAppearance") .. ".probe")
+    local ok, detail = probeHumanizationState(record, actor, appearanceDetail, rebuildSource .. ".probe")
     trace(ok and "dummy_appearance_locked" or "dummy_appearance_failed", record, string.format(
         "source=%s detail=%s",
-        tostring(source or "CarrierIsoZombie.rebuildDummyAppearance"),
+        tostring(rebuildSource),
         tostring(detail)
     ))
     return descriptor, appearanceDetail, ok, detail
+end
+
+local function rebuildDummyAppearance(record, actor, source)
+    return buildInitialDummyAppearance(record, actor, source or "CarrierIsoZombie.rebuildDummyAppearance")
 end
 
 local function markNoAutoRearm(record)
@@ -1287,20 +1344,29 @@ function Carrier.spawn(record, options)
     applyEmergencyQuarantine(record, actor, "CarrierIsoZombie.spawn")
 
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
-    local _, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
-        record,
-        actor,
-        options,
-        "spawn",
-        runtimeOk
-    )
-    local humanizationOk, humanizationDetail = probeHumanizationState(record, actor, appearanceDetail, "CarrierIsoZombie.spawn")
-    if humanizationOk ~= true then
-        trace("spawn.humanization_retry", record, humanizationDetail)
-        if isMinimalDummyRecord(record) then
-            _, appearanceDetail, humanizationOk, humanizationDetail = rebuildDummyAppearance(record, actor, "CarrierIsoZombie.spawn.rebuild")
-        else
-            _, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
+    local appearanceDetail = nil
+    local appearanceEligible = false
+    local appearanceGateDetail = nil
+    local humanizationOk = false
+    local humanizationDetail = nil
+
+    if isMinimalDummyRecord(record) then
+        _, appearanceDetail, humanizationOk, humanizationDetail = buildInitialDummyAppearance(record, actor, "CarrierIsoZombie.spawn.initial_dummy")
+        appearanceEligible = humanizationOk == true
+        appearanceGateDetail = humanizationDetail
+    else
+        local _descriptor
+        _descriptor, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
+            record,
+            actor,
+            options,
+            "spawn",
+            runtimeOk
+        )
+        humanizationOk, humanizationDetail = probeHumanizationState(record, actor, appearanceDetail, "CarrierIsoZombie.spawn")
+        if humanizationOk ~= true then
+            trace("spawn.humanization_retry", record, humanizationDetail)
+            _descriptor, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
                 record,
                 actor,
                 options,
@@ -1371,14 +1437,26 @@ function Carrier.sync(record, handle, options)
     handle.runtime = handle.runtime or {}
     applyEmergencyQuarantine(record, actor, "CarrierIsoZombie.sync")
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
-    local _, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
-        record,
-        actor,
-        options,
-        "sync",
-        runtimeOk
-    )
-    local humanizationOk, humanizationDetail = probeHumanizationState(record, actor, appearanceDetail, "CarrierIsoZombie.sync")
+    local appearanceDetail = nil
+    local appearanceEligible = false
+    local appearanceGateDetail = nil
+    local humanizationOk = false
+    local humanizationDetail = nil
+    if isMinimalDummyRecord(record) and record.dummy and (record.dummy.appearanceLocked ~= true or record.dummy.appearanceRebuildPending == true) then
+        _, appearanceDetail, humanizationOk, humanizationDetail = rebuildDummyAppearance(record, actor, "CarrierIsoZombie.sync.rebuild")
+        appearanceEligible = humanizationOk == true
+        appearanceGateDetail = humanizationDetail
+    else
+        local _descriptor
+        _descriptor, appearanceDetail, appearanceEligible, appearanceGateDetail = runHumanizationPass(
+            record,
+            actor,
+            options,
+            "sync",
+            runtimeOk
+        )
+        humanizationOk, humanizationDetail = probeHumanizationState(record, actor, appearanceDetail, "CarrierIsoZombie.sync")
+    end
     handle.runtime.appearanceEligible = appearanceEligible == true
     handle.runtime.appearanceEligibilityDetail = appearanceGateDetail
     handle.runtime.appearanceExperiment = appearanceDetail and appearanceDetail.experiment or nil
