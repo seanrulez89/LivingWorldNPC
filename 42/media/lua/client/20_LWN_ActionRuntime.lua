@@ -607,7 +607,16 @@ function Runtime._tickMovementIntent(record, actor, intent)
     end
 
     local command = ensureCommandState(record)
+    if command and type(command.movementTelemetry) ~= "table" then
+        command.movementTelemetry = {}
+    end
     local telemetry = command and command.movementTelemetry or nil
+    if telemetry == nil then
+        telemetry = {}
+        if command then
+            command.movementTelemetry = telemetry
+        end
+    end
     local moving = telemetry and telemetry.isMoving == true or false
     local hasPath = telemetry and telemetry.path2 == true or false
     local totalDelta = telemetry and tonumber(telemetry.totalDelta) or nil
