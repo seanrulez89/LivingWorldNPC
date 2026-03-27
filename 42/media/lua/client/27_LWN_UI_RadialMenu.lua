@@ -127,7 +127,15 @@ local function chooseDesignatedDestination(actor)
     return best
 end
 
+local function isMinimalDummyRecord(record)
+    return record and record.dummy and record.dummy.enabled == true
+end
+
 local function commandAccepted(record, actor, command)
+    if isMinimalDummyRecord(record) then
+        return { kind = "accept", reason = "minimal_dummy" }
+    end
+
     if record.companion and record.companion.recruited then
         return { kind = "accept", reason = "trusted" }
     end
@@ -182,16 +190,16 @@ function UIRadial.onCommand(command)
         return
     end
 
-    if command == "follow" then
-        record.companion.squadRole = "follow"
-        queueIntent(record, actor, LWN.ActionIntents.followPlayer(record), "Following.")
-    elseif command == "move" then
+    if command == "move" then
         local destination = chooseDesignatedDestination(actor)
         if not destination then
             say(actor, "No test destination found.")
             return
         end
         record.companion.squadRole = "move"
+        if record.dummy then
+            record.dummy.state = "move_to"
+        end
         queueIntent(record, actor, LWN.ActionIntents.moveTo(record, destination.x, destination.y, destination.z, {
             commandKind = "designated_location",
             commandSource = "ui_radial",
@@ -200,22 +208,14 @@ function UIRadial.onCommand(command)
         }), string.format("Moving to %s.", tostring(destination.label)))
     elseif command == "wait" then
         record.companion.squadRole = "wait"
+        if record.dummy then
+            record.dummy.state = "idle"
+        end
         LWN.ActionRuntime.clear(record, actor)
         if LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
             LWN.EmbodimentManager.touchGrace(record)
         end
         say(actor, "Holding here.")
-    elseif command == "guard" then
-        record.companion.squadRole = "guard"
-        queueIntent(record, actor, LWN.ActionIntents.guardPlayer(record), "Watching your back.")
-    elseif command == "search" then
-        record.companion.squadRole = "search"
-        queueIntent(record, actor, LWN.ActionIntents.searchNearby(record, "food"), "I'll search nearby.")
-    elseif command == "retreat" then
-        record.companion.squadRole = "retreat"
-        local player = getPlayer and getPlayer() or nil
-        local threatPos = player and { x = player:getX(), y = player:getY() } or nil
-        queueIntent(record, actor, LWN.ActionIntents.retreat(record, threatPos), "Falling back.")
     elseif command == "panel" then
         if LWN.UICommandPanel and LWN.UICommandPanel.show then
             LWN.UICommandPanel.show(actor)
@@ -233,12 +233,8 @@ function UIRadial.showFor(actor)
     menu:setX((UIManager.getLastMouseX and UIManager.getLastMouseX() or 300) - LWN.Config.UI.QuickMenuOuterRadius)
     menu:setY((UIManager.getLastMouseY and UIManager.getLastMouseY() or 300) - LWN.Config.UI.QuickMenuOuterRadius)
 
-    menu:addSlice("Follow", nil, UIRadial.onCommand, "follow")
     menu:addSlice("Move", nil, UIRadial.onCommand, "move")
     menu:addSlice("Wait", nil, UIRadial.onCommand, "wait")
-    menu:addSlice("Guard", nil, UIRadial.onCommand, "guard")
-    menu:addSlice("Search", nil, UIRadial.onCommand, "search")
-    menu:addSlice("Retreat", nil, UIRadial.onCommand, "retreat")
     menu:addSlice("Panel", nil, UIRadial.onCommand, "panel")
 
     menu:setVisible(true)

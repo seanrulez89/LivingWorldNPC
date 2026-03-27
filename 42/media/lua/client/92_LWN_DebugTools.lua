@@ -284,18 +284,19 @@ local function applyDebugHarnessDefaults(record, carrierKind)
     record.debugHarness.sterileRadius = tonumber(debugConfig("DebugSterileRadiusTiles", 8)) or 8
     record.debugHarness.identityLock = debugConfig("DebugTestIdentityLock", true) == true
     record.debugHarness.holdPosition = debugConfig("DebugTestHoldPosition", true) == true
-    record.debugHarness.forceFriendly = debugConfig("DebugTestForceFriendly", true) == true
-    record.debugHarness.quarantine = debugConfig("DebugTestQuarantine", false) == true
+    record.debugHarness.forceFriendly = false
+    record.debugHarness.quarantine = false
     record.debugHarness.allowCommandMovement = true
-    record.debugHarness.allowForcedHostile = debugConfig("DebugTestAllowForcedHostile", false) == true
+    record.debugHarness.allowForcedHostile = false
     record.debugHarness.carrierKind = carrierKind or "isoplayer"
+    record.debugHarness.mode = "minimal_dummy"
     record.identity.firstName = tostring(record.debugHarness.label)
-    record.identity.lastName = carrierKind == "isozombie" and "Shell" or "Debug"
-    record.relationshipToPlayer.trust = 0.85
-    record.relationshipToPlayer.respect = 0.70
+    record.identity.lastName = carrierKind == "isozombie" and "Dummy" or "Debug"
+    record.relationshipToPlayer.trust = 0.0
+    record.relationshipToPlayer.respect = 0.0
     record.relationshipToPlayer.resentment = 0.0
     record.relationshipToPlayer.fear = 0.0
-    record.relationshipToPlayer.affection = 0.25
+    record.relationshipToPlayer.affection = 0.0
 end
 
 local function applyDebugHarnessOverrides(record, overrides)
@@ -307,6 +308,39 @@ local function applyDebugHarnessOverrides(record, overrides)
     if record.debugHarness.label then
         record.identity.firstName = tostring(record.debugHarness.label)
     end
+end
+
+local function ensureMinimalDummyState(record)
+    if not record then return nil end
+    record.dummy = record.dummy or {}
+    local dummy = record.dummy
+    dummy.enabled = true
+    dummy.mode = "minimal_neutral_dummy"
+    dummy.generationId = tonumber(dummy.generationId) or 1
+    dummy.state = dummy.state or "spawn_pending"
+    dummy.command = dummy.command or nil
+    dummy.activeActorRef = dummy.activeActorRef or nil
+    dummy.appearanceSeed = dummy.appearanceSeed or record.seed or ZombRand(1, 2147483646)
+    dummy.appearanceLocked = dummy.appearanceLocked == true
+    dummy.initialAppearanceOk = dummy.initialAppearanceOk == true
+    dummy.lastMoveResult = dummy.lastMoveResult or nil
+
+    record.companion = record.companion or {}
+    record.companion.recruited = false
+    record.companion.squadRole = "dummy"
+    record.goals = record.goals or {}
+    record.goals.longTerm = nil
+    record.goals.shortTerm = nil
+    record.drama = nil
+
+    local rel = record.relationshipToPlayer or {}
+    rel.trust = 0.0
+    rel.respect = 0.0
+    rel.resentment = 0.0
+    rel.fear = 0.0
+    rel.affection = 0.0
+    record.relationshipToPlayer = rel
+    return dummy
 end
 
 local function findActorForRecord(record)
@@ -822,11 +856,9 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind, options)
     randomizeIdentity(record)
     applyDebugHarnessDefaults(record, carrierKind)
     applyDebugHarnessOverrides(record, options and options.harness or nil)
+    ensureMinimalDummyState(record)
     record.identity.profession = "unemployed"
     record.backstory.formerProfession = record.identity.profession
-    record.companion.recruited = true
-    record.companion.squadRole = "debug"
-    record.goals.longTerm = LWN.Schema.newGoal("support_player", 1.0)
     record.anchor.x = math.floor(player:getX()) + ZombRand(-2, 3)
     record.anchor.y = math.floor(player:getY()) + ZombRand(-2, 3)
     record.anchor.z = math.floor(player:getZ())
@@ -854,10 +886,6 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind, options)
                 sayInfo(player, string.format("Post-spawn sterile cleanup: removed %d nearby objects", removedAfter))
             end
         end
-        if record.debugHarness and record.debugHarness.forceFriendly == true and LWN.Social and LWN.Social.forceRelationshipCombatPolicy then
-            LWN.Social.forceRelationshipCombatPolicy(record, "friendly", "debug_spawn_test_harness")
-            syncRecordCarrier(record, player, "DebugTools.spawnOneNearPlayerWithCarrier")
-        end
         local actorModData = actor.getModData and actor:getModData() or nil
         if actorModData then
             actorModData.LWN_TestHarnessLabel = record.debugHarness and record.debugHarness.label or nil
@@ -865,8 +893,12 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind, options)
             actorModData.LWN_TestHarnessIdentityLock = record.debugHarness and record.debugHarness.identityLock == true or false
             actorModData.LWN_TestHarnessHoldPosition = record.debugHarness and record.debugHarness.holdPosition == true or false
             actorModData.LWN_TestHarnessAllowCommandMovement = record.debugHarness and record.debugHarness.allowCommandMovement ~= false or false
+            actorModData.LWN_DummyEnabled = true
+            actorModData.LWN_DummyMode = record.dummy and record.dummy.mode or "minimal_neutral_dummy"
+            actorModData.LWN_DummyState = record.dummy and record.dummy.state or "spawn_pending"
+            actorModData.LWN_DummyGenerationId = record.dummy and record.dummy.generationId or 1
         end
-        sayInfo(player, string.format("Spawned sterile test NPC %s via %s", record.id, tostring(record.embodiment and record.embodiment.carrierKind or carrierKind)))
+        sayInfo(player, string.format("Spawned minimal dummy %s via %s", record.id, tostring(record.embodiment and record.embodiment.carrierKind or carrierKind)))
     else
         local handle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
         local handleDetail = handle and handle.detail or nil
@@ -1170,19 +1202,20 @@ end
 
 local function issueDesignatedMoveCommand(record, player, options)
     if not record then
-        sayInfo(player, "No NPCs found")
+        sayInfo(player, "No dummy found")
         return false
     end
 
+    ensureMinimalDummyState(record)
     local actor = findActorForRecord(record)
     if not actor then
-        sayInfo(player, string.format("NPC %s has no live actor", tostring(record.id)))
+        sayInfo(player, string.format("Dummy %s has no live actor", tostring(record.id)))
         return false
     end
 
     local destination = options and options.destination or chooseDesignatedTestDestination(player, actor)
     if not destination then
-        sayInfo(player, string.format("NPC %s has no test destination", tostring(record.id)))
+        sayInfo(player, string.format("Dummy %s has no test destination", tostring(record.id)))
         return false
     end
 
@@ -1225,6 +1258,15 @@ local function issueDesignatedMoveCommand(record, player, options)
         return false
     end
 
+    if record.dummy then
+        record.dummy.state = "move_to"
+        record.dummy.command = {
+            kind = "move_to",
+            destination = destination,
+            issuedAt = worldAgeHours(),
+        }
+    end
+
     sayInfo(player, string.format(
         "MOVE CMD %s -> %s (%s,%s,%s)",
         tostring(record.id),
@@ -1240,10 +1282,11 @@ local function runMovementAutomationTest01(player)
     prepareAutomationCleanSlate(player, "automation_test_start")
     local record, actor = spawnOneNearPlayerWithCarrier(player, "isozombie", {
         harness = {
-            forceFriendly = true,
+            forceFriendly = false,
             holdPosition = true,
             quarantine = false,
             allowCommandMovement = true,
+            mode = "minimal_dummy",
         },
     })
     if not record then
@@ -1253,7 +1296,7 @@ local function runMovementAutomationTest01(player)
 
     local state = automationState()
     state.active = true
-    state.scenario = "appearance_move_return_v1"
+    state.scenario = "minimal_dummy_move_return_v1"
     state.phase = "test_02_ready"
     state.npcId = record.id
     state.destination = nil
@@ -1280,7 +1323,7 @@ end
 
 local function runMovementAutomationTest02(player)
     local record, state = getAutomationRecord()
-    if not state.active or state.scenario ~= "appearance_move_return_v1" then
+    if not state.active or state.scenario ~= "minimal_dummy_move_return_v1" then
         sayInfo(player, "No active test. Run TEST 01 first.")
         return false
     end
@@ -1323,7 +1366,7 @@ end
 
 local function runMovementAutomationTest03(player)
     local record, state = getAutomationRecord()
-    if not state.active or state.scenario ~= "appearance_move_return_v1" then
+    if not state.active or state.scenario ~= "minimal_dummy_move_return_v1" then
         sayInfo(player, "No active test. Run TEST 01 first.")
         return false
     end
@@ -1357,7 +1400,7 @@ end
 
 local function runMovementAutomationTest04(player)
     local record, state = getAutomationRecord()
-    if not state.active or state.scenario ~= "appearance_move_return_v1" then
+    if not state.active or state.scenario ~= "minimal_dummy_move_return_v1" then
         sayInfo(player, "No active test. Run TEST 01 first.")
         return false
     end
