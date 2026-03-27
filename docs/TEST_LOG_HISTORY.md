@@ -538,3 +538,66 @@ For every new test cycle, append a new section using this structure:
 - promote the rebuild-based appearance path further into the default initial spawn path for minimal dummy shells
 - keep deterministic movement intact while improving final arrived/stalled classification
 - do not re-introduce relationship complexity before the visual shell stops reading as a zombie
+
+## 2026-03-28 03:55 KST — Move authority and position commit worked; visual aggression residue remains
+
+### In-game result
+- TEST 01:
+  - dummy still rendered with a zombie-looking exterior
+  - zombie vocal remained suppressed
+  - no active aggression at spawn
+  - dummy stayed stationary as expected
+- TEST 02:
+  - dummy still rendered with the same zombie-like exterior
+  - zombie vocal remained suppressed
+  - movement succeeded again and looked more like a very fast walk than a pure teleport
+  - the dummy did **not** snap back to the original position after the automated move
+  - after arrival, the dummy began in-place stepping / attack-like body language again
+  - however, it still did not land an actual attack on the player
+  - when the player stood very close or physically contacted the dummy, the in-place stepping paused
+- TEST 03:
+  - no major new visual change
+  - zombie-like exterior persisted
+  - zombie vocal still suppressed
+  - attack-like in-place stepping could reappear after shove/contact changes
+- manual `Command Nearest Dummy To Test Destination`:
+  - movement succeeded
+  - the dummy again did **not** snap back to the original location
+  - the move also read as a very fast walk
+- deletion result:
+  - this time delete was blocked again, but the reason shifted from a persistent target-style interpretation toward an `actor_is_attacking` style state even though the player still did not observe real attack hits landing
+
+### Log signals
+- movement summary now clearly recorded committed arrival state:
+  - `cmd=designated_location/arrived`
+  - `motor=arrived`
+  - `commit=<new square>`
+  - `squareChanged=yes`
+  - `totalDelta≈8`
+- the new committed square matched the updated anchor / current square after movement, meaning the logical position and visible position were now much better aligned
+- the old manual-command regression (move briefly, then return to original anchor) no longer reproduced in this run
+- appearance remained unresolved but now more honestly so:
+  - `probeOk=no`
+  - `appLock=no`
+  - `appFail=yes`
+  - visual signature still read as `reanimated_zombie|F_ZedBody...`
+- delete block reason in the latest run pointed to `actor_is_attacking`, which is meaningfully different from earlier `actor_has_target` style failures
+
+### Interpretation / lesson
+- this run strongly suggests the recent move-authority and position-commit work succeeded at the right layer
+- the project no longer appears stuck on the old "move, then snap back" problem in the main dummy flow
+- the remaining post-move problem is now better described as **visual aggression / attack-presentation residue**, not as a full return to real hostile zombie behavior
+- the user’s observation that the dummy stopped its in-place stepping when standing in direct contact with the player is an important clue that body/turn/attack presentation is still reacting to nearby collision/proximity conditions even when real attack behavior is mostly suppressed
+- the biggest remaining blockers are now:
+  1. zombie body visual lock (`F_ZedBody...`, `reanimated_zombie` signature)
+  2. attack-like presentation residue after movement
+  3. player-facing / turn-to-player residue after movement
+- this is a major narrowing compared with earlier sessions: movement authority and position authority are no longer the top mystery
+
+### Code or document changes that followed
+- none yet in this test-log entry itself; this entry marks the end-of-day freeze after proving that move authority and committed position got materially better on the minimal dummy branch
+
+### Next thing to verify
+- add a visual-aggression scrub pass that clears attack/alert/turn presentation residue after movement and while idle
+- hard-fail zombie body skins / corpse-style presentation more explicitly in the dummy appearance truth gate
+- keep recovery / TEST 04 de-prioritized until visual aggression and body appearance improve further
