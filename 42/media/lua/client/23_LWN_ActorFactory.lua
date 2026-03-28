@@ -1911,6 +1911,12 @@ local function isActorInCombatOrUnderAttack(actor)
     end
 
     if protectedCall(actor, "isAttacking") == true then
+        local modData = protectedCall(actor, "getModData")
+        local dummyEnabled = modData and modData.LWN_DummyEnabled == true or false
+        local target2 = protectedCall(actor, "getTarget") or protectedCall(actor, "getTargetChar")
+        if dummyEnabled == true and not target2 then
+            return false, "dummy_attack_presentation_only"
+        end
         return true, "actor_is_attacking"
     end
 

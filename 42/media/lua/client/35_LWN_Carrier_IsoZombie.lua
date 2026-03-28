@@ -676,10 +676,25 @@ local function clearAllZombieAggro(actor, options)
         clearPath = options.clearPath,
     })
     protectedCall(actor, "clearVariable", "AttackAnim")
+    protectedCall(actor, "clearVariable", "AttackCollisionCheck")
+    protectedCall(actor, "clearVariable", "AttackDidDamage")
+    protectedCall(actor, "clearVariable", "AttackOutcome")
     protectedCall(actor, "clearVariable", "isattacking")
+    protectedCall(actor, "clearVariable", "attacking")
+    protectedCall(actor, "clearVariable", "bAttack")
+    protectedCall(actor, "clearVariable", "bAttacking")
+    protectedCall(actor, "clearVariable", "battackfrombehind")
     protectedCall(actor, "clearVariable", "bdoshove")
     protectedCall(actor, "clearVariable", "bDoShove")
     protectedCall(actor, "clearVariable", "bShoveAiming")
+    protectedCall(actor, "clearVariable", "Bite")
+    protectedCall(actor, "clearVariable", "BiteDefended")
+    protectedCall(actor, "clearVariable", "bAiming")
+    protectedCall(actor, "clearVariable", "Aiming")
+    protectedCall(actor, "clearVariable", "ZombieFaceTarget")
+    protectedCall(actor, "clearVariable", "TurnTowardsTarget")
+    protectedCall(actor, "clearVariable", "turning")
+    protectedCall(actor, "clearVariable", "bTurning")
     protectedCall(actor, "clearVariable", "ZombieTurnAlerted")
     protectedCall(actor, "clearVariable", "ZombieTurnRight")
     protectedCall(actor, "clearVariable", "ZombieTurnLeft")
@@ -769,6 +784,7 @@ local function applyHardDummyShellContract(record, actor, mode, source)
         stopActions = mode ~= "move",
         clearPath = mode ~= "move",
     })
+    scrubDummyAttackPresentation(record, actor, mode, (source or "CarrierIsoZombie.applyHardDummyShellContract") .. ".scrub")
     applyDummyVoicePrefix(actor)
     applyDummyAudioMute(actor, source or "CarrierIsoZombie.applyHardDummyShellContract")
     applyPostureHumanization(record, actor, (source or "CarrierIsoZombie.applyHardDummyShellContract") .. ".posture", {
@@ -776,8 +792,7 @@ local function applyHardDummyShellContract(record, actor, mode, source)
     })
 
     if mode ~= "move" then
-        protectedCall(actor, "setMoving", false)
-        protectedCall(actor, "setPath2", nil)
+        forceDummyIdlePresentation(record, actor, (source or "CarrierIsoZombie.applyHardDummyShellContract") .. ".idle")
         protectedCall(actor, "setUseless", true)
         protectedCall(actor, "setCanWalk", false)
     else
@@ -807,6 +822,14 @@ end
 
 function Carrier.enforceHardDummyShell(record, actor, mode, source)
     return applyHardDummyShellContract(record, actor, mode, source or "CarrierIsoZombie.enforceHardDummyShell")
+end
+
+function Carrier.scrubDummyPresentation(record, actor, mode, source)
+    if mode == "move" then
+        scrubDummyAttackPresentation(record, actor, "move", source or "CarrierIsoZombie.scrubDummyPresentation")
+    else
+        forceDummyIdlePresentation(record, actor, source or "CarrierIsoZombie.scrubDummyPresentation")
+    end
 end
 
 local function applyEmergencyQuarantine(record, actor, source)

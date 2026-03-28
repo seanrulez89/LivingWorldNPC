@@ -1505,12 +1505,21 @@ local function tickEmbodiedRecord(record, actor, player)
         hardReNeutralize(record, actor, "tickEmbodiedRecord.post_quarantine")
     end
     if dummyMode and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
+        local scrubMode = isDummyMoveAuthorityActive(record) and "move" or "idle"
         LWN.Carriers.isozombie.enforceHardDummyShell(
             record,
             actor,
-            isDummyMoveAuthorityActive(record) and "move" or "idle",
+            scrubMode,
             "EventAdapter.tickEmbodiedRecord.post_runtime"
         )
+        if LWN.Carriers.isozombie.scrubDummyPresentation then
+            LWN.Carriers.isozombie.scrubDummyPresentation(
+                record,
+                actor,
+                scrubMode,
+                "EventAdapter.tickEmbodiedRecord.post_runtime.scrub"
+            )
+        end
     end
     traceDeathState(record, actor, "tickEmbodiedRecord.pre_despawn")
     traceStage("tickEmbodiedRecord.pre_despawn", record, actor, {
