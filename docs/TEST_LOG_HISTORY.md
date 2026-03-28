@@ -715,3 +715,35 @@ For every new test cycle, append a new section using this structure:
   - preserve the diagnostic clarity gained from the minimal dummy stabilizations,
   - push the current LWN appearance path to its maximum informative limit,
   - then adopt only the specific Bandits-style visual techniques that the current pipeline truly proves it still lacks
+
+## 2026-03-28 17:39 KST — End-of-day strategy locked: exhaust current LWN approach first, keep experiments causally clean, delay locomotion-readability work until appearance truth improves
+
+### Late-session strategic conclusions
+- the project should **not** jump directly into broad Bandits-style adoption next session
+- instead, it should first exhaust the remaining meaningful experiment space in the current LWN descriptor/hybrid approach
+- this is now practical because the branch is finally stable enough that appearance can be isolated as its own problem
+
+### Additional design rule agreed late in the session
+- avoid experiments that pack too many variables into one patch
+- each experiment should answer one primary causal question and define its measurements in advance
+- multi-variable patches (timing + guard + direct visual stamping + locomotion cue changes) should be avoided as main validation steps because they make interpretation muddy
+
+### Late-session locomotion insight
+- even though movement now succeeds logically and commits displacement, the player still reads the movement as repeated coordinate hops rather than natural walking
+- current working hypothesis:
+  - locomotion authority / displacement is ahead of presentation truth,
+  - and the zombie-coded shell may still be unable to read as natural human walking until appearance / presentation truth improves further
+- therefore locomotion readability should not yet be treated as a top-level polish target independent of appearance
+
+### Next-session experiment order agreed
+1. appearance forensics / failure taxonomy
+2. timing / phase-aware rebuild experiments
+3. guard / role / overwrite investigation
+4. only after appearance truth improves, run dedicated locomotion-readability tests
+
+### Main new planning document added
+- `docs/END_OF_DAY_STRATEGY_AND_EXPERIMENT_ORDER_2026-03-28.md`
+
+### Why this matters
+- the branch now has enough stability to support real causal learning
+- preserving that clarity is more valuable right now than rushing into a large Bandits-style rewrite or a locomotion-polish pass with ambiguous evidence
