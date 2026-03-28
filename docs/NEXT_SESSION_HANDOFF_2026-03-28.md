@@ -198,6 +198,19 @@ Goal:
 - do not re-open recovery / long-path complexity until the shell stops reading as a zombie
 - otherwise failure signals will become muddy again
 
+### 6. Preserve clear causal experiments
+
+Goal:
+- avoid broad multi-variable patches that make the next result hard to interpret
+- require each experiment to have one primary question, explicit measurements, and a narrow implementation scope
+
+Operational rule:
+- if a patch simultaneously changes appearance method, timing, guard behavior, and locomotion cues, the evidence becomes muddy and should be rejected as a main validation step
+
+Planning docs:
+- `docs/OUR_APPROACH_FIRST_EXPERIMENT_PLAN_BEFORE_BANDITS_ADOPTION_2026-03-28.md`
+- `docs/END_OF_DAY_STRATEGY_AND_EXPERIMENT_ORDER_2026-03-28.md`
+
 ## What not to do first next time
 
 - do **not** jump back into heavy social / relationship logic work
