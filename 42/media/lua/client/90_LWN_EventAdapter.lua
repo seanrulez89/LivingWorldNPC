@@ -1512,13 +1512,22 @@ local function tickEmbodiedRecord(record, actor, player)
             scrubMode,
             "EventAdapter.tickEmbodiedRecord.post_runtime"
         )
-        if LWN.Carriers.isozombie.scrubDummyPresentation then
+        local graceActive = LWN.Carriers.isozombie.isDummyScrubGraceActive and LWN.Carriers.isozombie.isDummyScrubGraceActive(record) == true or false
+        local attacking = protectedCall(actor, "isAttacking") == true
+        local targetPresent = protectedCall(actor, "getTarget") ~= nil
+        if LWN.Carriers.isozombie.scrubDummyPresentation and graceActive ~= true and (scrubMode == "move" or attacking or targetPresent) then
             LWN.Carriers.isozombie.scrubDummyPresentation(
                 record,
                 actor,
                 scrubMode,
-                "EventAdapter.tickEmbodiedRecord.post_runtime.scrub"
+                "EventAdapter.tickEmbodiedRecord.post_runtime.scrub",
+                { force = scrubMode == "move" or attacking or targetPresent }
             )
+        elseif graceActive == true then
+            traceStage("dummy_scrub_skipped_spawn_grace", record, actor, {
+                source = "EventAdapter.tickEmbodiedRecord.post_runtime",
+                detail = "spawn scrub grace active; post-runtime scrub skipped",
+            })
         end
     end
     traceDeathState(record, actor, "tickEmbodiedRecord.pre_despawn")

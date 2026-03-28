@@ -761,7 +761,7 @@ function Runtime._tickDummyMoveMotor(record, actor, intent)
         commitDummyPosition(record, actor, protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare"), "ActionRuntime._tickDummyMoveMotor.arrived_pre")
         setDummyMotorState(record, actor, "arrived", "dummy_move_arrived")
         if LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.scrubDummyPresentation then
-            LWN.Carriers.isozombie.scrubDummyPresentation(record, actor, "idle", "ActionRuntime._tickDummyMoveMotor.arrived_pre")
+            LWN.Carriers.isozombie.scrubDummyPresentation(record, actor, "idle", "ActionRuntime._tickDummyMoveMotor.arrived_pre", { force = true })
         end
         intent.done = true
         updateMoveCommand(record, intent, "arrived", "dummy_move_arrived", actor)
@@ -783,7 +783,7 @@ function Runtime._tickDummyMoveMotor(record, actor, intent)
         if motor.stallTicks >= 10 then
             protectedCall(actor, "setMoving", false)
             if LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.scrubDummyPresentation then
-                LWN.Carriers.isozombie.scrubDummyPresentation(record, actor, "idle", "ActionRuntime._tickDummyMoveMotor.stalled")
+                LWN.Carriers.isozombie.scrubDummyPresentation(record, actor, "idle", "ActionRuntime._tickDummyMoveMotor.stalled", { force = true })
             end
             intent.failed = true
             updateMoveCommand(record, intent, "failed", "dummy_move_stalled", actor)
@@ -823,7 +823,7 @@ function Runtime._tickDummyMoveMotor(record, actor, intent)
         commitDummyPosition(record, actor, protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare"), "ActionRuntime._tickDummyMoveMotor.arrived_post")
         setDummyMotorState(record, actor, "arrived", "dummy_move_arrived")
         if LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.scrubDummyPresentation then
-            LWN.Carriers.isozombie.scrubDummyPresentation(record, actor, "idle", "ActionRuntime._tickDummyMoveMotor.arrived_post")
+            LWN.Carriers.isozombie.scrubDummyPresentation(record, actor, "idle", "ActionRuntime._tickDummyMoveMotor.arrived_post", { force = true })
         end
         intent.done = true
         updateMoveCommand(record, intent, "arrived", "dummy_move_arrived", actor)

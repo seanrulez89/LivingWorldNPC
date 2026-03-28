@@ -824,12 +824,16 @@ function Carrier.enforceHardDummyShell(record, actor, mode, source)
     return applyHardDummyShellContract(record, actor, mode, source or "CarrierIsoZombie.enforceHardDummyShell")
 end
 
-function Carrier.scrubDummyPresentation(record, actor, mode, source)
+function Carrier.scrubDummyPresentation(record, actor, mode, source, options)
     if mode == "move" then
-        scrubDummyAttackPresentation(record, actor, "move", source or "CarrierIsoZombie.scrubDummyPresentation")
+        scrubDummyAttackPresentation(record, actor, "move", source or "CarrierIsoZombie.scrubDummyPresentation", options)
     else
-        forceDummyIdlePresentation(record, actor, source or "CarrierIsoZombie.scrubDummyPresentation")
+        forceDummyIdlePresentation(record, actor, source or "CarrierIsoZombie.scrubDummyPresentation", options)
     end
+end
+
+function Carrier.isDummyScrubGraceActive(record)
+    return isDummyScrubGraceActive(record)
 end
 
 local function applyEmergencyQuarantine(record, actor, source)
@@ -1400,6 +1404,9 @@ function Carrier.spawn(record, options)
         end
     end
     local spawnedAt = worldAgeHours()
+    if isMinimalDummyRecord(record) then
+        markDummySpawnGrace(record, actor, "CarrierIsoZombie.spawn", true)
+    end
     trace(runtimeOk and "spawn.runtime_ready" or "spawn.pending_settle", record, string.format(
         "spawn=%s | humanization=%s mode=%s probe=%s | %s",
         tostring(spawnDetail),
@@ -1458,6 +1465,9 @@ function Carrier.sync(record, handle, options)
     end
 
     handle.runtime = handle.runtime or {}
+    if isMinimalDummyRecord(record) and (not record.dummy or not record.dummy.scrubGraceUntil) then
+        markDummySpawnGrace(record, actor, "CarrierIsoZombie.sync.bootstrap", false)
+    end
     applyEmergencyQuarantine(record, actor, "CarrierIsoZombie.sync")
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
     local appearanceDetail = nil
