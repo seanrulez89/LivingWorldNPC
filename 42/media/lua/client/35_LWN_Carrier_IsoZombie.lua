@@ -711,6 +711,138 @@ local function applyDummyAudioMute(actor, source)
     end
 end
 
+local function dummyScrubGraceHours()
+    local hours = LWN.Config and LWN.Config.Embodiment and LWN.Config.Embodiment.GraceHours or 0.05
+    hours = tonumber(hours) or 0.05
+    if hours < 0 then
+        return 0
+    end
+    return hours
+end
+
+local function markDummySpawnGrace(record, actor, source, reset)
+    if not isMinimalDummyRecord(record) then return 0 end
+
+    record.dummy = record.dummy or {}
+    local dummy = record.dummy
+    local now = worldAgeHours()
+    local spawnedAt = tonumber(dummy.spawnedAt)
+    if reset == true or spawnedAt == nil or spawnedAt <= 0 then
+        spawnedAt = now
+        dummy.spawnedAt = spawnedAt
+    end
+
+    local graceUntil = now + dummyScrubGraceHours()
+    dummy.scrubGraceUntil = graceUntil
+    dummy.scrubGraceMarkedAt = now
+    dummy.scrubGraceSource = source or "CarrierIsoZombie.markDummySpawnGrace"
+
+    local modData = actor and protectedCall(actor, "getModData") or nil
+    if modData then
+        modData.LWN_DummySpawnedAt = dummy.spawnedAt
+        modData.LWN_DummyScrubGraceUntil = graceUntil
+        modData.LWN_DummyScrubGraceSource = dummy.scrubGraceSource
+    end
+
+    return graceUntil
+end
+
+local function isDummyScrubGraceActive(record)
+    if not isMinimalDummyRecord(record) then return false end
+    local untilHour = tonumber(record and record.dummy and record.dummy.scrubGraceUntil or 0) or 0
+    return untilHour > worldAgeHours()
+end
+
+local function hasDummyScrubResidue(actor)
+    if not actor then return false end
+    return protectedCall(actor, "isAttacking") == true
+        or protectedCall(actor, "getTarget") ~= nil
+        or protectedCall(actor, "getLastTargettedBy") ~= nil
+end
+
+local function scrubDummyAttackPresentation(record, actor, mode, source, options)
+    if not actor then return false end
+
+    options = options or {}
+    mode = mode == "move" and "move" or "idle"
+    source = source or "CarrierIsoZombie.scrubDummyAttackPresentation"
+
+    local force = options.force == true
+    local residuePresent = hasDummyScrubResidue(actor)
+    if mode ~= "move" and force ~= true and isDummyScrubGraceActive(record) and residuePresent ~= true then
+        trace("dummy_scrub_skipped_spawn_grace", record, string.format(
+            "source=%s force=%s residue=%s until=%.5f",
+            tostring(source),
+            tostring(force),
+            tostring(residuePresent),
+            tonumber(record and record.dummy and record.dummy.scrubGraceUntil or 0) or 0
+        ))
+        return false
+    end
+
+    clearAllZombieAggro(actor, {
+        stopActions = mode ~= "move",
+        clearPath = mode ~= "move",
+    })
+    protectedCall(actor, "setWalkType", "Walk")
+    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    protectedCall(actor, "setVariable", "LWNManagedShell", true)
+
+    if mode ~= "move" then
+        protectedCall(actor, "setMoving", false)
+        protectedCall(actor, "setPath2", nil)
+        protectedCall(actor, "clearVariable", "bPathfind")
+        protectedCall(actor, "setTarget", nil)
+        protectedCall(actor, "setLastTargettedBy", nil)
+        protectedCall(actor, "setDir", IsoDirections and IsoDirections.S or nil)
+        protectedCall(actor, "setIdleAnimatorState")
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_DummyPresentationScrubAt = worldAgeHours()
+        modData.LWN_DummyPresentationScrubMode = mode
+        modData.LWN_DummyPresentationScrubForce = force
+        modData.LWN_DummyPresentationScrubSource = source
+    end
+
+    return true
+end
+
+local function forceDummyIdlePresentation(record, actor, source, options)
+    if not actor then return false end
+
+    options = options or {}
+    source = source or "CarrierIsoZombie.forceDummyIdlePresentation"
+
+    local scrubApplied = options.scrubApplied
+    if scrubApplied == nil then
+        scrubApplied = scrubDummyAttackPresentation(record, actor, "idle", source .. ".scrub", options)
+    end
+    if scrubApplied ~= true then
+        return false
+    end
+
+    protectedCall(actor, "StopAllActionQueue")
+    protectedCall(actor, "setMoving", false)
+    protectedCall(actor, "setPath2", nil)
+    protectedCall(actor, "clearVariable", "bPathfind")
+    protectedCall(actor, "setTarget", nil)
+    protectedCall(actor, "setLastTargettedBy", nil)
+    protectedCall(actor, "setDir", IsoDirections and IsoDirections.S or nil)
+    protectedCall(actor, "setWalkType", "Walk")
+    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    protectedCall(actor, "setIdleAnimatorState")
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_DummyIdlePresentationForcedAt = worldAgeHours()
+        modData.LWN_DummyIdlePresentationForcedSource = source
+    end
+
+    return true
+end
+
 local function applyPostureHumanization(record, actor, source, options)
     if not actor then return end
     local neutralized = options and options.neutralized == true or false
@@ -784,7 +916,7 @@ local function applyHardDummyShellContract(record, actor, mode, source)
         stopActions = mode ~= "move",
         clearPath = mode ~= "move",
     })
-    scrubDummyAttackPresentation(record, actor, mode, (source or "CarrierIsoZombie.applyHardDummyShellContract") .. ".scrub")
+    local scrubApplied = scrubDummyAttackPresentation(record, actor, mode, (source or "CarrierIsoZombie.applyHardDummyShellContract") .. ".scrub")
     applyDummyVoicePrefix(actor)
     applyDummyAudioMute(actor, source or "CarrierIsoZombie.applyHardDummyShellContract")
     applyPostureHumanization(record, actor, (source or "CarrierIsoZombie.applyHardDummyShellContract") .. ".posture", {
@@ -792,7 +924,9 @@ local function applyHardDummyShellContract(record, actor, mode, source)
     })
 
     if mode ~= "move" then
-        forceDummyIdlePresentation(record, actor, (source or "CarrierIsoZombie.applyHardDummyShellContract") .. ".idle")
+        forceDummyIdlePresentation(record, actor, (source or "CarrierIsoZombie.applyHardDummyShellContract") .. ".idle", {
+            scrubApplied = scrubApplied,
+        })
         protectedCall(actor, "setUseless", true)
         protectedCall(actor, "setCanWalk", false)
     else
@@ -826,9 +960,9 @@ end
 
 function Carrier.scrubDummyPresentation(record, actor, mode, source, options)
     if mode == "move" then
-        scrubDummyAttackPresentation(record, actor, "move", source or "CarrierIsoZombie.scrubDummyPresentation", options)
+        return scrubDummyAttackPresentation(record, actor, "move", source or "CarrierIsoZombie.scrubDummyPresentation", options)
     else
-        forceDummyIdlePresentation(record, actor, source or "CarrierIsoZombie.scrubDummyPresentation", options)
+        return forceDummyIdlePresentation(record, actor, source or "CarrierIsoZombie.scrubDummyPresentation", options)
     end
 end
 
