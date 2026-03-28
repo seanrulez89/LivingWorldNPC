@@ -1504,6 +1504,13 @@ local function tickEmbodiedRecord(record, actor, player)
     else
         hardReNeutralize(record, actor, "tickEmbodiedRecord.post_quarantine")
     end
+    if dummyMode and LWN.ActionRuntime and LWN.ActionRuntime.settleDummyIdleIfStopped then
+        LWN.ActionRuntime.settleDummyIdleIfStopped(
+            record,
+            actor,
+            "EventAdapter.tickEmbodiedRecord.post_runtime.settle"
+        )
+    end
     if dummyMode and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
         local scrubMode = isDummyMoveAuthorityActive(record) and "move" or "idle"
         LWN.Carriers.isozombie.enforceHardDummyShell(

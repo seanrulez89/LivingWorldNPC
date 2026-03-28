@@ -35,6 +35,63 @@ local function isDummyMoveAuthorityActive(record)
     return LWN.Social and LWN.Social.isMinimalDummyMoveActive and LWN.Social.isMinimalDummyMoveActive(record)
 end
 
+local function isMoveCommandActive(command)
+    if type(command) ~= "table" or command.active ~= true then
+        return false
+    end
+    return command.intentKind == "move_to" or command.kind == "move_to" or command.kind == "designated_location"
+end
+
+local function isDummyMotorMoveActive(record)
+    local motor = record and record.dummy and record.dummy.motor or nil
+    return motor and (motor.state == "started" or motor.state == "stepping") or false
+end
+
+local function isDummyMotorSettled(record)
+    local motor = record and record.dummy and record.dummy.motor or nil
+    local state = motor and motor.state or nil
+    return state == nil or state == "arrived" or state == "stalled" or state == "failed" or state == "idle"
+end
+
+local function clearDummyCommandMirror(record)
+    if not isMinimalDummyRecord(record) then return false end
+    record.dummy = record.dummy or {}
+    record.dummy.state = "idle"
+    record.dummy.command = nil
+    return true
+end
+
+local function settleDummyIdleIfStopped(record, actor, source)
+    if not isMinimalDummyRecord(record) then
+        return false
+    end
+
+    local command = record and record.companion and record.companion.command or nil
+    if isMoveCommandActive(command) or isDummyMotorMoveActive(record) or not isDummyMotorSettled(record) then
+        return false
+    end
+
+    if actor then
+        if protectedCall(actor, "isMoving") == true then
+            return false
+        end
+        if protectedCall(actor, "getPath2") ~= nil then
+            return false
+        end
+    end
+
+    clearDummyCommandMirror(record)
+    if actor and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
+        LWN.Carriers.isozombie.enforceHardDummyShell(
+            record,
+            actor,
+            "idle",
+            source or "ActionRuntime.settleDummyIdleIfStopped"
+        )
+    end
+    return true
+end
+
 local function syncDummyMirror(record, queue)
     if not isMinimalDummyRecord(record) then return end
     record.dummy = record.dummy or {}
@@ -50,12 +107,15 @@ local function syncDummyMirror(record, queue)
                 label = current.data.destinationLabel or current.data.label,
             } or nil,
         }
-    elseif isDummyMoveAuthorityActive(record) then
-        record.dummy.state = "move_to"
-        record.dummy.command = record.dummy.command or { kind = "move_to" }
     else
-        record.dummy.state = "idle"
-        record.dummy.command = nil
+        local settled = settleDummyIdleIfStopped(record, nil, "ActionRuntime.syncDummyMirror")
+        if not settled and isDummyMoveAuthorityActive(record) then
+            record.dummy.state = "move_to"
+            record.dummy.command = record.dummy.command or { kind = "move_to" }
+        elseif not settled then
+            record.dummy.state = "idle"
+            record.dummy.command = nil
+        end
     end
 end
 
@@ -249,6 +309,10 @@ local function updateMoveCommand(record, intent, status, reason, actor)
     else
         command.active = true
     end
+
+    if status == "arrived" or status == "failed" or status == "cleared" then
+        settleDummyIdleIfStopped(record, actor, "ActionRuntime.updateMoveCommand." .. tostring(status))
+    end
 end
 
 local function clearActiveCommand(record, reason)
@@ -265,16 +329,10 @@ local function clearActiveCommand(record, reason)
     if isMinimalDummyRecord(record) then
         record.dummy = record.dummy or {}
         record.dummy.lastMoveResult = reason or "runtime_clear"
-        if isDummyMoveAuthorityActive(record) then
-            record.dummy.state = "move_to"
-            record.dummy.command = record.dummy.command or { kind = "move_to" }
-        else
-            record.dummy.state = "idle"
-            record.dummy.command = nil
-            if record.dummy.motor then
-                record.dummy.motor.state = "idle"
-                record.dummy.motor.detail = reason or "runtime_clear"
-            end
+        clearDummyCommandMirror(record)
+        if record.dummy.motor then
+            record.dummy.motor.state = "idle"
+            record.dummy.motor.detail = reason or "runtime_clear"
         end
     end
 end
@@ -651,7 +709,7 @@ local function setDummyMotorState(record, actor, state, detail)
             record.dummy.state = "move_to"
             record.dummy.command = record.dummy.command or { kind = "move_to" }
         elseif state == "arrived" or state == "stalled" or state == "failed" or state == "idle" then
-            record.dummy.state = "idle"
+            clearDummyCommandMirror(record)
         end
     end
 
@@ -833,6 +891,8 @@ function Runtime._tickDummyMoveMotor(record, actor, intent)
     updateMoveCommand(record, intent, "pathing", "dummy_move_step", actor)
     return false
 end
+
+Runtime.settleDummyIdleIfStopped = settleDummyIdleIfStopped
 
 function Runtime._startMovement(record, actor, intent)
     local pf = actor:getPathFindBehavior2()

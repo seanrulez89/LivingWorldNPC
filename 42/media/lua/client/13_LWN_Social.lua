@@ -47,9 +47,6 @@ function Social.isMinimalDummyMoveActive(record)
     if dummy and dummy.state == "move_to" then
         return true
     end
-    if dummy and dummy.command and dummy.command.kind == "move_to" then
-        return true
-    end
     if motor and (motor.state == "started" or motor.state == "stepping") then
         return true
     end
