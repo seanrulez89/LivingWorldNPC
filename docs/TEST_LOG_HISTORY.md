@@ -668,3 +668,50 @@ For every new test cycle, append a new section using this structure:
 - keep `TEST 01~03` as the main validation lane
 - prioritize appearance truth / zombie-body fail analysis over new aggression scrub work
 - keep recovery / TEST 04 de-prioritized until the shell stops reading as `reanimated_zombie|...`
+
+## 2026-03-28 17:08 KST — Strategic decision: exhaust the current LWN appearance pipeline before gradual Bandits visual borrowing
+
+### Why this decision was made
+- the latest minimal dummy retests materially improved:
+  - spawn stability
+  - movement truth / committed displacement
+  - post-arrival calmness
+  - move→idle handoff
+- this means the branch is finally stable enough to isolate **appearance** as its own problem instead of one symptom among many runtime failures
+- because of that, the project can now extract much better lessons from the current LWN descriptor/hybrid pipeline before introducing Bandits-style direct visual stamping
+
+### Strategic conclusion
+- do **not** switch wholesale to the Bandits approach yet
+- do **not** abandon the current LWN hybrid / descriptor architecture yet
+- instead, first exhaust the meaningful remaining experiment space inside the current approach
+- only after the current approach reaches a clearer ceiling should the project gradually borrow Bandits-style direct visual stamping, and only at the missing layer
+
+### Comparison that drove the decision
+- Bandits is strongest at:
+  - direct `HumanVisual` mutation
+  - direct `ItemVisual` population
+  - aggressive cleanup of visual residue
+  - repeated shell / walktype reassertion
+- LWN is currently strongest at:
+  - canonical record-driven identity
+  - stronger diagnostics / strict visual probing
+  - cleaner shell lifecycle and validation lane
+  - preserving future commandable non-hostile behavior
+
+### Agreed next patch waves
+- Patch Plan 1 — appearance forensics / failure taxonomy
+  - split the current broad visual failure into exact failing layers and codes
+- Patch Plan 2 — phase-aware rebuild / timing experiments
+  - test whether the current method works better when applied later (runtime settle / post-arrival) rather than only at spawn
+- Patch Plan 3 — guard / role / overwrite hardening
+  - test whether `PresentationGuard`, zombie-coded role truth, or post-refresh overwrite is the final blocker
+
+### Main planning doc added
+- `docs/OUR_APPROACH_FIRST_EXPERIMENT_PLAN_BEFORE_BANDITS_ADOPTION_2026-03-28.md`
+
+### Main practical takeaway
+- the immediate goal is **not** “become more like Bandits”
+- the immediate goal is:
+  - preserve the diagnostic clarity gained from the minimal dummy stabilizations,
+  - push the current LWN appearance path to its maximum informative limit,
+  - then adopt only the specific Bandits-style visual techniques that the current pipeline truly proves it still lacks

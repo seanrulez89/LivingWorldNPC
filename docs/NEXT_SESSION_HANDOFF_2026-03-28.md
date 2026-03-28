@@ -146,29 +146,53 @@ Most important observations:
 
 ## Immediate next patch priority
 
-### 1. Appearance truth / zombie-body hard fail investigation (highest priority)
+The current consensus is now more specific than a generic “appearance investigation.”
+
+Before gradually adopting Bandits-style direct visual stamping, the project should first exhaust the meaningful remaining experiment space inside the current LWN approach. The reason is simple: the branch has finally become stable enough that appearance can be isolated as its own problem, and the team should extract the maximum possible learning from the current hybrid/descriptor pipeline before introducing a second visual strategy.
+
+Primary planning document:
+- `docs/OUR_APPROACH_FIRST_EXPERIMENT_PLAN_BEFORE_BANDITS_ADOPTION_2026-03-28.md`
+
+### 1. Patch Plan 1 — appearance forensics / failure taxonomy
 
 Goal:
-- understand why the branch still ends up presenting as `reanimated_zombie|M_ZedBody...`
-- make appearance success / failure correspond more tightly to what the player actually sees
-- determine whether the next meaningful step is:
-  - stronger fail gating,
-  - different post-create appearance rebuild timing,
-  - or deeper actor-role/class change for alive-state presentation
+- split current appearance failure into precise layers instead of relying on broad `probeOk=no` / `appFail=yes` summaries
+- determine whether the current failure is mainly descriptor, human-visual, clothing/item-visual, guard, or overwrite related
 
-Main files expected:
+Main files:
 - `42/media/lua/client/35_LWN_Carrier_IsoZombie.lua`
-- `42/media/lua/client/37_LWN_ShellHumanizer.lua`
 - `42/media/lua/client/23_LWN_ActorFactory.lua`
 - `42/media/lua/client/92_LWN_DebugTools.lua`
 
-### 2. Keep TEST 01~03 as the main validation lane
+### 2. Patch Plan 2 — phase-aware rebuild / timing experiments
+
+Goal:
+- push the current LWN shaping path harder by changing **when** heavy rebuilds happen, not yet **how** the visual system fundamentally works
+- test spawn vs first runtime settle vs post-arrival rebuild timing with narrow, one-shot rebuild opportunities
+
+Main files:
+- `42/media/lua/client/35_LWN_Carrier_IsoZombie.lua`
+- `42/media/lua/client/37_LWN_ShellHumanizer.lua`
+- `42/media/lua/client/23_LWN_ActorFactory.lua`
+
+### 3. Patch Plan 3 — guard / role / overwrite hardening
+
+Goal:
+- determine whether the final blocker is now primarily `PresentationGuard`, zombie-coded presentation role truth, or overwrite after refresh
+- only after Patch Plans 1 and 2, test narrow minimal-dummy-specific guard/repair lanes if needed
+
+Main files:
+- `42/media/lua/client/23_LWN_ActorFactory.lua`
+- `42/media/lua/client/35_LWN_Carrier_IsoZombie.lua`
+- `42/media/lua/client/92_LWN_DebugTools.lua`
+
+### 4. Keep TEST 01~03 as the main validation lane
 
 Goal:
 - avoid broad scenario noise while appearance is still wrong
 - keep checking that spawn stability, committed movement, and calm post-arrival behavior do not regress while appearance work continues
 
-### 3. Keep recovery / TEST 04 de-prioritized
+### 5. Keep recovery / TEST 04 de-prioritized
 
 Goal:
 - do not re-open recovery / long-path complexity until the shell stops reading as a zombie
