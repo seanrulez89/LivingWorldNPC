@@ -601,3 +601,70 @@ For every new test cycle, append a new section using this structure:
 - add a visual-aggression scrub pass that clears attack/alert/turn presentation residue after movement and while idle
 - hard-fail zombie body skins / corpse-style presentation more explicitly in the dummy appearance truth gate
 - keep recovery / TEST 04 de-prioritized until visual aggression and body appearance improve further
+
+## 2026-03-28 16:03 KST — Move-idle handoff fix resolved post-arrival aggression residue; visual shell remains the top blocker
+
+### In-game result
+- TEST 01:
+  - exactly one dummy spawned
+  - zombie-looking exterior persisted
+  - zombie vocal remained suppressed
+  - no aggression or player recognition appeared
+  - the dummy stayed still
+- TEST 02:
+  - movement again succeeded and visibly progressed across multiple intermediate positions
+  - the dummy reached the destination successfully
+  - after arrival, the dummy stayed quiet and still
+  - the earlier in-place stepping / attack-like posture did **not** reproduce in this run
+  - approaching or shoving the dummy also did **not** trigger renewed aggression-looking posture in the observed run
+- TEST 03:
+  - no major new visible change
+  - the shell remained zombie-looking but non-aggressive and quiet
+- cleanup result:
+  - `clean` still did not remove the dummy itself
+  - `delete` successfully removed the dummy
+
+### Log signals
+- spawn remained stable under the spawn-safe scrub grace:
+  - early lines showed `dummy_contract_idle_applied` and repeated `dummy_scrub_skipped_spawn_grace`
+  - summary stayed at `lane=dummy_idle`, `attacking=no`, `target=no`
+- movement still committed correctly:
+  - `cmd=designated_location/arrived`
+  - `motor=arrived`
+  - `commit=3753,10997,0`
+  - `totalDelta=7.00`
+  - `squareChanged=yes`
+- the strongest new signal was post-arrival shell stability:
+  - `dummy_contract_move_applied` appeared only 4 times total and only around move startup
+  - `dummy_contract_idle_applied` appeared 195 times
+  - `attacking=yes` appeared 0 times
+  - `target=yes` appeared 0 times
+  - after arrival, repeated idle-contract maintenance dominated the log instead of renewed move-shell pressure
+- appearance still failed honestly:
+  - `probeOk=no`
+  - `appLock=no`
+  - `appFail=yes`
+  - `PresentationGuard` continued blocking `restore_false_flags` / `repair_alpha` with `reason=zombie_or_reanimated`
+- cleanup / delete behavior became clearer:
+  - `clean` logged `debug_cleanup.protected_managed_shell`
+  - `delete` succeeded through `deleteNpcById:immediate_noncombat`
+
+### Interpretation / lesson
+- the recent move-idle handoff patch (`70bebb0`) appears to have fixed the previously dominant stale move-authority / post-arrival handoff problem
+- the branch no longer appears to be primarily blocked by post-move aggression-presentation residue
+- the top remaining blocker is now even more clearly **visual shell correctness / alive-state appearance truth**
+- this is major progress because the project’s dominant mystery has narrowed again:
+  1. spawn stability is much better
+  2. movement is real and committed
+  3. post-arrival aggression-looking residue is much lower / absent in this run
+  4. the main unresolved layer is still zombie-looking body presentation
+
+### Code or document changes that followed
+- documented the retest and current interpretation in:
+  - `docs/MINIMAL_DUMMY_MOVE_IDLE_HANDOFF_RETEST_2026-03-28.md`
+  - `docs/NEXT_SESSION_HANDOFF_2026-03-28.md`
+
+### Next thing to verify
+- keep `TEST 01~03` as the main validation lane
+- prioritize appearance truth / zombie-body fail analysis over new aggression scrub work
+- keep recovery / TEST 04 de-prioritized until the shell stops reading as `reanimated_zombie|...`

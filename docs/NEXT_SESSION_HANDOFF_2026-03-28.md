@@ -5,142 +5,156 @@ Baseline branches preserved:
 - `spike/isozombie` — pre-surgery freeze point
 - `spike/companion-shell-split` — surgery planning / reset branch
 
-Status: meaningful progress achieved on minimal dummy branch; the project is no longer stuck at the old "no movement + zombie vocal + constant aggression" stage.
+Status: major progress achieved on the minimal dummy branch. The project is no longer primarily stuck on spawn instability, zombie vocal leakage, fake movement, or post-arrival attack-like presentation residue.
 
 ## Executive summary
 
-The big-picture simplification worked.
+The branch is now behaving much more like a constrained **minimal neutral dummy** and much less like a noisy failed full-NPC experiment.
 
-The branch no longer treats the test subject like a full social NPC candidate.
-Instead, it now behaves more like a deliberately constrained **minimal neutral dummy**.
+Two late-session fixes were especially important:
 
-That change finally produced real progress.
+- `91561dd` — `Fix dummy spawn scrub grace helpers`
+- `70bebb0` — `Fix dummy move idle handoff`
+
+Those fixes materially changed what the branch still fails at.
 
 ### What now works materially better
 
-1. **Zombie vocal suppression works in practice**
-   - the dummy no longer emits obvious zombie vocal audio while the rest of the game audio stays normal
+1. **Single stable spawn remains intact**
+   - exactly one test NPC spawned in the latest retest
+   - no immediate aggression / player recognition appeared
+   - zombie vocal remained suppressed
+   - spawn-safe scrub grace clearly stayed active in logs
 
-2. **Real movement exists now**
-   - deterministic movement produced real displacement
-   - `squareChanged=yes`
-   - `totalDelta` moved above zero in repeated runs
+2. **Real movement still exists and still commits**
+   - deterministic movement again produced real displacement
+   - latest arrived summary still showed:
+     - `motor=arrived`
+     - `commit=<new square>`
+     - `squareChanged=yes`
+     - `totalDelta=7.00`
 
-3. **Move position now commits more reliably**
-   - after the recent move-authority + position-commit pass, the dummy did not immediately snap back to its original anchor in the latest automated move test
-   - manual `Command Nearest Dummy To Test Destination` also no longer reproduced the old instant return-to-anchor regression in the latest run
+3. **Move→idle handoff is now materially better**
+   - the earlier post-arrival in-place stepping / attack-like posture did **not** reproduce in the latest retest
+   - after arrival, repeated idle shell enforcement dominated the log
+   - no `attacking=yes` or `target=yes` signals appeared in the analyzed run
+
+4. **Delete works again in the tested scenario**
+   - `delete` successfully removed the latest test dummy
+   - the earlier attack-state false positive did not block deletion in this retest
 
 ### What still clearly fails
 
 1. **Visual shell is still zombie-like**
-   - current appearance signature still reads like `reanimated_zombie|F_ZedBody...`
    - the player still sees a zombie-looking shell
+   - visual signature still reads like `reanimated_zombie|M_ZedBody...`
+   - the latest summaries still report:
+     - `probeOk=no`
+     - `appLock=no`
+     - `appFail=yes`
 
-2. **Visual aggression residue remains after movement**
-   - after arriving, the dummy can still show in-place stepping / attack-like posture
-   - this presentation can pause when the player stands very close or collides with the dummy
-   - the player still does not necessarily observe real damage/hit behavior at the same time
+2. **PresentationGuard still blocks alive-style repair**
+   - repeated guard lines still report `reason=zombie_or_reanimated`
+   - this strongly suggests the alive-looking presentation path is still blocked by upstream role/class/presentation constraints
 
-3. **Delete gating can still trip on attack-state presentation**
-   - recent delete block reason shifted toward `actor_is_attacking`
-   - this is different from earlier `actor_has_target` / obvious hostile pursuit failures
-   - it suggests the top remaining issue is now presentation / attack-state residue rather than pure target-acquisition logic
+3. **`clean` is still not a shell delete path**
+   - `clean` continues to protect the managed shell itself
+   - it behaves like a nearby sterile cleanup pass, not like direct NPC removal
 
-## Why progress finally happened
+## Why the latest result matters
 
-This is the core lesson of the day.
+This is the key change in project shape.
 
-Progress did not come from "better tuning" of the old system.
-It came from changing the problem being solved.
+Earlier in the day, the main open question was still whether the branch was primarily failing because:
+- spawn scrub was too aggressive,
+- move authority snapped back,
+- post-arrival move shell stayed latched,
+- or zombie combat residue kept reasserting itself.
 
-### The old approach failed because too many layers were fighting each other
+The latest retest makes the picture much cleaner.
 
-The earlier experiments tried to make one zombie-based actor simultaneously support:
-
-- social relationship logic
-- trust / resentment / betrayal drift
-- goal / story / utility behavior
-- non-hostile command behavior
-- human-like presentation
-- zombie carrier continuity
-
-That created too many confounders.
-When something failed, it was never obvious which layer was responsible.
-
-### The new approach succeeded because it changed the architecture
-
-The branch now made three decisive changes:
-
-1. **Removed social/story/goal noise from the active test lane**
-   - minimal dummy no longer runs like a socially interpreted NPC
-   - relationship churn stopped being the main source of noise
-
-2. **Applied a repeated hard dummy shell contract**
-   - target clearing
-   - attack-variable clearing
-   - zombie vocal suppression
-   - lane separation between idle and move
-   - repeated reinforcement during runtime / tick flow
-
-3. **Bypassed zombie-native locomotion with deterministic movement**
-   - move intent now directly produces square-to-square displacement for the dummy
-   - this was the first change that truly broke the old `moving=true / path2=true / totalDelta=0` failure pattern
-
-A fourth important improvement landed later in the session:
-
-4. **Committed moved positions back into anchor / embodiment / handle metadata**
-   - this reduced the old tendency for some move flows to be silently dragged back toward stale anchor data
-
-## Commits on the minimal dummy branch that matter most
-
-In chronological order on `spike/minimal-neutral-dummy`:
-
-- `194edd2` — `Bootstrap minimal neutral dummy test lane`
-- `3a6ed34` — `Bypass social and goal logic for minimal dummy`
-- `d852380` — `Narrow minimal dummy runtime to idle and move`
-- `2e3a43c` — `Add hard shell contract for minimal dummy`
-- `c24ed9a` — `Add deterministic move motor for minimal dummy`
-- `22133e7` — `Document why minimal dummy branch made progress`
-- `102c463` — `Replace dummy appearance path with stricter rebuild gating`
-- `fc92e5b` — `Lock dummy move authority and commit moved positions`
-
-## Current best interpretation of the system
+### Current best interpretation
 
 The dummy is now much closer to this shape:
 
-- **logic:** mostly non-hostile / controlled dummy
+- **logic / control:** mostly constrained and non-hostile
 - **audio:** mostly corrected
-- **movement:** first successful deterministic displacement achieved
-- **visual body:** still zombie-coded
-- **visual aggression / posture:** still partially zombie-coded after movement
+- **movement:** real and committed
+- **move→idle handoff:** materially stabilized
+- **visual body / appearance truth:** still zombie-coded
 
 In simple terms:
 
-- the brain and movement control are starting to become a dummy,
-- but the body and attack-presentation layer still read like a zombie.
+- the branch is getting better at acting like a dummy,
+- but the body still looks like a zombie.
+
+That narrowing is a real architectural win.
+
+## Commits on the minimal dummy branch that matter most now
+
+In useful recent order on `spike/minimal-neutral-dummy`:
+
+- `fc92e5b` — `Lock dummy move authority and commit moved positions`
+- `1560591` — `Record end-of-day minimal dummy lessons and handoff`
+- `6a7c488` — `Scrub dummy attack presentation and delete false positives`
+- `0bc814f` — `Make dummy scrub spawn-safe`
+- `91561dd` — `Fix dummy spawn scrub grace helpers`
+- `70bebb0` — `Fix dummy move idle handoff`
+
+### What the last two fixes changed in practice
+
+#### `91561dd` — spawn-safe scrub completion
+- completed the missing grace helpers
+- prevented over-eager spawn-time scrub from destabilizing the shell immediately after creation
+
+#### `70bebb0` — move-idle handoff fix
+- stopped treating `dummy.command` mirror data as authoritative move-active proof by itself
+- added explicit idle-settle behavior when command inactive + motor settled + actor not moving/pathing
+- gave post-runtime enforcement a narrow chance to settle into idle before move shell can win again
+
+## Evidence from the latest retest
+
+Primary log analyzed:
+- `/mnt/c/Users/seanr/Zomboid/Logs/2026-03-28_15-54_DebugLog.txt`
+
+Most important observations:
+
+1. **Spawn stayed stable**
+   - initial summaries stayed in `dummy_idle`
+   - no aggression / targeting appeared at TEST 01
+
+2. **Move committed correctly**
+   - arrived summary showed `commit=3753,10997,0`
+   - `squareChanged=yes`
+   - `totalDelta=7.00`
+
+3. **Idle contract now wins after arrival**
+   - `dummy_contract_move_applied` only appeared 4 times total and only around move startup
+   - `dummy_contract_idle_applied` appeared 195 times
+   - `attacking=yes` count was 0
+   - `target=yes` count was 0
+
+4. **Appearance still fails honestly**
+   - `spawn.humanization_failed`
+   - `probeOk=no`
+   - `appFail=yes`
+   - `PresentationGuard ... reason=zombie_or_reanimated`
+
+5. **Delete succeeded**
+   - `deleteNpcById:immediate_noncombat`
+   - `Deleted NPC LWN-000027`
 
 ## Immediate next patch priority
 
-### 1. Visual aggression scrub (highest priority)
+### 1. Appearance truth / zombie-body hard fail investigation (highest priority)
 
 Goal:
-- stop the post-move in-place stepping / attack-like body language
-- reduce player-facing / alert-turn residue when no real hostile attack should exist
-
-Main files expected:
-- `42/media/lua/client/35_LWN_Carrier_IsoZombie.lua`
-- `42/media/lua/client/90_LWN_EventAdapter.lua`
-- possibly `42/media/lua/client/92_LWN_DebugTools.lua`
-
-Expected focus:
-- stronger clearing of attack / alert / turn presentation variables
-- stronger idle-presentation reset after movement completes
-- post-shove / post-stand / close-contact presentation scrub
-
-### 2. Zombie body hard fail strengthening
-
-Goal:
-- treat zombie body skin / corpse-style presentation as an explicit hard failure, not just a weak signal
+- understand why the branch still ends up presenting as `reanimated_zombie|M_ZedBody...`
+- make appearance success / failure correspond more tightly to what the player actually sees
+- determine whether the next meaningful step is:
+  - stronger fail gating,
+  - different post-create appearance rebuild timing,
+  - or deeper actor-role/class change for alive-state presentation
 
 Main files expected:
 - `42/media/lua/client/35_LWN_Carrier_IsoZombie.lua`
@@ -148,39 +162,45 @@ Main files expected:
 - `42/media/lua/client/23_LWN_ActorFactory.lua`
 - `42/media/lua/client/92_LWN_DebugTools.lua`
 
-Expected focus:
-- fail appearance when `skin` still reads `ZedBody...`
-- fail appearance when `presentationRole` remains `reanimated_zombie`
-- expose clearer summary/debug values for visual truth vs visual failure
+### 2. Keep TEST 01~03 as the main validation lane
+
+Goal:
+- avoid broad scenario noise while appearance is still wrong
+- keep checking that spawn stability, committed movement, and calm post-arrival behavior do not regress while appearance work continues
+
+### 3. Keep recovery / TEST 04 de-prioritized
+
+Goal:
+- do not re-open recovery / long-path complexity until the shell stops reading as a zombie
+- otherwise failure signals will become muddy again
 
 ## What not to do first next time
 
-- do **not** jump straight back into recovery / TEST 04 work first
-- do **not** reintroduce relationship complexity
-- do **not** spend time polishing natural-looking walking before the visual aggression residue is under control
-
-The correct order is still:
-1. visual aggression scrub
-2. harder zombie-body fail gating / appearance truth
-3. only then revisit deeper recovery/rebuild work
+- do **not** jump back into heavy social / relationship logic work
+- do **not** assume more aggression scrub is the next best patch without fresh evidence
+- do **not** prioritize locomotion polish before the body/presentation truth problem is clearer
+- do **not** spend the next session on `clean` semantics; `delete` is already the reliable removal path for the current test lane
 
 ## Suggested next-session workflow
 
 1. Start on `spike/minimal-neutral-dummy`
-2. Implement visual aggression scrub patch
-3. Run only `TEST 01~03`
-4. If aggression-looking residue is materially lower, implement stronger zombie-body fail gating
-5. Re-test `TEST 01~03`
-6. Still postpone `TEST 04` unless the visual shell improves enough to make return-path work worth the noise
+2. Re-read:
+   - `docs/MINIMAL_DUMMY_MOVE_IDLE_HANDOFF_RETEST_2026-03-28.md`
+   - `docs/TEST_LOG_HISTORY.md` (latest entry)
+3. Focus on appearance truth / zombie-body fail investigation
+4. Re-run only `TEST 01~03`
+5. If appearance materially improves, only then revisit broader recovery / TEST 04 planning
 
 ## Current testing takeaway
 
-The branch is no longer in the old "everything fails at once" state.
+The branch is no longer in the old “everything fails at once” state.
 
-It is now in a much better state:
+It is now in a much better and much narrower state:
 
-- movement works enough to study
-- audio suppression works enough to trust
-- the remaining dominant issue is visual shell correctness and attack-like presentation residue
+- spawn works well enough to trust
+- movement works well enough to trust
+- move→idle handoff works much better than before
+- delete works in the tested scenario
+- the remaining dominant issue is **visual shell correctness**
 
-That narrowing is the main achievement of the day.
+That narrowing is the main thing to protect next.
