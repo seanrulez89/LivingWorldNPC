@@ -192,14 +192,53 @@ local function getSkinTexture(visual)
     return protectedCall(visual, "getSkinTexture")
 end
 
+local function carrierKindFromActor(actor)
+    local modData = actor and protectedCall(actor, "getModData") or nil
+    return modData and modData.LWN_CarrierKind or nil
+end
+
+local function supportsVisualCollections(actor)
+    if not actor then return false end
+    if instanceof then
+        if instanceof(actor, "IsoZombie") or instanceof(actor, "IsoPlayer") then
+            return true
+        end
+        if instanceof(actor, "IsoSurvivor") then
+            return false
+        end
+    end
+    local carrierKind = carrierKindFromActor(actor)
+    if carrierKind == "isozombie" or carrierKind == "isoplayer" then
+        return true
+    end
+    if carrierKind == "isosurvivor" then
+        return false
+    end
+    return false
+end
+
+local function safeActorItemVisuals(actor)
+    if not supportsVisualCollections(actor) then
+        return nil
+    end
+    return protectedCall(actor, "getItemVisuals")
+end
+
+local function safeActorWornItems(actor)
+    if not supportsVisualCollections(actor) then
+        return nil
+    end
+    return protectedCall(actor, "getWornItems")
+end
+
 local actorPresentationState
 local stageTrace
 local presentationRestoreBlockedReason
 
 local function appearanceSnapshot(actor)
     local visual = actor and protectedCall(actor, "getHumanVisual") or nil
-    local itemVisuals = actor and protectedCall(actor, "getItemVisuals") or nil
-    local wornItems = actor and protectedCall(actor, "getWornItems") or nil
+    local itemVisuals = actor and safeActorItemVisuals(actor) or nil
+    local wornItems = actor and safeActorWornItems(actor) or nil
     local descriptor = actor and protectedCall(actor, "getDescriptor") or nil
     local presentation = actor and actorPresentationState(actor) or nil
     return {
@@ -664,8 +703,8 @@ local function visualSummary(actor, descriptor)
     end
 
     local visual = protectedCall(actor, "getHumanVisual")
-    local itemVisuals = protectedCall(actor, "getItemVisuals")
-    local wornItems = protectedCall(actor, "getWornItems")
+    local itemVisuals = safeActorItemVisuals(actor)
+    local wornItems = safeActorWornItems(actor)
     local actorDescriptor = protectedCall(actor, "getDescriptor")
     local desc = actorDescriptor or descriptor
     local parts = {}
@@ -1408,8 +1447,8 @@ stageTrace = function(moduleName, stage, record, actor, descriptor, extra)
     local actorDescriptor = actor and protectedCall(actor, "getDescriptor") or nil
     local presentation = actor and actorPresentationState(actor) or nil
     local visual = actor and protectedCall(actor, "getHumanVisual") or nil
-    local itemVisuals = actor and protectedCall(actor, "getItemVisuals") or nil
-    local wornItems = actor and protectedCall(actor, "getWornItems") or nil
+    local itemVisuals = actor and safeActorItemVisuals(actor) or nil
+    local wornItems = actor and safeActorWornItems(actor) or nil
     local sample = sampleDebugEvent(
         "embodiment_trace",
         stageTraceKey(moduleName, stage, record, actor, extra),
@@ -2301,8 +2340,8 @@ end
 
 local function bridgeWornItemsToItemVisuals(actor)
     local visual = protectedCall(actor, "getHumanVisual")
-    local itemVisuals = protectedCall(actor, "getItemVisuals")
-    local wornItems = protectedCall(actor, "getWornItems")
+    local itemVisuals = safeActorItemVisuals(actor)
+    local wornItems = safeActorWornItems(actor)
     local result = {
         wornItems = safeSize(wornItems),
         itemVisualsBefore = safeSize(itemVisuals),
