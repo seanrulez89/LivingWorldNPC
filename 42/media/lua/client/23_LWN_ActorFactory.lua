@@ -2813,6 +2813,10 @@ function Factory.getAppearanceTruthSnapshot(actor)
     return appearanceTruthSnapshot(actor)
 end
 
+function Factory.rebuildAliveAnimationState(actor, reason)
+    return rebuildAliveAnimationState(actor, reason)
+end
+
 function Factory.presentationStateSummary(actor)
     return presentationStateSummary(actor)
 end

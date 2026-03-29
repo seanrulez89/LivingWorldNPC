@@ -31,6 +31,7 @@ local ISOZOMBIE_SETTLE_MAX_HOURS = 0.0015
 local ISOZOMBIE_APPEARANCE_EXPERIMENT = "isozombie_shared_desc_visual_v1"
 local ISOZOMBIE_APPEARANCE_REUSE = "desc+baseline+clothes+bridge"
 local ISOZOMBIE_ROLE_GUARD_RELAX_EXPERIMENT = true
+local ISOZOMBIE_ALIVE_RESET_AFTER_RUNTIME_SETTLE = true
 
 local function worldAgeHours()
     return getGameTime() and getGameTime():getWorldAgeHours() or 0
@@ -1940,6 +1941,34 @@ function Carrier.sync(record, handle, options)
         handle.runtime.humanizationProbeDetail = humanizationDetail
         handle.runtime.runtimeSettleRebuildDone = true
         handle.runtime.runtimeSettleRebuildAt = worldAgeHours()
+
+        if ISOZOMBIE_ALIVE_RESET_AFTER_RUNTIME_SETTLE == true
+            and isMinimalDummyRecord(record)
+            and LWN.ActorFactory
+            and LWN.ActorFactory.rebuildAliveAnimationState
+        then
+            local resetTouched = LWN.ActorFactory.rebuildAliveAnimationState(
+                actor,
+                "CarrierIsoZombie.sync.runtime_settle_alive_reset"
+            )
+            handle.runtime.runtimeSettleAliveResetDone = true
+            handle.runtime.runtimeSettleAliveResetTouched = resetTouched == true
+            handle.runtime.runtimeSettleAliveResetAt = worldAgeHours()
+            local modData = protectedCall(actor, "getModData")
+            if modData then
+                modData.LWN_RuntimeSettleAliveResetDone = true
+                modData.LWN_RuntimeSettleAliveResetTouched = resetTouched == true
+                modData.LWN_RuntimeSettleAliveResetAt = worldAgeHours()
+                modData.LWN_RuntimeSettleAliveResetReason = "CarrierIsoZombie.sync.runtime_settle_alive_reset"
+            end
+            trace("runtime_settle_alive_reset", record, string.format(
+                "touched=%s humanization=%s detail=%s",
+                tostring(resetTouched == true),
+                tostring(humanizationOk == true),
+                tostring(humanizationDetail)
+            ))
+            stampAppearanceCadence(record, actor, "CarrierIsoZombie.sync.runtime_settle_alive_reset")
+        end
     end
 
     local anchor = record and record.anchor or nil
