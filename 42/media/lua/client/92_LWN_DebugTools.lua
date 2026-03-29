@@ -1387,6 +1387,48 @@ local function runMovementAutomationTest01(player)
     return runMovementAutomationTest01WithCarrier(player, "isozombie")
 end
 
+local function runIsoPlayerViabilityProbe(player)
+    prepareAutomationCleanSlate(player, "isoplayer_probe_start")
+    local record, actor = spawnOneNearPlayerWithCarrier(player, "isoplayer", {
+        harness = {
+            forceFriendly = false,
+            holdPosition = true,
+            quarantine = false,
+            allowCommandMovement = false,
+            mode = "viability_probe",
+        },
+    })
+    if not record then
+        sayInfo(player, "IsoPlayer probe failed: spawn failed")
+        return false
+    end
+
+    local state = automationState()
+    state.active = true
+    state.scenario = "isoplayer_viability_probe_v1"
+    state.carrierKind = "isoplayer"
+    state.phase = "probe_observe_only"
+    state.npcId = record.id
+    state.destination = nil
+    state.startedAt = worldAgeHours()
+    state.updatedAt = state.startedAt
+    state.step = 1
+
+    dumpRecordSummary(record, actor or findActorForRecord(record), player)
+    dumpMovementAudioForRecord(record, player)
+    dumpAutomationOneLineSummary(record, actor or findActorForRecord(record), player, "ISOPLAYER PROBE SUMMARY")
+
+    sayChecklist(player, "ISOPLAYER PROBE CHECK", {
+        "Look: does one actor appear at all?",
+        "Look: does it survive for the first few seconds without crashing the game?",
+        "Check: world/body/square truth in summary and console.",
+        "Check: presentation role and visibility hints.",
+        "Do NOT run TEST 02/03/04 from this probe state.",
+        "Use TEST STATUS or dump summary only.",
+    })
+    return true
+end
+
 local function runMovementAutomationTest01IsoSurvivor(player)
     sayInfo(player, "TEST 01B disabled: IsoSurvivor lane is quarantined after reproducible engine crashes.")
     print("[LWN][Debug] IsoSurvivor automation disabled :: reason=engine_null_bodydamage_crash")
@@ -1403,8 +1445,16 @@ local function isSupportedAutomationScenario(state)
         or scenario == "minimal_dummy_move_return_isosurvivor_v1"
 end
 
+local function isIsoPlayerProbeScenario(state)
+    return state and state.active == true and tostring(state.scenario or "") == "isoplayer_viability_probe_v1"
+end
+
 local function runMovementAutomationTest02(player)
     local record, state = getAutomationRecord()
+    if isIsoPlayerProbeScenario(state) then
+        sayInfo(player, "IsoPlayer probe is observe-only. Do not run TEST 02 from this state.")
+        return false
+    end
     if not isSupportedAutomationScenario(state) then
         sayInfo(player, "No active test. Run TEST 01 first.")
         return false
@@ -1450,6 +1500,10 @@ end
 
 local function runMovementAutomationTest03(player)
     local record, state = getAutomationRecord()
+    if isIsoPlayerProbeScenario(state) then
+        sayInfo(player, "IsoPlayer probe is observe-only. Do not run TEST 03 from this state.")
+        return false
+    end
     if not isSupportedAutomationScenario(state) then
         sayInfo(player, "No active test. Run TEST 01 first.")
         return false
@@ -1486,6 +1540,10 @@ end
 
 local function runMovementAutomationTest04(player)
     local record, state = getAutomationRecord()
+    if isIsoPlayerProbeScenario(state) then
+        sayInfo(player, "IsoPlayer probe is observe-only. Do not run TEST 04 from this state.")
+        return false
+    end
     if not isSupportedAutomationScenario(state) then
         sayInfo(player, "No active test. Run TEST 01 first.")
         return false
@@ -1719,6 +1777,10 @@ end
 
 function DebugTools.runAutomatedIsoZombieTest01(player)
     return runMovementAutomationTest01(player)
+end
+
+function DebugTools.runAutomatedIsoPlayerProbe(player)
+    return runIsoPlayerViabilityProbe(player)
 end
 
 function DebugTools.runAutomatedIsoSurvivorTest01(player)
