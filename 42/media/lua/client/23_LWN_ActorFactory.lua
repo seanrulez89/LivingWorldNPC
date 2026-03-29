@@ -3199,6 +3199,80 @@ function Factory.applyLoadout(record, actor, descriptor)
     touchPresentationStage(record, "ready", "applyLoadout", true)
 end
 
+local function canForceIsoPlayerCreateHookFallback(actor)
+    if not isIsoPlayerCarrierActor(actor) then
+        return false
+    end
+    if protectedCall(actor, "isExistInTheWorld") ~= true then
+        return false
+    end
+    if not (protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")) then
+        return false
+    end
+    if protectedCall(actor, "getBodyDamage") == nil then
+        return false
+    end
+    if protectedCall(actor, "getHumanVisual") == nil then
+        return false
+    end
+    return true
+end
+
+function Factory.completeIsoPlayerCreateHookFallback(record, actor, descriptor, source)
+    if not actor or not isIsoPlayerCarrierActor(actor) then
+        return false
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    if not modData then
+        return false
+    end
+    if modData.LWN_CreateHookPending ~= true and modData.LWN_LastCreateHook then
+        return false
+    end
+    if not canForceIsoPlayerCreateHookFallback(actor) then
+        return false
+    end
+
+    local fallbackSource = source or "completeIsoPlayerCreateHookFallback"
+    modData.LWN_CreateHookPending = false
+    modData.LWN_CreateHookExpected = nil
+    modData.LWN_LastCreateHook = "fallback_isoplayer_materialize"
+    modData.LWN_LastCreateHookAt = worldAgeHours()
+    modData.LWN_PostCreateHeavyPending = false
+    modData.LWN_PostCreateAppliedBy = fallbackSource
+    modData.LWN_PostCreateAppliedAt = worldAgeHours()
+    modData.LWN_IsoPlayerCreateFallbackCount = (tonumber(modData.LWN_IsoPlayerCreateFallbackCount) or 0) + 1
+    modData.LWN_IsoPlayerCreateFallbackSource = fallbackSource
+
+    protectedCall(actor, "setInvisible", false)
+    protectedCall(actor, "setGhostMode", false)
+    protectedCall(actor, "setSceneCulled", false)
+    protectedCall(actor, "setNPC", true)
+    protectedCall(actor, "setIsNPC", true)
+    protectedCall(actor, "setVisibleToNPCs", true)
+    protectedCall(actor, "resetModel")
+    protectedCall(actor, "resetModelNextFrame")
+    protectedCall(actor, "checkUpdateModelTextures")
+    protectedCall(actor, "reloadOutfit")
+    protectedCall(actor, "onWornItemsChanged")
+    refreshModelManager(actor, fallbackSource .. ".model_refresh")
+
+    stageTrace("ActorFactory", "completeIsoPlayerCreateHookFallback.ready", record, actor, descriptor or protectedCall(actor, "getDescriptor"), {
+        source = fallbackSource,
+        detail = string.format(
+            "world=%s squarePresent=%s body=%s humanVisual=%s modelRegistered=%s fallbackCount=%s",
+            safeText(protectedCall(actor, "isExistInTheWorld")),
+            safeText((protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")) ~= nil),
+            safeText(protectedCall(actor, "getBodyDamage") ~= nil),
+            safeText(protectedCall(actor, "getHumanVisual") ~= nil),
+            safeText(modData.LWN_ModelRegistered),
+            safeText(modData.LWN_IsoPlayerCreateFallbackCount)
+        ),
+    })
+    return true
+end
+
 function Factory.finalizePostCreatePresentation(record, actor, descriptor, source)
     if not actor then return end
 
@@ -3246,6 +3320,15 @@ function Factory.stabilizeIsoPlayerVisibility(record, actor, descriptor, source)
         modData.LWN_IsoPlayerVisibilityStabilizeCount = (tonumber(modData.LWN_IsoPlayerVisibilityStabilizeCount) or 0) + 1
         modData.LWN_IsoPlayerVisibilityStabilizeAt = worldAgeHours()
         modData.LWN_IsoPlayerVisibilityStabilizeSource = stabilizeSource
+    end
+
+    if modData and modData.LWN_CreateHookPending == true and modData.LWN_LastCreateHook == nil then
+        Factory.completeIsoPlayerCreateHookFallback(
+            record,
+            actor,
+            descriptor or protectedCall(actor, "getDescriptor"),
+            stabilizeSource .. ".createhook_fallback"
+        )
     end
 
     if (modData and (modData.LWN_PostCreateHeavyPending == true or modData.LWN_CreateHookPending == true)) then

@@ -223,6 +223,25 @@ local function settlePendingPresentation(record, actor, source)
         return
     end
 
+    if modData.LWN_CreateHookPending == true
+        and modData.LWN_LastCreateHook == nil
+        and LWN.ActorFactory
+        and LWN.ActorFactory.completeIsoPlayerCreateHookFallback
+    then
+        local applied = LWN.ActorFactory.completeIsoPlayerCreateHookFallback(
+            record,
+            actor,
+            protectedCall(actor, "getDescriptor"),
+            source .. ".createhook_fallback"
+        )
+        if applied == true then
+            traceStage(source .. ".createhook_fallback", record, actor, {
+                source = source,
+                detail = "forcedIsoPlayerCreateHookCompletion=true",
+            })
+        end
+    end
+
     if modData.LWN_PostCreateHeavyPending == true
         and LWN.ActorFactory
         and LWN.ActorFactory.finalizePostCreatePresentation
