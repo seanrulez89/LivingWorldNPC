@@ -332,53 +332,31 @@ local function addDebugSubmenu(context, player, actor)
     local settingsSub = context:getNew(context)
     context:addSubMenu(settingsOpt, settingsSub)
 
-    local automationOpt = settingsSub:addOption("Automation", nil, nil)
-    local automationSub = settingsSub:getNew(settingsSub)
-    settingsSub:addSubMenu(automationOpt, automationSub)
-
-    automationSub:addOption("TEST RESET - Clear State", player, function(p)
+    settingsSub:addOption("TEST RESET - Clear State", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.resetAutomatedIsoZombieTest then
             LWN.DebugTools.resetAutomatedIsoZombieTest(p)
         end
     end)
 
-    automationSub:addOption("TEST 01 - Spawn Baseline (IsoZombie)", player, function(p)
+    settingsSub:addOption("TEST 01 - Spawn Baseline (IsoZombie)", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest01 then
             LWN.DebugTools.runAutomatedIsoZombieTest01(p)
         end
     end)
 
-    automationSub:addOption("TEST 01P - IsoPlayer Viability Probe", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoPlayerProbe then
-            LWN.DebugTools.runAutomatedIsoPlayerProbe(p)
-        end
-    end)
-
-    automationSub:addOption("[DISABLED] TEST 01B - Spawn Baseline (IsoSurvivor)", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoSurvivorTest01 then
-            LWN.DebugTools.runAutomatedIsoSurvivorTest01(p)
-        end
-    end)
-
-    automationSub:addOption("TEST 02 - Command Walk", player, function(p)
+    settingsSub:addOption("TEST 02 - Command Walk", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest02 then
             LWN.DebugTools.runAutomatedIsoZombieTest02(p)
         end
     end)
 
-    automationSub:addOption("TEST 03 - Capture Move", player, function(p)
+    settingsSub:addOption("TEST 03 - Capture Move", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest03 then
             LWN.DebugTools.runAutomatedIsoZombieTest03(p)
         end
     end)
 
-    automationSub:addOption("TEST 04 - Return Check", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest04 then
-            LWN.DebugTools.runAutomatedIsoZombieTest04(p)
-        end
-    end)
-
-    automationSub:addOption("TEST STATUS - Dump Current", player, function(p)
+    settingsSub:addOption("TEST STATUS - Dump Current", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.dumpAutomatedIsoZombieTestStatus then
             LWN.DebugTools.dumpAutomatedIsoZombieTestStatus(p)
         end
