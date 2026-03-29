@@ -1660,6 +1660,28 @@ local function modelSlotReadiness(actor)
     }
 end
 
+local function applyMinimalIsoPlayerMaterialization(actor, descriptor, reason)
+    if not actor or not isIsoPlayerCarrierActor(actor) then
+        return nil
+    end
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_IsoPlayerMinimalMaterializeCount = (tonumber(modData.LWN_IsoPlayerMinimalMaterializeCount) or 0) + 1
+        modData.LWN_IsoPlayerMinimalMaterializeReason = reason
+        modData.LWN_IsoPlayerMinimalMaterializeAt = worldAgeHours()
+    end
+    local activeDescriptor = descriptor or protectedCall(actor, "getDescriptor")
+    if activeDescriptor then
+        protectedCall(actor, "InitSpriteParts", activeDescriptor)
+    end
+    protectedCall(actor, "onWornItemsChanged")
+    protectedCall(actor, "setVisibleToNPCs", true)
+    protectedCall(actor, "setInvisible", false)
+    protectedCall(actor, "setGhostMode", false)
+    protectedCall(actor, "setSceneCulled", false)
+    return modelSlotReadiness(actor)
+end
+
 local function refreshModelManager(actor, reason)
     local manager = modelManager()
     if not manager or not actor then return nil end
@@ -1673,15 +1695,7 @@ local function refreshModelManager(actor, reason)
     local descriptor = protectedCall(actor, "getDescriptor")
 
     if before ~= true and isIsoPlayerCarrierActor(actor) and readiness.ready ~= true then
-        if descriptor then
-            protectedCall(actor, "InitSpriteParts", descriptor)
-        end
-        protectedCall(actor, "resetModel")
-        protectedCall(actor, "resetModelNextFrame")
-        protectedCall(actor, "reloadOutfit")
-        protectedCall(actor, "checkUpdateModelTextures")
-        protectedCall(actor, "onWornItemsChanged")
-        readiness = modelSlotReadiness(actor)
+        readiness = applyMinimalIsoPlayerMaterialization(actor, descriptor, reason .. ".minimal_materialize") or readiness
     end
 
     if before ~= true then
@@ -3307,11 +3321,7 @@ function Factory.completeIsoPlayerCreateHookFallback(record, actor, descriptor, 
     protectedCall(actor, "setNPC", true)
     protectedCall(actor, "setIsNPC", true)
     protectedCall(actor, "setVisibleToNPCs", true)
-    protectedCall(actor, "resetModel")
-    protectedCall(actor, "resetModelNextFrame")
-    protectedCall(actor, "checkUpdateModelTextures")
-    protectedCall(actor, "reloadOutfit")
-    protectedCall(actor, "onWornItemsChanged")
+    applyMinimalIsoPlayerMaterialization(actor, descriptor, fallbackSource .. ".minimal_materialize")
     refreshModelManager(actor, fallbackSource .. ".model_refresh")
 
     stageTrace("ActorFactory", "completeIsoPlayerCreateHookFallback.ready", record, actor, descriptor or protectedCall(actor, "getDescriptor"), {
@@ -3397,14 +3407,11 @@ function Factory.stabilizeIsoPlayerVisibility(record, actor, descriptor, source)
     protectedCall(actor, "setVisibleToNPCs", true)
     protectedCall(actor, "setNPC", true)
     protectedCall(actor, "setIsNPC", true)
-    if descriptor or protectedCall(actor, "getDescriptor") then
-        protectedCall(actor, "InitSpriteParts", descriptor or protectedCall(actor, "getDescriptor"))
-    end
-    protectedCall(actor, "resetModel")
-    protectedCall(actor, "resetModelNextFrame")
-    protectedCall(actor, "onWornItemsChanged")
-    protectedCall(actor, "reloadOutfit")
-    protectedCall(actor, "checkUpdateModelTextures")
+    applyMinimalIsoPlayerMaterialization(
+        actor,
+        descriptor or protectedCall(actor, "getDescriptor"),
+        stabilizeSource .. ".minimal_materialize"
+    )
     refreshActorPresentation(actor)
     repairVisibleAlpha(actor, stabilizeSource .. ".repair_alpha")
 
