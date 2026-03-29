@@ -199,6 +199,17 @@ local function enforceEmbodiedFlags(record, actor)
         if LWN.ActorFactory and LWN.ActorFactory.repairVisibleAlpha then
             LWN.ActorFactory.repairVisibleAlpha(actor, "ActorSync.enforceEmbodiedFlags")
         end
+        if carrierKind == "isoplayer"
+            and LWN.ActorFactory
+            and LWN.ActorFactory.stabilizeIsoPlayerVisibility
+        then
+            LWN.ActorFactory.stabilizeIsoPlayerVisibility(
+                record,
+                actor,
+                protectedCall(actor, "getDescriptor"),
+                "ActorSync.enforceEmbodiedFlags.isoplayer_visibility"
+            )
+        end
     else
         protectedCall(actor, "setInvisible", false)
     end
@@ -245,6 +256,17 @@ local function settlePendingPresentation(record, actor, source)
 
     if LWN.ActorFactory and LWN.ActorFactory.repairVisibleAlpha then
         LWN.ActorFactory.repairVisibleAlpha(actor, source .. ".presentation_settled")
+    end
+    if getCarrierKind(record, actor) == "isoplayer"
+        and LWN.ActorFactory
+        and LWN.ActorFactory.stabilizeIsoPlayerVisibility
+    then
+        LWN.ActorFactory.stabilizeIsoPlayerVisibility(
+            record,
+            actor,
+            protectedCall(actor, "getDescriptor"),
+            source .. ".presentation_settled.isoplayer_visibility"
+        )
     end
 end
 

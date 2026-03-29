@@ -176,7 +176,7 @@ function Store.debugState()
     local root = Store.root()
     root.debug = root.debug or {}
     if root.debug.devToolsEnabled == nil then
-        root.debug.devToolsEnabled = false
+        root.debug.devToolsEnabled = true
     end
     return root.debug
 end

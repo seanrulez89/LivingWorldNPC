@@ -327,47 +327,20 @@ local function addNpcInteractionSubmenu(context, actor)
 end
 
 local function addDebugSubmenu(context, player, actor)
-    local settingsLabel = "LWN Settings"
+    local settingsLabel = "LWN Tests"
     local settingsOpt = context:addOption(settingsLabel, nil, nil)
     local settingsSub = context:getNew(context)
     context:addSubMenu(settingsOpt, settingsSub)
 
-    local enabled = LWN.DebugTools and LWN.DebugTools.isEnabled and LWN.DebugTools.isEnabled() or false
-    local toggleLabel = enabled and "Debug Tools: ON (Click to Disable)" or "Debug Tools: OFF (Click to Enable)"
+    local automationOpt = settingsSub:addOption("Automation", nil, nil)
+    local automationSub = settingsSub:getNew(settingsSub)
+    settingsSub:addSubMenu(automationOpt, automationSub)
 
-    settingsSub:addOption(toggleLabel, nil, function()
-        if not LWN.DebugTools or not LWN.DebugTools.toggleEnabled then return end
-        local after = LWN.DebugTools.toggleEnabled()
-        print("[LWN][Debug] devToolsEnabled=" .. tostring(after))
-    end)
-
-    if not enabled then return end
-
-    local isoTestOpt = settingsSub:addOption("Minimal Dummy Test", nil, nil)
-    local isoTestSub = settingsSub:getNew(settingsSub)
-    settingsSub:addSubMenu(isoTestOpt, isoTestSub)
-
-    isoTestSub:addOption("Spawn Minimal Dummy Near Player (IsoZombie)", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayerIsoZombie then
-            LWN.DebugTools.spawnOneNearPlayerIsoZombie(p)
+    automationSub:addOption("TEST RESET - Clear State", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.resetAutomatedIsoZombieTest then
+            LWN.DebugTools.resetAutomatedIsoZombieTest(p)
         end
     end)
-
-    isoTestSub:addOption("Spawn Viability Probe Near Player (IsoPlayer)", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayer then
-            LWN.DebugTools.spawnOneNearPlayer(p)
-        end
-    end)
-
-    isoTestSub:addOption("[DISABLED] Spawn Minimal Dummy Near Player (IsoSurvivor)", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayerIsoSurvivor then
-            LWN.DebugTools.spawnOneNearPlayerIsoSurvivor(p)
-        end
-    end)
-
-    local automationOpt = isoTestSub:addOption("Automation", nil, nil)
-    local automationSub = isoTestSub:getNew(isoTestSub)
-    isoTestSub:addSubMenu(automationOpt, automationSub)
 
     automationSub:addOption("TEST 01 - Spawn Baseline (IsoZombie)", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest01 then
@@ -410,86 +383,6 @@ local function addDebugSubmenu(context, player, actor)
             LWN.DebugTools.dumpAutomatedIsoZombieTestStatus(p)
         end
     end)
-
-    automationSub:addOption("TEST RESET - Clear State", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.resetAutomatedIsoZombieTest then
-            LWN.DebugTools.resetAutomatedIsoZombieTest(p)
-        end
-    end)
-
-    isoTestSub:addOption("Command Nearest Dummy To Test Destination", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.commandNearestNpcToDesignatedLocation then
-            LWN.DebugTools.commandNearestNpcToDesignatedLocation(p)
-        end
-    end)
-
-    isoTestSub:addOption("Clean Nearby Ordinary Zombies", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.cleanNearbyWorldNoise then
-            LWN.DebugTools.cleanNearbyWorldNoise(p)
-        end
-    end)
-
-    isoTestSub:addOption("Dump Nearby Zombie-like Objects", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.dumpNearbyZombieLikeObjects then
-            LWN.DebugTools.dumpNearbyZombieLikeObjects(p)
-        end
-    end)
-
-    isoTestSub:addOption("Dump Nearest Dummy Summary", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.dumpNearestNpcSummary then
-            LWN.DebugTools.dumpNearestNpcSummary(p)
-        end
-    end)
-
-    isoTestSub:addOption("Dump Nearest NPC Movement/Audio", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.dumpNearestNpcMovementAudioState then
-            LWN.DebugTools.dumpNearestNpcMovementAudioState(p)
-        end
-    end)
-
-    isoTestSub:addOption("Dump Last Actor Failure", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.dumpLastActorFailure then
-            LWN.DebugTools.dumpLastActorFailure(p)
-        end
-    end)
-
-    local npcId = getNpcId(actor)
-    if npcId then
-        isoTestSub:addOption("Dump This Dummy (" .. tostring(npcId) .. ")", player, function(p)
-            traceContextCandidate("debug.dump.request", actor, "dump_this_npc", nil)
-            if LWN.DebugTools and LWN.DebugTools.dumpNpcById then
-                LWN.DebugTools.dumpNpcById(npcId, p)
-            end
-        end)
-    end
-
-    if LWN.Config and LWN.Config.Debug and LWN.Config.Debug.ShowDangerousDebugMenu == true then
-        local dangerOpt = settingsSub:addOption("Danger Zone", nil, nil)
-        local dangerSub = settingsSub:getNew(settingsSub)
-        settingsSub:addSubMenu(dangerOpt, dangerSub)
-
-        dangerSub:addOption("Delete Nearest NPC", player, function(p)
-            traceContextCandidate("debug.delete.request", nil, "delete_nearest_npc", nil)
-            if LWN.DebugTools and LWN.DebugTools.deleteNearestNpc then
-                LWN.DebugTools.deleteNearestNpc(p)
-            end
-        end)
-
-        dangerSub:addOption("Wipe Data + Reseed", player, function(p)
-            if LWN.DebugTools and LWN.DebugTools.wipeAndReseed then
-                LWN.DebugTools.wipeAndReseed(p)
-            end
-        end)
-
-        if npcId then
-            dangerSub:addOption("Delete This NPC (" .. tostring(npcId) .. ")", player, function(p)
-                traceContextCandidate("debug.delete.request", actor, "delete_this_npc", nil)
-                if LWN.DebugTools and LWN.DebugTools.deleteNpcById then
-                    LWN.DebugTools.deleteNpcById(npcId, p)
-                end
-            end)
-        end
-    end
 end
 
 function UIContext.onFillWorldObjectContextMenu(playerNum, context, worldObjects, test)

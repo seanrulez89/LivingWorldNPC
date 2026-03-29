@@ -3091,6 +3091,58 @@ function Factory.finalizePostCreatePresentation(record, actor, descriptor, sourc
     })
 end
 
+function Factory.stabilizeIsoPlayerVisibility(record, actor, descriptor, source)
+    if not actor then return false end
+    if instanceof and not instanceof(actor, "IsoPlayer") then
+        return false
+    end
+    if protectedCall(actor, "isZombie") == true or protectedCall(actor, "isReanimatedPlayer") == true then
+        return false
+    end
+
+    local stabilizeSource = source or "stabilizeIsoPlayerVisibility"
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_IsoPlayerVisibilityStabilizeCount = (tonumber(modData.LWN_IsoPlayerVisibilityStabilizeCount) or 0) + 1
+        modData.LWN_IsoPlayerVisibilityStabilizeAt = worldAgeHours()
+        modData.LWN_IsoPlayerVisibilityStabilizeSource = stabilizeSource
+    end
+
+    if (modData and (modData.LWN_PostCreateHeavyPending == true or modData.LWN_CreateHookPending == true)) then
+        Factory.finalizePostCreatePresentation(record, actor, descriptor or protectedCall(actor, "getDescriptor"), stabilizeSource .. ".heavy_finalize")
+    end
+
+    restoreEmbodiedPresentationFlags(actor, stabilizeSource .. ".restore_flags")
+    rebuildAliveAnimationState(actor, stabilizeSource .. ".alive_state")
+    protectedCall(actor, "setHealth", record and record.stats and record.stats.health or protectedCall(actor, "getHealth"))
+    protectedCall(actor, "setVisibleToNPCs", true)
+    protectedCall(actor, "setNPC", true)
+    protectedCall(actor, "setIsNPC", true)
+    protectedCall(actor, "resetModel")
+    protectedCall(actor, "resetModelNextFrame")
+    protectedCall(actor, "onWornItemsChanged")
+    protectedCall(actor, "reloadOutfit")
+    protectedCall(actor, "checkUpdateModelTextures")
+    refreshActorPresentation(actor)
+    repairVisibleAlpha(actor, stabilizeSource .. ".repair_alpha")
+
+    local after = actorPresentationState(actor)
+    stageTrace("ActorFactory", "stabilizeIsoPlayerVisibility.ready", record, actor, descriptor or protectedCall(actor, "getDescriptor"), {
+        source = stabilizeSource,
+        detail = string.format(
+            "role=%s alpha=%s targetAlpha=%s modelRegistered=%s createHookPending=%s postCreatePending=%s repairs=%s",
+            safeText(after and after.presentationRole or nil),
+            safeText(after and after.alpha or nil),
+            safeText(after and after.targetAlpha or nil),
+            safeText(after and after.modelRegistered or nil),
+            safeText(modData and modData.LWN_CreateHookPending or nil),
+            safeText(modData and modData.LWN_PostCreateHeavyPending or nil),
+            safeText(modData and modData.LWN_AlphaRepairAttemptCount or 0)
+        ),
+    })
+    return true
+end
+
 function Factory.createActor(record, player)
     record = ensureRecordShape(record)
     clearRecordTarget(record, "createActor.start")

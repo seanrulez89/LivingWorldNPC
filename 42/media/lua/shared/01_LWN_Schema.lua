@@ -56,7 +56,7 @@ function Schema.newRoot()
             pending = nil,
         },
         debug = {
-            devToolsEnabled = false,
+            devToolsEnabled = true,
         },
     }
 end
