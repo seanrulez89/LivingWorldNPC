@@ -1357,6 +1357,108 @@ local function noteDummyAppearanceState(record, actor, ok, source, detail)
     end
 end
 
+local function appearanceTruthScore(truth)
+    if not truth then return 0 end
+    local score = 0
+    if truth.descriptorOk == true then score = score + 1 end
+    if truth.humanVisualOk == true then score = score + 1 end
+    if truth.skinOk == true then score = score + 1 end
+    if truth.wornItemsOk == true or truth.itemVisualsOk == true then score = score + 1 end
+    if truth.hybridAppliedOk == true then score = score + 1 end
+    if truth.presentationRoleOk == true then score = score + 1 end
+    if truth.guardBlocked == nil then score = score + 1 end
+    if truth.ok == true then score = score + 1 end
+    return score
+end
+
+local function stampAppearanceCadence(record, actor, source)
+    if not actor then return nil end
+    local modData = protectedCall(actor, "getModData")
+    if not modData then return nil end
+    local truth = LWN.ActorFactory and LWN.ActorFactory.getAppearanceTruthSnapshot and LWN.ActorFactory.getAppearanceTruthSnapshot(actor) or nil
+    local presentation = LWN.ActorFactory and LWN.ActorFactory.getPresentationState and LWN.ActorFactory.getPresentationState(actor) or nil
+    if not truth then return nil end
+
+    local score = appearanceTruthScore(truth)
+    local stage = tostring(source or "unknown")
+    local signature = truth.signature or "nil"
+    local role = presentation and presentation.presentationRole or truth.role or "unknown"
+    local now = worldAgeHours()
+
+    modData.LWN_AppearanceCadenceLastStage = stage
+    modData.LWN_AppearanceCadenceLastAt = now
+    modData.LWN_AppearanceCadenceLastScore = score
+    modData.LWN_AppearanceCadenceLastSignature = signature
+    modData.LWN_AppearanceCadenceLastRole = role
+    modData.LWN_AppearanceCadenceLastFailCode = truth.failureCode or "none"
+    modData.LWN_AppearanceCadenceLastGuardBlocked = truth.guardBlocked or "none"
+
+    if modData.LWN_AppearanceCadenceFirstStage == nil then
+        modData.LWN_AppearanceCadenceFirstStage = stage
+        modData.LWN_AppearanceCadenceFirstAt = now
+        modData.LWN_AppearanceCadenceFirstScore = score
+        modData.LWN_AppearanceCadenceFirstSignature = signature
+    end
+
+    local bestScore = tonumber(modData.LWN_AppearanceCadenceBestScore)
+    if bestScore == nil or score > bestScore then
+        modData.LWN_AppearanceCadenceBestScore = score
+        modData.LWN_AppearanceCadenceBestStage = stage
+        modData.LWN_AppearanceCadenceBestAt = now
+        modData.LWN_AppearanceCadenceBestSignature = signature
+        modData.LWN_AppearanceCadenceBestRole = role
+        modData.LWN_AppearanceCadenceBestFailCode = truth.failureCode or "none"
+    end
+
+    local bestSignature = modData.LWN_AppearanceCadenceBestSignature
+    local currentBest = tonumber(modData.LWN_AppearanceCadenceBestScore) or score
+    local overwriteDetected = false
+    local overwriteReason = nil
+    if bestSignature and bestSignature ~= "nil" then
+        if signature ~= bestSignature and score < currentBest then
+            overwriteDetected = true
+            overwriteReason = "signature_drift_after_better_state"
+        elseif score < currentBest then
+            overwriteDetected = true
+            overwriteReason = "score_drop_after_better_state"
+        end
+    end
+
+    if overwriteDetected == true then
+        modData.LWN_AppearanceCadenceOverwriteDetected = true
+        modData.LWN_AppearanceCadenceOverwriteAt = now
+        modData.LWN_AppearanceCadenceOverwriteStage = stage
+        modData.LWN_AppearanceCadenceOverwriteReason = overwriteReason
+        modData.LWN_AppearanceCadenceOverwriteFromSignature = bestSignature
+        modData.LWN_AppearanceCadenceOverwriteToSignature = signature
+        modData.LWN_AppearanceCadenceOverwriteToScore = score
+    end
+
+    print(string.format(
+        "[LWN][OverwriteTracker] stage=%s npc=%s score=%s best=%s sig=%s bestSig=%s role=%s fail=%s guard=%s overwrite=%s overwriteReason=%s",
+        tostring(stage),
+        tostring(record and record.id or modData.LWN_NpcId or "nil"),
+        tostring(score),
+        tostring(modData.LWN_AppearanceCadenceBestScore or score),
+        tostring(signature),
+        tostring(bestSignature or signature),
+        tostring(role),
+        tostring(truth.failureCode or "none"),
+        tostring(truth.guardBlocked or "none"),
+        tostring(overwriteDetected),
+        tostring(overwriteReason)
+    ))
+
+    return {
+        score = score,
+        stage = stage,
+        signature = signature,
+        role = role,
+        overwriteDetected = overwriteDetected,
+        overwriteReason = overwriteReason,
+    }
+end
+
 local function probeHumanizationState(record, actor, appearanceDetail, source)
     if not actor then
         return false, "actor=nil"
@@ -1438,6 +1540,7 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
     )
 
     noteDummyAppearanceState(record, actor, ok, source, detail)
+    stampAppearanceCadence(record, actor, source or "CarrierIsoZombie.probeHumanizationState")
     trace(ok and "spawn.humanization_probe" or "spawn.humanization_failed", record, detail)
     return ok, detail
 end
