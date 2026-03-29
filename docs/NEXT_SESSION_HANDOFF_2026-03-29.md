@@ -4,12 +4,22 @@ Current work branch: `spike/minimal-neutral-dummy`
 
 ## Executive summary
 
-Today’s session sharply narrowed the current branch state:
+Today’s session established a much sharper embodiment map than at session start:
 
-- `IsoZombie` remains the only stable active lane.
-- `IsoZombie` is **not** primarily failing because descriptor/clothing/skin are missing.
-- The stronger current blocker is zombie-owned presentation/runtime truth.
-- `IsoSurvivor` provided useful actor-class evidence but is **not safe to keep live** because the current constructor path can hard-crash the engine.
+- `IsoZombie` remains the only stable active gameplay test lane.
+- `IsoZombie` is **not** primarily failing because of missing descriptor/clothing/skin truth.
+- The strongest current `IsoZombie` blocker remains zombie-owned presentation/runtime truth.
+- `IsoSurvivor` provided useful actor-class evidence but is quarantined because the current constructor/runtime path can hard-crash the engine.
+- `IsoPlayer` became the most interesting alternative lane of the day because it survives as an alive-class actor, but it still does not visibly materialize.
+
+## Most important document to read first next time
+
+Read this before touching code:
+- `docs/EXPERIMENT_REPORT_2026-03-29_FULL_DAY_FINAL.md`
+
+Also useful:
+- `docs/EXPERIMENT_REPORT_2026-03-29_ISOZOMBIE_ISOSURVIVOR.md`
+- `docs/TEST_LOG_HISTORY.md`
 
 ## What is settled enough that it should not be re-proved casually
 
@@ -20,7 +30,7 @@ Repeated full-restart tests already established all of the following together:
 - zombie vocal leakage is suppressed,
 - player-recognition/aggression did not visibly appear,
 - TEST 02 movement produces real displacement and committed final position,
-- movement still looks segmented / snap-like rather than like natural human walking,
+- movement still looks segmented / snap-like rather than natural human walking,
 - shell still looks zombie-like.
 
 ### 2. Current `IsoZombie` visual failure is not just “appearance data missing”
@@ -52,7 +62,25 @@ But the current constructor/runtime path also showed:
 - engine crash in `IsoGameCharacter.updateInternal`
 - null-body-damage dereference during update
 
-Therefore the lane is not just “buggy”; it is currently crash-prone.
+Therefore the lane is not just buggy; it is currently crash-prone.
+Do not re-run it casually.
+
+### 5. `IsoPlayer` survives but still does not visibly materialize
+This is the most important end-of-day update.
+Repeated logs showed that `IsoPlayer` can reach:
+- `alive_npc`
+- `world=true`
+- `squarePresent=true`
+- `body=true`
+- `humanVisual=true`
+- `descriptor=true`
+- `inventory=true`
+- stable embodied actor state
+
+But even after alpha-loop mitigation and create-hook fallback completion, the lane still ended with:
+- `modelRegistered=nil`
+- no visible NPC on screen
+- recurring console-side evidence around `ModelManager.Add(...)` and `legsSprite.modelSlot` being null
 
 ## Commits added during this session
 
@@ -65,48 +93,40 @@ Therefore the lane is not just “buggy”; it is currently crash-prone.
 - `f45d513` — `Wire IsoSurvivor into debug A/B test lane`
 - `cfd19d0` — `Let IsoSurvivor settle before rejecting`
 - `cfe0829` — `Skip unsupported visual APIs for IsoSurvivor`
+- `0eb2a42` — `Quarantine IsoSurvivor test rail and document 2026-03-29 findings`
 
-### Safety follow-up after crash evidence
-- pending in this same session after the handoff doc: disable/quarantine the IsoSurvivor UI/debug rail so it cannot be casually retriggered
+### IsoPlayer viability / visibility / materialization investigation
+- `f31ac6c` — `Add IsoPlayer viability probe test rail`
+- `8fe0d91` — `Add phase-1 IsoPlayer visibility stabilization`
+- `702228f` — `Block zero-target alpha loop for IsoPlayer`
+- `79124a9` — `Guard IsoPlayer model registration until slot ready`
+- `6c20bc7` — `Add IsoPlayer create-hook fallback completion`
+- `acfe3f0` — `Trace IsoPlayer sprite slots before model add`
+- `ce88dbe` — `Use minimal IsoPlayer materialization call set`
 
-## Most important detailed report
+## Recommended next-session stance
 
-Read this first next time:
-- `docs/EXPERIMENT_REPORT_2026-03-29_ISOZOMBIE_ISOSURVIVOR.md`
-
-Also updated:
-- `docs/TEST_LOG_HISTORY.md`
-
-## Recommended next step
-
-### Immediate
+### Immediate operational stance
 - keep `IsoSurvivor` disabled in the debug/test rail
-- do not re-run TEST 01B on the current constructor path
+- do not re-run current-path `IsoSurvivor` TEST 01B
+- do not blindly re-run the same `IsoPlayer` probe unless there is a **new model/materialization hypothesis**
 
-### Strategic
-If another alt carrier experiment is attempted, do not start from the in-game harness first.
-Start from a constructor/runtime contract review and answer:
+### Best current exact question
+If continuing the alt-carrier path, the next question should be:
 
-> Which Build 42 actor classes can be constructed from Lua such that they survive `IsoGameCharacter.updateInternal` without null runtime members like `BodyDamage`?
+> Which exact engine or Lua call path is still provoking `ModelManager.Add` while `chr.legsSprite.modelSlot` is null on the `IsoPlayer` lane?
 
-### If continuing on `IsoZombie`
-The next useful experiments should focus on **zombie presentation ownership**, not general appearance reapplication.
-That means:
-- role/presentation authority,
-- alpha/culling ownership,
-- model registration / render-path implications,
-- or a more deliberate actor-class escape plan.
-
-## Explicit do-not-repeat list
-
-Do not casually repeat these without a new patch/hypothesis:
-- plain `IsoZombie` TEST 01~03 just to re-confirm zombie-looking visuals
-- post-runtime-settle rebuild as a standalone idea
-- current-path `IsoSurvivor` TEST 01B spawn attempt
-- generic “maybe skin/clothes didn’t apply” reasoning
+### What NOT to do next session
+Do not restart with:
+- plain `IsoZombie` TEST 01~03 just to prove the same zombie-looking result again,
+- post-runtime-settle rebuild as a standalone idea,
+- current-path `IsoSurvivor` spawn retry,
+- another `IsoPlayer` probe that simply repeats the same code path without a new materialization hypothesis,
+- generic “maybe clothes/descriptor didn’t apply” reasoning.
 
 ## One-line handoff summary
 
-The branch is now understood as:
+The branch is now best understood as:
 - **`IsoZombie` = stable enough to study, but zombie-role trapped**
 - **`IsoSurvivor` = alive-role hint, but engine-unsafe**
+- **`IsoPlayer` = runtime-valid, but still non-materialized / non-registered visually**

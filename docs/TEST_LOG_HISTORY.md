@@ -818,3 +818,98 @@ For every new test cycle, append a new section using this structure:
 - Preserve today’s findings in handoff-style documentation so the next session does not repeat already-settled tests.
 - If a new alt carrier is explored later, begin with a constructor/runtime contract review first, especially around safe engine update participation (`BodyDamage`, world registration, and other runtime-core dependencies).
 - Otherwise continue `IsoZombie` work only with patches that explicitly target zombie presentation ownership rather than generic “rebuild later” timing ideas.
+
+## 2026-03-29 18:46 KST — Full-day embodiment map settled: IsoZombie trapped, IsoSurvivor unsafe, IsoPlayer non-materialized
+
+### In-game result
+- Repeated full-restart tests on the current `IsoZombie` minimal dummy lane continued to show the same broad behavior:
+  - spawn succeeded,
+  - visible result still looked zombie-like,
+  - zombie sound leakage stayed suppressed,
+  - the shell remained calm / non-hostile,
+  - the player was not visibly recognized,
+  - movement succeeded and final position persisted,
+  - but locomotion still read like segmented snapping rather than natural human walking.
+- User also repeatedly felt that during movement the shell sometimes seemed to briefly disappear for a split instant.
+- `clean` still did not remove the managed shell; `delete` still worked.
+- `IsoSurvivor` did not become a valid gameplay comparison lane because the constructor/runtime path remained crash-prone.
+- `IsoPlayer` became the main alternative lane later in the session:
+  - it did not hard-crash the engine like `IsoSurvivor`,
+  - but it never became visibly materialized on screen,
+  - and repeated visibility/materialization patches did not produce a visible actor.
+- User reported that by the end of the `IsoPlayer` sequence, errors seemed to increase rather than decrease.
+
+### Log signals
+- New appearance taxonomy on `IsoZombie` repeatedly converged on:
+  - `descOk=true`
+  - `visualOk=true`
+  - `skinOk=true`
+  - `wornOk=true`
+  - `itemVisualOk=true`
+  - but also:
+    - `roleOk=false`
+    - `guardBlocked=not_in_world`
+    - `failCode=fail_presentation_role_zombie`
+- `IsoZombie` repeatedly remained zombie-owned at the presentation layer:
+  - `presentationRole=reanimated_zombie`
+  - guard blocking such as `zombie_or_reanimated`
+  - alpha/culling instability could still occur during movement/runtime progression.
+- `IsoSurvivor` provided a meaningful but dangerous signal:
+  - logs could show `object=Survivor` and `presentationRole=alive_npc`,
+  - but runtime core remained incomplete (`bodyDamage=nil`, `inWorld=false`),
+  - and the lane could crash in `IsoGameCharacter.updateInternal` because `BodyDamage` remained null.
+- `IsoPlayer` repeatedly showed strong runtime viability:
+  - `alive_npc`
+  - `world=true`
+  - `squarePresent=true`
+  - `body=true`
+  - `inventory=true`
+  - `descriptor=true`
+  - `humanVisual=true`
+- However the lane still failed to visibly materialize, and repeated logs stayed stuck on:
+  - `modelRegistered=nil`
+- Important narrowing steps happened during the day:
+  - zero-target alpha loop mitigation was added and did block some of the assistant’s own `setAlphaToTarget(0)` behavior,
+  - create-hook fallback later succeeded and `lastCreateHook=fallback_isoplayer_materialize` could be observed,
+  - but even after that success the actor still did not become visible.
+- By the end of the session the strongest console-side error clue for `IsoPlayer` remained:
+  - `NullPointerException: Cannot assign field "remove" because "chr.legsSprite.modelSlot" is null at ModelManager.Add(ModelManager.java:638)`
+- Another repeated but lower-priority console-side error also remained present:
+  - `DebugFileWatcher.add(...)` watcher null
+- `attempted index: getForname of non-table: null` also appeared in console/system output searches and should be kept in mind as a separate null-name/descriptor safety problem.
+
+### Interpretation / lesson
+- The current `IsoZombie` lane is no longer best described as “humanization probably did not run.”
+- Today’s instrumentation strongly suggests that descriptor/human-visual/clothing truth can exist while final visible truth is still zombie-owned.
+- `IsoSurvivor` was valuable because it strengthened the actor-class-mismatch hypothesis, but it also proved that not every alive-class-looking path is safe enough to keep in the live test rail.
+- `IsoPlayer` became the most viable alternative lane of the day in runtime-safety terms, but by end of day it still looked blocked at the render/materialization contract layer rather than the basic runtime-survival layer.
+- The most important late-session narrowing was this:
+  - create-hook fallback could succeed,
+  - alpha repair could partially succeed,
+  - but `modelRegistered` still remained nil,
+  - strongly pointing at model/materialization registration rather than broad embodiment failure.
+- This means future work should stop re-asking already-answered questions like “did clothes/descriptor apply?” or “what if we simply rebuild later?” and instead focus on explicit model/materialization contract investigation if the `IsoPlayer` lane is continued at all.
+
+### Code or document changes that followed
+- `e430567` — `Add appearance failure taxonomy probes`
+- `3496670` — `Run one-shot rebuild after runtime settle`
+- `723aef3` — `Trace role and guard runtime blockers`
+- `f45d513` — `Wire IsoSurvivor into debug A/B test lane`
+- `cfd19d0` — `Let IsoSurvivor settle before rejecting`
+- `cfe0829` — `Skip unsupported visual APIs for IsoSurvivor`
+- `0eb2a42` — `Quarantine IsoSurvivor test rail and document 2026-03-29 findings`
+- `f31ac6c` — `Add IsoPlayer viability probe test rail`
+- `8fe0d91` — `Add phase-1 IsoPlayer visibility stabilization`
+- `702228f` — `Block zero-target alpha loop for IsoPlayer`
+- `79124a9` — `Guard IsoPlayer model registration until slot ready`
+- `6c20bc7` — `Add IsoPlayer create-hook fallback completion`
+- `acfe3f0` — `Trace IsoPlayer sprite slots before model add`
+- `ce88dbe` — `Use minimal IsoPlayer materialization call set`
+- End-of-day synthesis preserved in:
+  - `docs/EXPERIMENT_REPORT_2026-03-29_FULL_DAY_FINAL.md`
+  - updated `docs/NEXT_SESSION_HANDOFF_2026-03-29.md`
+
+### Next thing to verify
+- Do not restart next session by repeating the same plain `IsoZombie` / `IsoSurvivor` / unchanged `IsoPlayer` probes.
+- If the `IsoPlayer` path is continued, begin from the narrower question of which exact engine or Lua path still provokes `ModelManager.Add` while `chr.legsSprite.modelSlot` is null.
+- Otherwise treat `IsoZombie` as the only currently stable shell for gameplay iteration and keep alt-carrier work as a separate, slower research track.
