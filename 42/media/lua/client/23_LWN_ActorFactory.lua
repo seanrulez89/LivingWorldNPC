@@ -3296,6 +3296,91 @@ function Factory.applyLoadout(record, actor, descriptor)
     touchPresentationStage(record, "ready", "applyLoadout", true)
 end
 
+function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options)
+    if not actor then
+        return false, "actor=nil"
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    local probeSource = options and options.source or "applyBanditsStyleVisualProbe"
+    local beforeAppearance = appearanceSnapshot(actor)
+    local beforeSignature = appearanceSignature(beforeAppearance)
+    local desc = descriptor or protectedCall(actor, "getDescriptor")
+    local descVisual = desc and protectedCall(desc, "getHumanVisual") or nil
+    local actorVisual = protectedCall(actor, "getHumanVisual")
+    local itemVisuals = safeActorItemVisuals(actor)
+    local wornItems = safeActorWornItems(actor)
+
+    if itemVisuals then
+        protectedCall(itemVisuals, "clear")
+    end
+    if wornItems then
+        protectedCall(wornItems, "clear")
+    end
+
+    applyFemaleFlags(actor, record and record.identity and record.identity.female == true)
+    protectedCall(actor, "setHealth", record and record.stats and record.stats.health or protectedCall(actor, "getHealth"))
+
+    if actorVisual and descVisual then
+        local skin = protectedCall(descVisual, "getSkinTexture") or protectedCall(descVisual, "getSkinTextureName")
+        local hair = protectedCall(descVisual, "getHairModel")
+        local beard = protectedCall(descVisual, "getBeardModel")
+        local hairColor = protectedCall(descVisual, "getHairColor") or protectedCall(desc, "getNaturalHairColor")
+        local beardColor = protectedCall(descVisual, "getBeardColor") or hairColor
+        if skin and tostring(skin) ~= "" then
+            protectedCall(actorVisual, "setSkinTextureName", skin)
+        end
+        if hair then
+            protectedCall(actorVisual, "setHairModel", hair)
+        end
+        if beard then
+            protectedCall(actorVisual, "setBeardModel", beard)
+        end
+        if hairColor then
+            protectedCall(actorVisual, "setHairColor", hairColor)
+        end
+        if beardColor then
+            protectedCall(actorVisual, "setBeardColor", beardColor)
+        end
+    end
+
+    ensureVisibleClothing(actor)
+    local bridge = bridgeWornItemsToItemVisuals(actor)
+    refreshActorPresentation(actor)
+    local afterAppearance = appearanceSnapshot(actor)
+    local afterSignature = appearanceSignature(afterAppearance)
+    stampAppearanceDiff(record, actor, probeSource, beforeAppearance, afterAppearance)
+
+    if modData then
+        modData.LWN_BanditsVisualProbe = true
+        modData.LWN_BanditsVisualProbeApplied = true
+        modData.LWN_BanditsVisualProbeSource = probeSource
+        modData.LWN_BanditsVisualProbeAt = worldAgeHours()
+        modData.LWN_BanditsVisualProbeBridge = bridge and bridge.mode or "none"
+        modData.LWN_BanditsVisualProbeBeforeSignature = beforeSignature
+        modData.LWN_BanditsVisualProbeAfterSignature = afterSignature
+    end
+
+    stageTrace("ActorFactory", "banditsVisualProbe.ready", record, actor, desc, {
+        source = probeSource,
+        detail = string.format(
+            "before=%s after=%s bridge=%s itemVisuals=%s wornItems=%s",
+            safeText(beforeSignature),
+            safeText(afterSignature),
+            safeText(bridge and bridge.mode or "none"),
+            safeText(afterAppearance and afterAppearance.itemVisuals or nil),
+            safeText(afterAppearance and afterAppearance.wornItems or nil)
+        ),
+    })
+
+    return true, string.format(
+        "bandits_direct_visual_probe_v1 before=%s after=%s bridge=%s",
+        tostring(beforeSignature),
+        tostring(afterSignature),
+        tostring(bridge and bridge.mode or "none")
+    )
+end
+
 local function canForceIsoPlayerCreateHookFallback(actor)
     if not isIsoPlayerCarrierActor(actor) then
         return false

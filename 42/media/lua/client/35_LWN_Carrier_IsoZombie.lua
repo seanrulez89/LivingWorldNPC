@@ -32,6 +32,7 @@ local ISOZOMBIE_APPEARANCE_EXPERIMENT = "isozombie_shared_desc_visual_v1"
 local ISOZOMBIE_APPEARANCE_REUSE = "desc+baseline+clothes+bridge"
 local ISOZOMBIE_ROLE_GUARD_RELAX_EXPERIMENT = true
 local ISOZOMBIE_ALIVE_RESET_AFTER_RUNTIME_SETTLE = true
+local ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE = true
 
 local function worldAgeHours()
     return getGameTime() and getGameTime():getWorldAgeHours() or 0
@@ -1584,6 +1585,26 @@ local function buildInitialDummyAppearance(record, actor, source)
 
     if initialDetail and appearanceDetail and appearanceDetail.applied ~= true then
         appearanceDetail = initialDetail
+    end
+
+    if ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE == true
+        and isMinimalDummyRecord(record)
+        and LWN.ActorFactory
+        and LWN.ActorFactory.applyBanditsStyleVisualProbe
+    then
+        local _probeApplied, probeDetail = LWN.ActorFactory.applyBanditsStyleVisualProbe(
+            record,
+            actor,
+            descriptor,
+            {
+                source = rebuildSource .. ".bandits_visual_probe",
+            }
+        )
+        local modData = protectedCall(actor, "getModData")
+        if modData then
+            modData.LWN_BanditsVisualProbeDetail = probeDetail
+            modData.LWN_BanditsVisualProbeStage = rebuildSource .. ".bandits_visual_probe"
+        end
     end
 
     applyBasicZombieCarrierFlags(record, actor, nil, descriptor, appearanceDetail)
