@@ -85,7 +85,7 @@ local function movementSummaryLine(record, actor)
     local command = record and record.companion and record.companion.command or {}
     local telemetry = command and command.movementTelemetry or {}
     return string.format(
-        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s motor=%s commit=%s moving=%s attacking=%s target=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s appLock=%s appFail=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s roleOk=%s guardBlocked=%s failCode=%s overwritten=%s rgWorld=%s rgBody=%s rgCurSq=%s rgSq=%s rgRole=%s rgRelax=%s owBest=%s owNow=%s owStage=%s owSeen=%s owReason=%s arReset=%s arTouched=%s bProbe=%s bStage=%s",
+        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s motor=%s commit=%s moving=%s attacking=%s target=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s appLock=%s appFail=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s roleOk=%s guardBlocked=%s failCode=%s overwritten=%s rgWorld=%s rgBody=%s rgCurSq=%s rgSq=%s rgRole=%s rgRelax=%s owBest=%s owNow=%s owStage=%s owSeen=%s owReason=%s arReset=%s arTouched=%s bProbe=%s bStage=%s bEffect=%s bPostRole=%s bPostFail=%s",
         tostring(record and record.id or "nil"),
         tostring(modData and modData.LWN_ShellLaneContract or modData and modData.LWN_ShellMode or "none"),
         tostring(command.kind or "none"),
@@ -135,7 +135,10 @@ local function movementSummaryLine(record, actor)
         boolText(modData and modData.LWN_RuntimeSettleAliveResetDone),
         boolText(modData and modData.LWN_RuntimeSettleAliveResetTouched),
         boolText(modData and modData.LWN_BanditsVisualProbeApplied),
-        tostring(modData and modData.LWN_BanditsVisualProbeStage or "none")
+        tostring(modData and modData.LWN_BanditsVisualProbeStage or "none"),
+        tostring(modData and modData.LWN_BanditsVisualProbeNetEffect or "none"),
+        tostring(modData and modData.LWN_BanditsVisualProbePostFlagsRole or "none"),
+        tostring(modData and modData.LWN_BanditsVisualProbePostFlagsFail or "none")
     )
 end
 

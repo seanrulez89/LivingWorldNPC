@@ -3296,6 +3296,35 @@ function Factory.applyLoadout(record, actor, descriptor)
     touchPresentationStage(record, "ready", "applyLoadout", true)
 end
 
+local function classifyBanditsProbeNetEffect(beforeAppearance, directAppearance, afterAppearance, bridge)
+    local beforeSignature = appearanceSignature(beforeAppearance)
+    local directSignature = appearanceSignature(directAppearance)
+    local afterSignature = appearanceSignature(afterAppearance)
+    local beforeRole = beforeAppearance and beforeAppearance.role or nil
+    local afterRole = afterAppearance and afterAppearance.role or nil
+    local bridgeMode = bridge and bridge.mode or "none"
+
+    if beforeSignature == afterSignature and beforeSignature == directSignature then
+        return "no_effect"
+    end
+    if beforeRole == "reanimated_zombie" and afterRole ~= "reanimated_zombie" then
+        return "role_shifted_alive"
+    end
+    if directSignature ~= beforeSignature and afterSignature == directSignature then
+        return "direct_copy_survived"
+    end
+    if directSignature ~= beforeSignature and afterSignature ~= beforeSignature then
+        return "partial_visual_shift"
+    end
+    if directSignature ~= beforeSignature and afterSignature == beforeSignature then
+        return "direct_copy_reverted_before_refresh_end"
+    end
+    if bridgeMode == "official_worn_items_bridge" or bridgeMode == "fallback_add_clothing_item" then
+        return "cosmetic_bridge_only"
+    end
+    return "ambiguous"
+end
+
 function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options)
     if not actor then
         return false, "actor=nil"
@@ -3344,11 +3373,29 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
         end
     end
 
+    local directAppearance = appearanceSnapshot(actor)
+    local directSignature = appearanceSignature(directAppearance)
+    stageTrace("ActorFactory", "banditsVisualProbe.after_direct_copy", record, actor, desc, {
+        source = probeSource,
+        detail = string.format(
+            "before=%s direct=%s role=%s skin=%s hair=%s beard=%s itemVisuals=%s wornItems=%s",
+            safeText(beforeSignature),
+            safeText(directSignature),
+            safeText(directAppearance and directAppearance.role or nil),
+            safeText(directAppearance and directAppearance.skin or nil),
+            safeText(directAppearance and directAppearance.hair or nil),
+            safeText(directAppearance and directAppearance.beard or nil),
+            safeText(directAppearance and directAppearance.itemVisuals or nil),
+            safeText(directAppearance and directAppearance.wornItems or nil)
+        ),
+    })
+
     ensureVisibleClothing(actor)
     local bridge = bridgeWornItemsToItemVisuals(actor)
     refreshActorPresentation(actor)
     local afterAppearance = appearanceSnapshot(actor)
     local afterSignature = appearanceSignature(afterAppearance)
+    local netEffect = classifyBanditsProbeNetEffect(beforeAppearance, directAppearance, afterAppearance, bridge)
     stampAppearanceDiff(record, actor, probeSource, beforeAppearance, afterAppearance)
 
     if modData then
@@ -3358,26 +3405,38 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
         modData.LWN_BanditsVisualProbeAt = worldAgeHours()
         modData.LWN_BanditsVisualProbeBridge = bridge and bridge.mode or "none"
         modData.LWN_BanditsVisualProbeBeforeSignature = beforeSignature
+        modData.LWN_BanditsVisualProbeDirectSignature = directSignature
         modData.LWN_BanditsVisualProbeAfterSignature = afterSignature
+        modData.LWN_BanditsVisualProbeDirectRole = directAppearance and directAppearance.role or nil
+        modData.LWN_BanditsVisualProbeAfterRole = afterAppearance and afterAppearance.role or nil
+        modData.LWN_BanditsVisualProbeDirectItemVisuals = directAppearance and directAppearance.itemVisuals or nil
+        modData.LWN_BanditsVisualProbeDirectWornItems = directAppearance and directAppearance.wornItems or nil
+        modData.LWN_BanditsVisualProbeAfterItemVisuals = afterAppearance and afterAppearance.itemVisuals or nil
+        modData.LWN_BanditsVisualProbeAfterWornItems = afterAppearance and afterAppearance.wornItems or nil
+        modData.LWN_BanditsVisualProbeNetEffect = netEffect
     end
 
     stageTrace("ActorFactory", "banditsVisualProbe.ready", record, actor, desc, {
         source = probeSource,
         detail = string.format(
-            "before=%s after=%s bridge=%s itemVisuals=%s wornItems=%s",
+            "before=%s direct=%s after=%s bridge=%s effect=%s itemVisuals=%s wornItems=%s",
             safeText(beforeSignature),
+            safeText(directSignature),
             safeText(afterSignature),
             safeText(bridge and bridge.mode or "none"),
+            safeText(netEffect),
             safeText(afterAppearance and afterAppearance.itemVisuals or nil),
             safeText(afterAppearance and afterAppearance.wornItems or nil)
         ),
     })
 
     return true, string.format(
-        "bandits_direct_visual_probe_v1 before=%s after=%s bridge=%s",
+        "bandits_direct_visual_probe_v1 before=%s direct=%s after=%s bridge=%s effect=%s",
         tostring(beforeSignature),
+        tostring(directSignature),
         tostring(afterSignature),
-        tostring(bridge and bridge.mode or "none")
+        tostring(bridge and bridge.mode or "none"),
+        tostring(netEffect)
     )
 end
 

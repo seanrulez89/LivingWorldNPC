@@ -1547,6 +1547,52 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
     return ok, detail
 end
 
+local function stampBanditsProbeCheckpoint(record, actor, stage, source)
+    if not (actor and LWN.ActorFactory) then
+        return nil
+    end
+
+    local truth = LWN.ActorFactory.getAppearanceTruthSnapshot and LWN.ActorFactory.getAppearanceTruthSnapshot(actor) or nil
+    local presentation = LWN.ActorFactory.getPresentationState and LWN.ActorFactory.getPresentationState(actor) or nil
+    local modData = protectedCall(actor, "getModData")
+    local detail = string.format(
+        "stage=%s role=%s fail=%s guard=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s overwritten=%s sig=%s",
+        tostring(stage),
+        tostring(presentation and presentation.presentationRole or truth and truth.role or "nil"),
+        tostring(truth and truth.failureCode or "none"),
+        tostring(truth and truth.guardBlocked or "none"),
+        tostring(truth and truth.descriptorOk == true),
+        tostring(truth and truth.humanVisualOk == true),
+        tostring(truth and truth.skinOk == true),
+        tostring(truth and truth.wornItemsOk == true),
+        tostring(truth and truth.itemVisualsOk == true),
+        tostring(truth and truth.overwrittenAfterRefresh == true),
+        tostring(truth and truth.signature or "nil")
+    )
+
+    if modData then
+        modData.LWN_BanditsVisualProbeCheckpointStage = stage
+        modData.LWN_BanditsVisualProbeCheckpointAt = worldAgeHours()
+        modData.LWN_BanditsVisualProbeCheckpointRole = presentation and presentation.presentationRole or truth and truth.role or nil
+        modData.LWN_BanditsVisualProbeCheckpointFail = truth and truth.failureCode or nil
+        modData.LWN_BanditsVisualProbeCheckpointGuard = truth and truth.guardBlocked or nil
+        modData.LWN_BanditsVisualProbeCheckpointSignature = truth and truth.signature or nil
+        if stage == "after_basic_flags" then
+            modData.LWN_BanditsVisualProbePostFlagsRole = presentation and presentation.presentationRole or truth and truth.role or nil
+            modData.LWN_BanditsVisualProbePostFlagsFail = truth and truth.failureCode or nil
+            modData.LWN_BanditsVisualProbePostFlagsGuard = truth and truth.guardBlocked or nil
+            modData.LWN_BanditsVisualProbePostFlagsSignature = truth and truth.signature or nil
+        end
+    end
+
+    trace("bandits_probe_" .. tostring(stage), record, string.format(
+        "source=%s %s",
+        tostring(source or "CarrierIsoZombie.bandits_probe_checkpoint"),
+        tostring(detail)
+    ))
+    return truth, presentation, detail
+end
+
 local function buildInitialDummyAppearance(record, actor, source)
     if not (actor and isMinimalDummyRecord(record)) then
         return nil, nil, false, "not_minimal_dummy"
@@ -1605,9 +1651,11 @@ local function buildInitialDummyAppearance(record, actor, source)
             modData.LWN_BanditsVisualProbeDetail = probeDetail
             modData.LWN_BanditsVisualProbeStage = rebuildSource .. ".bandits_visual_probe"
         end
+        stampBanditsProbeCheckpoint(record, actor, "after_probe_refresh", rebuildSource .. ".bandits_visual_probe")
     end
 
     applyBasicZombieCarrierFlags(record, actor, nil, descriptor, appearanceDetail)
+    stampBanditsProbeCheckpoint(record, actor, "after_basic_flags", rebuildSource .. ".post_basic_flags")
     local ok, detail = probeHumanizationState(record, actor, appearanceDetail, rebuildSource .. ".probe")
     trace(ok and "dummy_appearance_locked" or "dummy_appearance_failed", record, string.format(
         "source=%s detail=%s",
@@ -1648,7 +1696,29 @@ local function runPostRuntimeSettleRebuild(record, actor, source)
         })
     end
 
+    if ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE == true
+        and isMinimalDummyRecord(record)
+        and LWN.ActorFactory
+        and LWN.ActorFactory.applyBanditsStyleVisualProbe
+    then
+        local _probeApplied, probeDetail = LWN.ActorFactory.applyBanditsStyleVisualProbe(
+            record,
+            actor,
+            descriptor,
+            {
+                source = rebuildSource .. ".bandits_visual_probe",
+            }
+        )
+        local modData = protectedCall(actor, "getModData")
+        if modData then
+            modData.LWN_BanditsVisualProbeDetail = probeDetail
+            modData.LWN_BanditsVisualProbeStage = rebuildSource .. ".bandits_visual_probe"
+        end
+        stampBanditsProbeCheckpoint(record, actor, "post_runtime_settle_after_probe", rebuildSource .. ".bandits_visual_probe")
+    end
+
     applyBasicZombieCarrierFlags(record, actor, nil, descriptor, appearanceDetail)
+    stampBanditsProbeCheckpoint(record, actor, "post_runtime_settle_after_basic_flags", rebuildSource .. ".post_basic_flags")
     local ok, detail = probeHumanizationState(record, actor, appearanceDetail, rebuildSource .. ".probe")
 
     local modData = protectedCall(actor, "getModData")
