@@ -1626,13 +1626,43 @@ isModelRegistered = function(actor)
     return protectedCall(manager, "ContainsChar", actor)
 end
 
+local function modelSlotReadiness(actor)
+    if not actor then
+        return {
+            legsSprite = false,
+            modelSlot = false,
+            ready = false,
+        }
+    end
+
+    local legsSprite = actor.legsSprite or nil
+    local modelSlot = legsSprite and legsSprite.modelSlot or nil
+    return {
+        legsSprite = legsSprite ~= nil,
+        modelSlot = modelSlot ~= nil,
+        ready = legsSprite ~= nil and modelSlot ~= nil,
+    }
+end
+
 local function refreshModelManager(actor, reason)
     local manager = modelManager()
     if not manager or not actor then return nil end
 
+    local modData = protectedCall(actor, "getModData")
     local before = protectedCall(manager, "ContainsChar", actor)
+    local readiness = modelSlotReadiness(actor)
+    local addAttempted = false
+    local addSkipped = false
+    local addSkipReason = nil
+
     if before ~= true then
-        protectedCall(manager, "Add", actor)
+        if isIsoPlayerCarrierActor(actor) and readiness.ready ~= true then
+            addSkipped = true
+            addSkipReason = readiness.legsSprite ~= true and "legsSprite_nil" or "modelSlot_nil"
+        else
+            addAttempted = true
+            protectedCall(manager, "Add", actor)
+        end
     end
 
     protectedCall(manager, "Reset", actor)
@@ -1640,7 +1670,6 @@ local function refreshModelManager(actor, reason)
     protectedCall(manager, "ResetCharacterEquippedHands", actor)
 
     local after = protectedCall(manager, "ContainsChar", actor)
-    local modData = protectedCall(actor, "getModData")
     if modData then
         modData.LWN_ModelRegistered = after == true
         modData.LWN_LastModelRefreshReason = reason
@@ -1651,11 +1680,24 @@ local function refreshModelManager(actor, reason)
         modData.LWN_LastModelCarrierKind = modData.LWN_CarrierKind
         modData.LWN_LastModelExpectedHook = modData.LWN_CreateHookExpected
         modData.LWN_LastModelCreateHook = modData.LWN_LastCreateHook
+        modData.LWN_LastModelAddAttempted = addAttempted == true
+        modData.LWN_LastModelAddSkipped = addSkipped == true
+        modData.LWN_LastModelAddSkipReason = addSkipReason
+        modData.LWN_LastModelLegsSpriteReady = readiness.legsSprite == true
+        modData.LWN_LastModelSlotReady = readiness.modelSlot == true
+        if addSkipped == true then
+            modData.LWN_ModelAddSkipCount = (tonumber(modData.LWN_ModelAddSkipCount) or 0) + 1
+        end
         modData.LWN_LastModelRegistrationDetail = string.format(
-            "carrier=%s before=%s after=%s expectedHook=%s lastCreateHook=%s postCreatePending=%s appliedBy=%s",
+            "carrier=%s before=%s after=%s addAttempted=%s addSkipped=%s skipReason=%s legsSpriteReady=%s modelSlotReady=%s expectedHook=%s lastCreateHook=%s postCreatePending=%s appliedBy=%s",
             safeText(modData.LWN_CarrierKind),
             safeText(before),
             safeText(after),
+            safeText(addAttempted),
+            safeText(addSkipped),
+            safeText(addSkipReason),
+            safeText(readiness.legsSprite),
+            safeText(readiness.modelSlot),
             safeText(modData.LWN_CreateHookExpected),
             safeText(modData.LWN_LastCreateHook),
             safeText(modData.LWN_PostCreateHeavyPending),
@@ -1665,13 +1707,18 @@ local function refreshModelManager(actor, reason)
     if isDebugModeEnabled() then
         local state = actorPresentationState(actor)
         print(string.format(
-            "[LWN][RegistrationTrace] stage=model_refresh | reason=%s | npcId=%s | objectRef=%s | carrier=%s | beforeContains=%s | afterContains=%s | refreshCount=%s | alphaClass=%s | world=%s | squarePresent=%s | expectedHook=%s | lastCreateHook=%s | createHookPending=%s | postCreatePending=%s | appliedBy=%s",
+            "[LWN][RegistrationTrace] stage=model_refresh | reason=%s | npcId=%s | objectRef=%s | carrier=%s | beforeContains=%s | afterContains=%s | addAttempted=%s | addSkipped=%s | skipReason=%s | legsSpriteReady=%s | modelSlotReady=%s | refreshCount=%s | alphaClass=%s | world=%s | squarePresent=%s | expectedHook=%s | lastCreateHook=%s | createHookPending=%s | postCreatePending=%s | appliedBy=%s",
             safeText(reason),
             safeText(getKnownNpcIdFromActor(actor)),
             safeText(objectRef(actor)),
             safeText(modData and modData.LWN_CarrierKind or nil),
             safeText(before),
             safeText(after),
+            safeText(addAttempted),
+            safeText(addSkipped),
+            safeText(addSkipReason),
+            safeText(readiness.legsSprite),
+            safeText(readiness.modelSlot),
             safeText(modData and modData.LWN_ModelRefreshCount or 0),
             safeText(classifyAlphaState(state)),
             safeText(state and state.world or nil),
