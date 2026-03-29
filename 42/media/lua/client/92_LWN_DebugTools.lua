@@ -529,6 +529,35 @@ local function safeSize(list)
     return 0
 end
 
+local function supportsVisualCollections(actor)
+    if not actor then return false end
+    if instanceof then
+        if instanceof(actor, "IsoZombie") or instanceof(actor, "IsoPlayer") then
+            return true
+        end
+        if instanceof(actor, "IsoSurvivor") then
+            return false
+        end
+    end
+    local modData = actor.getModData and actor:getModData() or nil
+    local carrierKind = modData and modData.LWN_CarrierKind or nil
+    return carrierKind == "isozombie" or carrierKind == "isoplayer"
+end
+
+local function safeActorItemVisuals(actor)
+    if not supportsVisualCollections(actor) then
+        return nil
+    end
+    return protectedCall(actor, "getItemVisuals")
+end
+
+local function safeActorWornItems(actor)
+    if not supportsVisualCollections(actor) then
+        return nil
+    end
+    return protectedCall(actor, "getWornItems")
+end
+
 local function actorDebugLine(actor)
     if not actor then
         return "actor=nil"
@@ -537,8 +566,8 @@ local function actorDebugLine(actor)
     local modData = actor.getModData and actor:getModData() or nil
     local presentation = LWN.ActorFactory and LWN.ActorFactory.getPresentationState and LWN.ActorFactory.getPresentationState(actor) or nil
     local visual = protectedCall(actor, "getHumanVisual")
-    local itemVisuals = protectedCall(actor, "getItemVisuals")
-    local wornItems = protectedCall(actor, "getWornItems")
+    local itemVisuals = safeActorItemVisuals(actor)
+    local wornItems = safeActorWornItems(actor)
     local path2 = protectedCall(actor, "getPath2")
 
     return string.format(
@@ -950,7 +979,9 @@ function DebugTools.spawnOneNearPlayer(player)
 end
 
 function DebugTools.spawnOneNearPlayerIsoSurvivor(player)
-    return spawnOneNearPlayerWithCarrier(player, "isosurvivor")
+    sayInfo(player, "IsoSurvivor lane disabled: current constructor path can hard-crash the game (null BodyDamage in engine update).")
+    print("[LWN][Debug] IsoSurvivor lane disabled :: reason=engine_null_bodydamage_crash")
+    return false
 end
 
 function DebugTools.spawnOneNearPlayerIsoZombie(player)
@@ -1357,7 +1388,9 @@ local function runMovementAutomationTest01(player)
 end
 
 local function runMovementAutomationTest01IsoSurvivor(player)
-    return runMovementAutomationTest01WithCarrier(player, "isosurvivor")
+    sayInfo(player, "TEST 01B disabled: IsoSurvivor lane is quarantined after reproducible engine crashes.")
+    print("[LWN][Debug] IsoSurvivor automation disabled :: reason=engine_null_bodydamage_crash")
+    return false
 end
 
 local function isSupportedAutomationScenario(state)

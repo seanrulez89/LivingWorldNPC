@@ -747,3 +747,74 @@ For every new test cycle, append a new section using this structure:
 ### Why this matters
 - the branch now has enough stability to support real causal learning
 - preserving that clarity is more valuable right now than rushing into a large Bandits-style rewrite or a locomotion-polish pass with ambiguous evidence
+
+## 2026-03-29 17:05 KST — IsoZombie failure isolated; IsoSurvivor lane quarantined after engine crashes
+
+### In-game result
+- Repeated full-restart tests on the current minimal-dummy `IsoZombie` lane all showed the same broad behavior.
+- Spawn succeeded reliably.
+- The NPC looked like a zombie rather than a living human.
+- Zombie vocalization stayed suppressed.
+- The NPC remained calm / non-hostile and did not visibly recognize the player.
+- TEST 02 movement succeeded and the destination position persisted.
+- However, locomotion did **not** read like human walking; it looked like segmented coordinate snapping / repeated short teleports.
+- The user also reported that during movement it sometimes felt as if the NPC briefly disappeared for a split moment.
+- `clean` still did not remove the NPC, while `delete` still worked.
+- A new A/B attempt using `IsoSurvivor` could not be completed as a valid gameplay comparison because the game eventually crashed during or immediately after spawn.
+
+### Log signals
+- New appearance taxonomy probes repeatedly converged on:
+  - `descOk=true`
+  - `visualOk=true`
+  - `skinOk=true`
+  - `wornOk=true`
+  - `itemVisualOk=true`
+  - but also:
+    - `roleOk=false`
+    - `guardBlocked=not_in_world`
+    - `failCode=fail_presentation_role_zombie`
+- `IsoZombie` traces repeatedly showed zombie-coded presentation truth such as:
+  - `presentationRole=reanimated_zombie`
+  - `PresentationGuard ... reason=zombie_or_reanimated`
+- Movement / visibility logs also supported the user’s “brief disappearance” feeling:
+  - alpha/targetAlpha could recover and later collapse again,
+  - scene culling could reassert during movement/runtime progression.
+- A post-runtime-settle rebuild patch did not materially change the in-game result.
+- Role/guard investigation made the key blocker clearer: appearance data could exist while zombie presentation ownership remained final.
+- `IsoSurvivor` logs were valuable but dangerous:
+  - they showed `object=Survivor` and `presentationRole=alive_npc`,
+  - but runtime core remained incomplete (`bodyDamage=nil`, `inWorld=false`).
+- First `IsoSurvivor` failures included unsupported visual-inspection calls (notably `getItemVisuals()` on a class that does not implement that API safely).
+- After partial trace hardening, the more serious fatal crash remained:
+  - engine-side null-body-damage failure inside `IsoGameCharacter.updateInternal`,
+  - specifically dereferencing `getBodyDamage()` when it was still null.
+
+### Interpretation / lesson
+- The current `IsoZombie` failure is now much better isolated than before.
+- This is no longer well-described as “humanization probably didn’t apply.”
+- Human descriptor / skin / worn-item truth can be present while final presentation still remains zombie-owned.
+- The stronger working interpretation is now:
+  - human appearance data gets injected,
+  - but final render/presentation lifecycle reverts to zombie-role authority,
+  - which preserves zombie-looking visuals and likely contributes to segmented / flickery movement readability.
+- `IsoSurvivor` strengthened the actor-class mismatch hypothesis because it briefly showed `alive_npc` role truth.
+- However, it also proved that the current survivor constructor path is unsafe enough to crash the game engine.
+- Therefore `IsoSurvivor` should not be treated as an active experiment lane right now; it should be treated as quarantined evidence.
+
+### Code or document changes that followed
+- Code / debug instrumentation landed across these commits:
+  - `e430567` — `Add appearance failure taxonomy probes`
+  - `3496670` — `Run one-shot rebuild after runtime settle`
+  - `723aef3` — `Trace role and guard runtime blockers`
+- A/B `IsoSurvivor` activation and safety attempts landed in:
+  - `f45d513` — `Wire IsoSurvivor into debug A/B test lane`
+  - `cfd19d0` — `Let IsoSurvivor settle before rejecting`
+  - `cfe0829` — `Skip unsupported visual APIs for IsoSurvivor`
+- Detailed same-day synthesis was preserved in:
+  - `docs/EXPERIMENT_REPORT_2026-03-29_ISOZOMBIE_ISOSURVIVOR.md`
+
+### Next thing to verify
+- Disable / quarantine the `IsoSurvivor` debug test rail so future sessions do not casually re-trigger the engine crash path.
+- Preserve today’s findings in handoff-style documentation so the next session does not repeat already-settled tests.
+- If a new alt carrier is explored later, begin with a constructor/runtime contract review first, especially around safe engine update participation (`BodyDamage`, world registration, and other runtime-core dependencies).
+- Otherwise continue `IsoZombie` work only with patches that explicitly target zombie presentation ownership rather than generic “rebuild later” timing ideas.

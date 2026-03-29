@@ -353,7 +353,7 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
-    isoTestSub:addOption("Spawn Minimal Dummy Near Player (IsoSurvivor)", player, function(p)
+    isoTestSub:addOption("[DISABLED] Spawn Minimal Dummy Near Player (IsoSurvivor)", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.spawnOneNearPlayerIsoSurvivor then
             LWN.DebugTools.spawnOneNearPlayerIsoSurvivor(p)
         end
@@ -369,7 +369,7 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
-    automationSub:addOption("TEST 01B - Spawn Baseline (IsoSurvivor)", player, function(p)
+    automationSub:addOption("[DISABLED] TEST 01B - Spawn Baseline (IsoSurvivor)", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoSurvivorTest01 then
             LWN.DebugTools.runAutomatedIsoSurvivorTest01(p)
         end
