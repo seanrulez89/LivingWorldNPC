@@ -304,7 +304,11 @@ function UIContext.findNpcActorInWorldObjects(worldObjects)
 end
 
 local function addNpcInteractionSubmenu(context, actor)
-    local rootText = LWN.Loc.textOrDefault("LWN_UI_Context_Root", "Living NPC") .. ": " .. actor:getFullName()
+    local modData = getModData(actor)
+    local displayName = protectedCall(actor, "getFullName")
+        or modData and modData.LWN_DisplayName
+        or tostring(getNpcId(actor) or "Unknown")
+    local rootText = LWN.Loc.textOrDefault("LWN_UI_Context_Root", "Living NPC") .. ": " .. tostring(displayName)
     local option = context:addOption(rootText, nil, nil)
     local sub = context:getNew(context)
     context:addSubMenu(option, sub)

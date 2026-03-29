@@ -154,7 +154,16 @@ local function markManaged(record, actor)
         modData.LWN_LastNpcId = record.id
         modData.LWN_CarrierKind = "isosurvivor"
         modData.LWN_CarrierSpike = true
+        modData.LWN_TestHarnessLabel = record.debugHarness and record.debugHarness.label or modData.LWN_TestHarnessLabel
+        modData.LWN_DisplayName = string.format(
+            "%s %s",
+            tostring(record.identity and record.identity.firstName or "LWN"),
+            tostring(record.identity and record.identity.lastName or "NPC")
+        )
     end
+
+    protectedCall(actor, "setForname", record and record.identity and record.identity.firstName or nil)
+    protectedCall(actor, "setSurname", record and record.identity and record.identity.lastName or nil)
 
     -- Avoid player-specific NPC setters here. Some IsoSurvivor instances appear to
     -- carry a null internal `player` and throw engine-side NPEs when those setters run.
@@ -252,6 +261,8 @@ function Carrier.canSpawn(record, options)
     return true, "IsoSurvivor_available_for_spike"
 end
 
+local MAX_PENDING_SETTLE_ATTEMPTS = 12
+
 function Carrier.spawn(record, options)
     record = ensureRecordShape(record)
     local ok, detail = Carrier.canSpawn(record, options)
@@ -298,45 +309,29 @@ function Carrier.spawn(record, options)
 
     markManaged(record, actor)
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
-    trace(runtimeOk and "spawn.runtime_ready" or "spawn.runtime_rejected", record, string.format("constructor=%s | %s", tostring(constructorLabel), tostring(runtimeDetail)))
+    trace(runtimeOk and "spawn.runtime_ready" or "spawn.pending_settle", record, string.format("constructor=%s | %s", tostring(constructorLabel), tostring(runtimeDetail)))
 
-    if runtimeOk ~= true then
-        shallowRetireRejectedSurvivor(record, actor, "isosurvivor_runtime_core_missing")
+    local handleStatus = runtimeOk == true and "active" or "pending_settle"
+    local detailText = runtimeOk == true
+        and string.format("isosurvivor_spawned_via=%s", tostring(constructorLabel))
+        or string.format("isosurvivor_pending_settle via=%s | %s", tostring(constructorLabel), tostring(runtimeDetail))
 
-        local detailText = string.format("runtime_rejected via=%s | %s", tostring(constructorLabel), tostring(runtimeDetail))
-        return {
-            ok = false,
-            actor = nil,
-            detail = detailText,
-            handle = {
-                kind = "isosurvivor",
-                actor = nil,
-                status = "failed",
-                spawnedAt = worldAgeHours(),
-                detail = detailText,
-                runtime = {
-                    constructor = constructorLabel,
-                    runtimeDetail = runtimeDetail,
-                },
-            },
-        }
-    end
-
-    trace("spawn.ok", record, string.format("constructor=%s | %s", tostring(constructorLabel), tostring(runtimeDetail)))
     return {
         ok = true,
         actor = actor,
-        detail = string.format("isosurvivor_spawned_via=%s", tostring(constructorLabel)),
+        detail = detailText,
         handle = {
             kind = "isosurvivor",
             actor = actor,
-            status = "active",
+            status = handleStatus,
             spawnedAt = worldAgeHours(),
-            detail = string.format("isosurvivor_spawned_via=%s", tostring(constructorLabel)),
+            detail = detailText,
             runtime = {
                 constructor = constructorLabel,
                 square = square,
                 runtimeDetail = runtimeDetail,
+                settlePending = runtimeOk ~= true,
+                settleAttempts = 0,
             },
         },
     }
@@ -353,16 +348,33 @@ function Carrier.sync(record, handle, options)
         }
     end
 
+    handle.runtime = handle.runtime or {}
     local runtimeOk, runtimeDetail = assessRuntimeReadiness(actor)
     if runtimeOk ~= true then
-        trace("sync.runtime_rejected", record, runtimeDetail)
+        handle.runtime.settlePending = true
+        handle.runtime.settleAttempts = (tonumber(handle.runtime.settleAttempts) or 0) + 1
+        handle.runtime.runtimeDetail = runtimeDetail
+        markManaged(record, actor)
+
+        if handle.runtime.settleAttempts >= MAX_PENDING_SETTLE_ATTEMPTS then
+            trace("sync.runtime_rejected", record, string.format("attempt=%s | %s", tostring(handle.runtime.settleAttempts), tostring(runtimeDetail)))
+            return {
+                ok = false,
+                status = "failed",
+                detail = string.format("isosurvivor_runtime_rejected attempt=%s | %s", tostring(handle.runtime.settleAttempts), tostring(runtimeDetail)),
+            }
+        end
+
+        trace("sync.pending_settle", record, string.format("attempt=%s | %s", tostring(handle.runtime.settleAttempts), tostring(runtimeDetail)))
         return {
-            ok = false,
-            status = "failed",
-            detail = string.format("isosurvivor_runtime_rejected=%s", tostring(runtimeDetail)),
+            ok = true,
+            status = "pending_settle",
+            detail = string.format("isosurvivor_pending_settle attempt=%s | %s", tostring(handle.runtime.settleAttempts), tostring(runtimeDetail)),
         }
     end
 
+    handle.runtime.settlePending = false
+    handle.runtime.runtimeDetail = runtimeDetail
     markManaged(record, actor)
     if LWN.ActorSync and LWN.ActorSync.pushRecordToActor then
         local ok, err = pcall(LWN.ActorSync.pushRecordToActor, record, actor)
@@ -397,6 +409,9 @@ function Carrier.retire(record, handle, options)
     end
 
     if reason == "isosurvivor_runtime_core_missing" or reason == "tryEmbody.initial_sync_failed" then
+        return shallowRetireRejectedSurvivor(record, actor, reason)
+    end
+    if reason == "tryEmbody.register_rejected" then
         return shallowRetireRejectedSurvivor(record, actor, reason)
     end
 
