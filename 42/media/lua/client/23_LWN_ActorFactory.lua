@@ -342,6 +342,21 @@ local function isIsoZombieCarrierActor(actor)
     return protectedCall(actor, "isZombie") == true
 end
 
+local function isIsoPlayerCarrierActor(actor)
+    if not actor then return false end
+
+    local modData = protectedCall(actor, "getModData")
+    if modData and modData.LWN_CarrierKind == "isoplayer" then
+        return true
+    end
+
+    if instanceof then
+        return instanceof(actor, "IsoPlayer") == true
+    end
+
+    return false
+end
+
 local function squareSummary(square)
     if not square then return "square=nil" end
 
@@ -1631,14 +1646,30 @@ local function refreshModelManager(actor, reason)
         modData.LWN_LastModelRefreshReason = reason
         modData.LWN_LastModelRefreshAt = worldAgeHours()
         modData.LWN_ModelRefreshCount = (tonumber(modData.LWN_ModelRefreshCount) or 0) + 1
+        modData.LWN_LastModelContainsBefore = before
+        modData.LWN_LastModelContainsAfter = after
+        modData.LWN_LastModelCarrierKind = modData.LWN_CarrierKind
+        modData.LWN_LastModelExpectedHook = modData.LWN_CreateHookExpected
+        modData.LWN_LastModelCreateHook = modData.LWN_LastCreateHook
+        modData.LWN_LastModelRegistrationDetail = string.format(
+            "carrier=%s before=%s after=%s expectedHook=%s lastCreateHook=%s postCreatePending=%s appliedBy=%s",
+            safeText(modData.LWN_CarrierKind),
+            safeText(before),
+            safeText(after),
+            safeText(modData.LWN_CreateHookExpected),
+            safeText(modData.LWN_LastCreateHook),
+            safeText(modData.LWN_PostCreateHeavyPending),
+            safeText(modData.LWN_PostCreateAppliedBy)
+        )
     end
     if isDebugModeEnabled() then
         local state = actorPresentationState(actor)
         print(string.format(
-            "[LWN][RegistrationTrace] stage=model_refresh | reason=%s | npcId=%s | objectRef=%s | beforeContains=%s | afterContains=%s | refreshCount=%s | alphaClass=%s | world=%s | squarePresent=%s | expectedHook=%s | lastCreateHook=%s | appliedBy=%s",
+            "[LWN][RegistrationTrace] stage=model_refresh | reason=%s | npcId=%s | objectRef=%s | carrier=%s | beforeContains=%s | afterContains=%s | refreshCount=%s | alphaClass=%s | world=%s | squarePresent=%s | expectedHook=%s | lastCreateHook=%s | createHookPending=%s | postCreatePending=%s | appliedBy=%s",
             safeText(reason),
             safeText(getKnownNpcIdFromActor(actor)),
             safeText(objectRef(actor)),
+            safeText(modData and modData.LWN_CarrierKind or nil),
             safeText(before),
             safeText(after),
             safeText(modData and modData.LWN_ModelRefreshCount or 0),
@@ -1647,6 +1678,8 @@ local function refreshModelManager(actor, reason)
             safeText(state and state.squarePresent or nil),
             safeText(modData and modData.LWN_CreateHookExpected or nil),
             safeText(modData and modData.LWN_LastCreateHook or nil),
+            safeText(modData and modData.LWN_CreateHookPending or nil),
+            safeText(modData and modData.LWN_PostCreateHeavyPending or nil),
             safeText(modData and modData.LWN_PostCreateAppliedBy or nil)
         ))
     end
@@ -1742,7 +1775,26 @@ local function repairVisibleAlpha(actor, reason)
     end
 
     traceAlphaRequest(actor, "setAlphaAndTarget", 1.0, reason .. ".setAlphaAndTarget")
-    traceAlphaRequest(actor, "setAlphaToTarget", 0, reason .. ".setAlphaToTarget")
+    if isIsoPlayerCarrierActor(actor) then
+        if modData then
+            modData.LWN_IsoPlayerZeroTargetBlockedCount = (tonumber(modData.LWN_IsoPlayerZeroTargetBlockedCount) or 0) + 1
+            modData.LWN_IsoPlayerZeroTargetBlockedAt = worldAgeHours()
+            modData.LWN_IsoPlayerZeroTargetBlockedReason = reason
+        end
+        if isDebugModeEnabled() then
+            print(string.format(
+                "[LWN][AlphaTrace] stage=zero_target_blocked | npcId=%s | objectRef=%s | carrier=isoplayer | reason=%s | expectedHook=%s | lastCreateHook=%s | modelRegistered=%s",
+                safeText(getKnownNpcIdFromActor(actor)),
+                safeText(objectRef(actor)),
+                safeText(reason),
+                safeText(modData and modData.LWN_CreateHookExpected or nil),
+                safeText(modData and modData.LWN_LastCreateHook or nil),
+                safeText(modData and modData.LWN_ModelRegistered or nil)
+            ))
+        end
+    else
+        traceAlphaRequest(actor, "setAlphaToTarget", 0, reason .. ".setAlphaToTarget")
+    end
 
     local after = actorPresentationState(actor)
     local repaired = after
@@ -2420,6 +2472,7 @@ end
 local function ensureActorRegisteredInWorld(actor, square)
     if not actor or not square then return false end
 
+    local modData = protectedCall(actor, "getModData")
     local sx = tonumber(protectedCall(square, "getX") or protectedCall(actor, "getX") or 0) or 0
     local sy = tonumber(protectedCall(square, "getY") or protectedCall(actor, "getY") or 0) or 0
     local sz = tonumber(protectedCall(square, "getZ") or protectedCall(actor, "getZ") or 0) or 0
@@ -2446,13 +2499,53 @@ local function ensureActorRegisteredInWorld(actor, square)
     end
 
     restoreEmbodiedPresentationFlags(actor, "ensureActorRegisteredInWorld")
+    if isIsoPlayerCarrierActor(actor) then
+        protectedCall(actor, "setInvisible", false)
+        protectedCall(actor, "setGhostMode", false)
+        protectedCall(actor, "setSceneCulled", false)
+        protectedCall(actor, "setNPC", true)
+        protectedCall(actor, "setIsNPC", true)
+        protectedCall(actor, "setVisibleToNPCs", true)
+    end
     repairVisibleAlpha(actor, "ensureActorRegisteredInWorld")
     protectedCall(actor, "resetModel")
     protectedCall(actor, "resetModelNextFrame")
-    refreshModelManager(actor, "world_registration")
+    local modelRegistered = refreshModelManager(actor, "world_registration")
 
     currentSquare = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
     local inWorld = protectedCall(actor, "isExistInTheWorld")
+    if modData then
+        modData.LWN_LastWorldRegistrationAt = worldAgeHours()
+        modData.LWN_LastWorldRegistrationSquare = coordSummary(sx, sy, sz)
+        modData.LWN_LastWorldRegistrationWorld = inWorld == true
+        modData.LWN_LastWorldRegistrationCurrentSquare = currentSquare ~= nil
+        modData.LWN_LastWorldRegistrationModelRegistered = modelRegistered == true
+        modData.LWN_LastWorldRegistrationCarrierKind = modData.LWN_CarrierKind
+        modData.LWN_LastWorldRegistrationDetail = string.format(
+            "carrier=%s world=%s currentSquare=%s modelRegistered=%s expectedHook=%s lastCreateHook=%s createHookPending=%s",
+            safeText(modData.LWN_CarrierKind),
+            safeText(inWorld),
+            safeText(currentSquare ~= nil),
+            safeText(modelRegistered),
+            safeText(modData.LWN_CreateHookExpected),
+            safeText(modData.LWN_LastCreateHook),
+            safeText(modData.LWN_CreateHookPending)
+        )
+    end
+    if isDebugModeEnabled() and isIsoPlayerCarrierActor(actor) then
+        print(string.format(
+            "[LWN][RegistrationTrace] stage=ensure_world_registration | npcId=%s | objectRef=%s | carrier=isoplayer | world=%s | currentSquare=%s | modelRegistered=%s | expectedHook=%s | lastCreateHook=%s | createHookPending=%s | postCreatePending=%s",
+            safeText(getKnownNpcIdFromActor(actor)),
+            safeText(objectRef(actor)),
+            safeText(inWorld),
+            safeText(currentSquare ~= nil),
+            safeText(modelRegistered),
+            safeText(modData and modData.LWN_CreateHookExpected or nil),
+            safeText(modData and modData.LWN_LastCreateHook or nil),
+            safeText(modData and modData.LWN_CreateHookPending or nil),
+            safeText(modData and modData.LWN_PostCreateHeavyPending or nil)
+        ))
+    end
     return currentSquare ~= nil and inWorld ~= false
 end
 
@@ -3130,14 +3223,16 @@ function Factory.stabilizeIsoPlayerVisibility(record, actor, descriptor, source)
     stageTrace("ActorFactory", "stabilizeIsoPlayerVisibility.ready", record, actor, descriptor or protectedCall(actor, "getDescriptor"), {
         source = stabilizeSource,
         detail = string.format(
-            "role=%s alpha=%s targetAlpha=%s modelRegistered=%s createHookPending=%s postCreatePending=%s repairs=%s",
+            "role=%s alpha=%s targetAlpha=%s modelRegistered=%s createHookPending=%s postCreatePending=%s repairs=%s zeroTargetBlocked=%s lastModelDetail=%s",
             safeText(after and after.presentationRole or nil),
             safeText(after and after.alpha or nil),
             safeText(after and after.targetAlpha or nil),
             safeText(after and after.modelRegistered or nil),
             safeText(modData and modData.LWN_CreateHookPending or nil),
             safeText(modData and modData.LWN_PostCreateHeavyPending or nil),
-            safeText(modData and modData.LWN_AlphaRepairAttemptCount or 0)
+            safeText(modData and modData.LWN_AlphaRepairAttemptCount or 0),
+            safeText(modData and modData.LWN_IsoPlayerZeroTargetBlockedCount or 0),
+            safeText(modData and modData.LWN_LastModelRegistrationDetail or nil)
         ),
     })
     return true
