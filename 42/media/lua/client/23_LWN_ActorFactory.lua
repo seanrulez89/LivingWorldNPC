@@ -1085,7 +1085,18 @@ local function shouldWatchAlphaState(state)
         and state.sceneCulled ~= true
 end
 
-presentationRestoreBlockedReason = function(actor, state)
+local function roleGuardRelaxation(actor, action)
+    local modData = actor and protectedCall(actor, "getModData") or nil
+    local relaxed = modData and modData.LWN_TestRoleGuardRelaxed == true or false
+    local reason = modData and modData.LWN_TestRoleGuardRelaxReason or nil
+    local allow = relaxed == true and (action == "restore_false_flags" or action == "repair_alpha")
+    return {
+        active = allow == true,
+        reason = reason,
+    }
+end
+
+presentationRestoreBlockedReason = function(actor, state, action)
     if not actor then
         return "actor_nil"
     end
@@ -1102,6 +1113,18 @@ presentationRestoreBlockedReason = function(actor, state)
         return "square_missing"
     end
     if state.zombie == true or state.reanimated == true then
+        local relaxation = roleGuardRelaxation(actor, action)
+        if relaxation.active == true then
+            local modData = protectedCall(actor, "getModData")
+            if modData then
+                modData.LWN_RoleGuardRelaxApplied = true
+                modData.LWN_RoleGuardRelaxAction = action
+                modData.LWN_RoleGuardRelaxReason = relaxation.reason
+                modData.LWN_RoleGuardRelaxAt = worldAgeHours()
+                modData.LWN_RoleGuardRelaxCount = (tonumber(modData.LWN_RoleGuardRelaxCount) or 0) + 1
+            end
+            return nil
+        end
         return "zombie_or_reanimated"
     end
     if state.deathLike == true or state.dead == true then
@@ -1146,7 +1169,7 @@ local function appearanceTruthSnapshot(actor)
         and skinOk
         and (wornItemsOk or itemVisualsOk)
         and hybridAppliedOk
-    local guardBlocked = presentationRestoreBlockedReason(actor, presentation)
+    local guardBlocked = presentationRestoreBlockedReason(actor, presentation, "probe")
     local signature = appearanceSignature(snapshot)
     local lastAppliedSignature = modData and modData.LWN_AppearanceSignature or nil
     local overwrittenAfterRefresh = false
@@ -1856,7 +1879,7 @@ local function repairVisibleAlpha(actor, reason)
     if not actor then return false end
 
     local before = actorPresentationState(actor)
-    local blockedReason = presentationRestoreBlockedReason(actor, before)
+    local blockedReason = presentationRestoreBlockedReason(actor, before, "repair_alpha")
     if blockedReason ~= nil then
         tracePresentationGuard(actor, "repair_alpha", "blocked", blockedReason, reason, before, nil)
         return false
@@ -1959,7 +1982,7 @@ local function restoreEmbodiedPresentationFlags(actor, reason)
     if not actor then return false end
 
     local before = actorPresentationState(actor)
-    local blockedReason = presentationRestoreBlockedReason(actor, before)
+    local blockedReason = presentationRestoreBlockedReason(actor, before, "restore_false_flags")
     if blockedReason ~= nil then
         tracePresentationGuard(actor, "restore_false_flags", "blocked", blockedReason, reason, before, nil)
         return false

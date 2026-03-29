@@ -30,6 +30,7 @@ local ISOZOMBIE_SETTLE_MAX_SYNC_ATTEMPTS = 12
 local ISOZOMBIE_SETTLE_MAX_HOURS = 0.0015
 local ISOZOMBIE_APPEARANCE_EXPERIMENT = "isozombie_shared_desc_visual_v1"
 local ISOZOMBIE_APPEARANCE_REUSE = "desc+baseline+clothes+bridge"
+local ISOZOMBIE_ROLE_GUARD_RELAX_EXPERIMENT = true
 
 local function worldAgeHours()
     return getGameTime() and getGameTime():getWorldAgeHours() or 0
@@ -1226,6 +1227,8 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_DummyAppearanceFailed = record and record.dummy and record.dummy.appearanceFailed == true or false
         modData.LWN_DummyAppearanceRebuildPending = record and record.dummy and record.dummy.appearanceRebuildPending == true or false
         modData.LWN_DummyAppearanceFailureCount = record and record.dummy and record.dummy.appearanceFailureCount or 0
+        modData.LWN_TestRoleGuardRelaxed = ISOZOMBIE_ROLE_GUARD_RELAX_EXPERIMENT == true and isMinimalDummyRecord(record)
+        modData.LWN_TestRoleGuardRelaxReason = ISOZOMBIE_ROLE_GUARD_RELAX_EXPERIMENT == true and isMinimalDummyRecord(record) and "minimal_dummy_role_probe" or nil
     end
 
     registerManagedShell(record, actor, "CarrierIsoZombie.applyBasicZombieCarrierFlags")
