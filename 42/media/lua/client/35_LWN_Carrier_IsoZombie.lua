@@ -1423,6 +1423,58 @@ local function rebuildDummyAppearance(record, actor, source)
     return buildInitialDummyAppearance(record, actor, source or "CarrierIsoZombie.rebuildDummyAppearance")
 end
 
+local function runPostRuntimeSettleRebuild(record, actor, source)
+    if not actor then
+        return nil, nil, false, "actor=nil"
+    end
+
+    local profile = humanizationProfile(record)
+    local rebuildSource = source or "CarrierIsoZombie.runtimeSettleRebuild"
+    local descriptor = protectedCall(actor, "getDescriptor")
+    local appearanceDetail = nil
+
+    if LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
+        descriptor, appearanceDetail = LWN.ShellHumanizer.maintain(record, actor, {
+            source = rebuildSource,
+            profile = profile,
+            forceFull = true,
+            forceInitial = true,
+        })
+    else
+        descriptor, appearanceDetail = applyAppearanceExperiment(record, actor, "runtime_settle_rebuild")
+        appearanceDetail = normalizeAppearanceDetail(appearanceDetail, {
+            stage = "runtime_settle_rebuild",
+            status = appearanceDetail and appearanceDetail.applied == true and "applied" or "skipped",
+            profile = profile,
+            mode = "post_settle_full_reapply",
+        })
+    end
+
+    applyBasicZombieCarrierFlags(record, actor, nil, descriptor, appearanceDetail)
+    local ok, detail = probeHumanizationState(record, actor, appearanceDetail, rebuildSource .. ".probe")
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_RuntimeSettleRebuildAttempted = true
+        modData.LWN_RuntimeSettleRebuildAt = worldAgeHours()
+        modData.LWN_RuntimeSettleRebuildSource = rebuildSource
+        modData.LWN_RuntimeSettleRebuildOk = ok == true
+        modData.LWN_RuntimeSettleRebuildDetail = detail
+        modData.LWN_RuntimeSettleRebuildMode = appearanceDetail and appearanceDetail.mode or "post_settle_full_reapply"
+        modData.LWN_RuntimeSettleRebuildStage = appearanceDetail and appearanceDetail.stage or "runtime_settle_rebuild"
+    end
+
+    trace(ok and "runtime_settle_rebuild.ok" or "runtime_settle_rebuild.failed", record, string.format(
+        "source=%s mode=%s stage=%s detail=%s",
+        tostring(rebuildSource),
+        tostring(appearanceDetail and appearanceDetail.mode or "nil"),
+        tostring(appearanceDetail and appearanceDetail.stage or "nil"),
+        tostring(detail)
+    ))
+
+    return descriptor, appearanceDetail, ok, detail
+end
+
 local function markNoAutoRearm(record)
     if record and record.embodiment then
         record.embodiment.noAutoRearm = true
@@ -1615,6 +1667,7 @@ function Carrier.sync(record, handle, options)
     end
 
     handle.runtime = handle.runtime or {}
+    local wasSettlePending = handle.runtime.settlePending == true
     if isMinimalDummyRecord(record) and (not record.dummy or not record.dummy.scrubGraceUntil) then
         markDummySpawnGrace(record, actor, "CarrierIsoZombie.sync.bootstrap", false)
     end
@@ -1689,6 +1742,29 @@ function Carrier.sync(record, handle, options)
 
     handle.runtime.settlePending = false
     handle.runtime.runtimeDetail = runtimeDetail
+
+    if wasSettlePending == true and handle.runtime.runtimeSettleRebuildDone ~= true then
+        local _settleDescriptor
+        _settleDescriptor, appearanceDetail, humanizationOk, humanizationDetail = runPostRuntimeSettleRebuild(
+            record,
+            actor,
+            "CarrierIsoZombie.sync.post_runtime_settle"
+        )
+        appearanceEligible = humanizationOk == true
+        appearanceGateDetail = humanizationDetail
+        handle.runtime.appearanceEligible = appearanceEligible == true
+        handle.runtime.appearanceEligibilityDetail = appearanceGateDetail
+        handle.runtime.appearanceExperiment = appearanceDetail and appearanceDetail.experiment or handle.runtime.appearanceExperiment
+        handle.runtime.appearanceApplied = appearanceDetail and appearanceDetail.applied == true or false
+        handle.runtime.appearanceStatus = appearanceDetail and appearanceDetail.status or nil
+        handle.runtime.appearanceStage = appearanceDetail and appearanceDetail.stage or nil
+        handle.runtime.humanizationMode = appearanceDetail and appearanceDetail.mode or nil
+        handle.runtime.humanizationProfile = appearanceDetail and appearanceDetail.profile or humanizationProfile(record)
+        handle.runtime.humanizationProbeOk = humanizationOk == true
+        handle.runtime.humanizationProbeDetail = humanizationDetail
+        handle.runtime.runtimeSettleRebuildDone = true
+        handle.runtime.runtimeSettleRebuildAt = worldAgeHours()
+    end
 
     local anchor = record and record.anchor or nil
     local snapToAnchor = options and options.snapToAnchor == true
