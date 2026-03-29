@@ -1295,31 +1295,31 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
     local modData = protectedCall(actor, "getModData")
     local humanInit = modData and modData.LWN_HumanizationInitialApplied == true or false
     local profile = modData and modData.LWN_HumanizationProfile or humanizationProfile(record)
-    local itemVisuals = protectedCall(actor, "getItemVisuals")
-    local itemVisualCount = itemVisuals and itemVisuals.size and itemVisuals:size() or 0
-    local wornItems = protectedCall(actor, "getWornItems")
-    local wornItemCount = wornItems and wornItems.size and wornItems:size() or 0
-    local descriptor = protectedCall(actor, "getDescriptor")
-    local humanVisual = protectedCall(actor, "getHumanVisual")
-    local skin = humanVisual and protectedCall(humanVisual, "getSkinTexture") or modData and modData.LWN_HybridCurrentSkin or nil
-    if skin ~= nil and tostring(skin) == "" then
-        skin = nil
-    end
-    local presentation = LWN.ActorFactory and LWN.ActorFactory.getPresentationState and LWN.ActorFactory.getPresentationState(actor) or nil
-    local role = presentation and presentation.presentationRole or (protectedCall(actor, "isZombie") == true and "reanimated_zombie" or "alive_npc")
-    local hybridApplied = modData and modData.LWN_HybridAppearanceApplied == true or false
-    local strictVisualOk = descriptor ~= nil
-        and humanVisual ~= nil
-        and skin ~= nil
-        and (itemVisualCount > 0 or wornItemCount > 0)
-        and hybridApplied == true
+    local truth = LWN.ActorFactory and LWN.ActorFactory.getAppearanceTruthSnapshot and LWN.ActorFactory.getAppearanceTruthSnapshot(actor) or nil
 
-    local ok
+    local ok = false
+    local role = truth and truth.role or (protectedCall(actor, "isZombie") == true and "reanimated_zombie" or "alive_npc")
+    local skin = truth and truth.skin or (modData and modData.LWN_HybridCurrentSkin or nil)
+    local itemVisualCount = truth and truth.itemVisualCount or 0
+    local wornItemCount = truth and truth.wornItemCount or 0
+    local hybridApplied = truth and truth.hybridAppliedOk == true or (modData and modData.LWN_HybridAppearanceApplied == true or false)
+    local strictVisualOk = truth and truth.strictVisualOk == true or false
+    local descriptorOk = truth and truth.descriptorOk == true or false
+    local humanVisualOk = truth and truth.humanVisualOk == true or false
+    local skinOk = truth and truth.skinOk == true or false
+    local wornItemsOk = truth and truth.wornItemsOk == true or false
+    local itemVisualsOk = truth and truth.itemVisualsOk == true or false
+    local roleOk = truth and truth.presentationRoleOk == true or false
+    local guardBlocked = truth and truth.guardBlocked or nil
+    local overwrittenAfterRefresh = truth and truth.overwrittenAfterRefresh == true or false
+    local failureCode = truth and truth.failureCode or nil
+
     if isMinimalDummyRecord(record) then
-        ok = strictVisualOk == true
+        ok = truth and truth.ok == true or false
     else
         ok = humanInit == true
             or (appearanceDetail and appearanceDetail.applied == true)
+            or (truth and truth.ok == true)
             or strictVisualOk == true
     end
 
@@ -1332,19 +1332,35 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
         modData.LWN_HumanizationProbeWornItems = wornItemCount
         modData.LWN_HumanizationProbeHybridApplied = hybridApplied == true
         modData.LWN_HumanizationVisualTruthOk = strictVisualOk == true
+        modData.LWN_HumanizationProbeDescriptorOk = descriptorOk == true
+        modData.LWN_HumanizationProbeHumanVisualOk = humanVisualOk == true
+        modData.LWN_HumanizationProbeSkinOk = skinOk == true
+        modData.LWN_HumanizationProbeWornItemsOk = wornItemsOk == true
+        modData.LWN_HumanizationProbeItemVisualsOk = itemVisualsOk == true
+        modData.LWN_HumanizationProbeRoleOk = roleOk == true
+        modData.LWN_HumanizationProbeGuardBlocked = guardBlocked
+        modData.LWN_HumanizationProbeOverwrittenAfterRefresh = overwrittenAfterRefresh == true
+        modData.LWN_HumanizationProbeFailureCode = failureCode
     end
 
     local detail = string.format(
-        "role=%s humanInit=%s skin=%s itemVisuals=%s wornItems=%s descriptor=%s humanVisual=%s hybridApplied=%s strictVisualOk=%s profile=%s",
+        "role=%s humanInit=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s hybridApplied=%s roleOk=%s guardBlocked=%s overwritten=%s strictVisualOk=%s fail=%s skin=%s itemVisuals=%s wornItems=%s profile=%s",
         tostring(role),
         tostring(humanInit),
+        tostring(descriptorOk),
+        tostring(humanVisualOk),
+        tostring(skinOk),
+        tostring(wornItemsOk),
+        tostring(itemVisualsOk),
+        tostring(hybridApplied == true),
+        tostring(roleOk),
+        tostring(guardBlocked),
+        tostring(overwrittenAfterRefresh),
+        tostring(strictVisualOk == true),
+        tostring(failureCode),
         tostring(skin),
         tostring(itemVisualCount),
         tostring(wornItemCount),
-        tostring(descriptor ~= nil),
-        tostring(humanVisual ~= nil),
-        tostring(hybridApplied == true),
-        tostring(strictVisualOk == true),
         tostring(profile)
     )
 

@@ -85,7 +85,7 @@ local function movementSummaryLine(record, actor)
     local command = record and record.companion and record.companion.command or {}
     local telemetry = command and command.movementTelemetry or {}
     return string.format(
-        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s motor=%s commit=%s moving=%s attacking=%s target=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s appLock=%s appFail=%s",
+        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s motor=%s commit=%s moving=%s attacking=%s target=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s appLock=%s appFail=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s roleOk=%s guardBlocked=%s failCode=%s overwritten=%s",
         tostring(record and record.id or "nil"),
         tostring(modData and modData.LWN_ShellLaneContract or modData and modData.LWN_ShellMode or "none"),
         tostring(command.kind or "none"),
@@ -111,7 +111,16 @@ local function movementSummaryLine(record, actor)
         boolText(modData and (modData.LWN_HumanizationInitialApplied or modData.LWN_InitialHumanizationApplied)),
         boolText(modData and modData.LWN_HumanizationProbeOk),
         boolText(modData and modData.LWN_DummyAppearanceLocked),
-        boolText(modData and modData.LWN_DummyAppearanceFailed)
+        boolText(modData and modData.LWN_DummyAppearanceFailed),
+        boolText(modData and modData.LWN_HumanizationProbeDescriptorOk),
+        boolText(modData and modData.LWN_HumanizationProbeHumanVisualOk),
+        boolText(modData and modData.LWN_HumanizationProbeSkinOk),
+        boolText(modData and modData.LWN_HumanizationProbeWornItemsOk),
+        boolText(modData and modData.LWN_HumanizationProbeItemVisualsOk),
+        boolText(modData and modData.LWN_HumanizationProbeRoleOk),
+        tostring(modData and modData.LWN_HumanizationProbeGuardBlocked or "none"),
+        tostring(modData and modData.LWN_HumanizationProbeFailureCode or "none"),
+        boolText(modData and modData.LWN_HumanizationProbeOverwrittenAfterRefresh)
     )
 end
 
@@ -719,11 +728,20 @@ local function dumpRecordSummary(record, actor, player)
         tostring(debugState and debugState.worldAgeHours or "nil")
     ))
     print(string.format(
-        "[LWN][Debug] npc appearance :: diff=%s source=%s at=%s sig=%s",
+        "[LWN][Debug] npc appearance :: diff=%s source=%s at=%s sig=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s roleOk=%s guardBlocked=%s failCode=%s overwritten=%s",
         tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_AppearanceDiffSummary or "none"),
         tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_AppearanceDiffSource or "none"),
         tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_AppearanceDiffAt or "none"),
-        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_AppearanceSignature or "none")
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_AppearanceSignature or "none"),
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_HumanizationProbeDescriptorOk or false),
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_HumanizationProbeHumanVisualOk or false),
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_HumanizationProbeSkinOk or false),
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_HumanizationProbeWornItemsOk or false),
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_HumanizationProbeItemVisualsOk or false),
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_HumanizationProbeRoleOk or false),
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_HumanizationProbeGuardBlocked or "none"),
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_HumanizationProbeFailureCode or "none"),
+        tostring(actor and actor.getModData and actor:getModData() and actor:getModData().LWN_HumanizationProbeOverwrittenAfterRefresh or false)
     ))
     print(string.format(
         "[LWN][Debug] npc humanization :: initialApplied=%s initialAt=%s initialProfile=%s initialSig=%s maintenanceAt=%s maintenanceSource=%s maintenanceProfile=%s maintenanceMode=%s driftCount=%s lastDriftAt=%s lastDriftReason=%s lastKnownSig=%s lockedSig=%s",

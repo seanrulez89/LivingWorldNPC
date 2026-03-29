@@ -194,6 +194,7 @@ end
 
 local actorPresentationState
 local stageTrace
+local presentationRestoreBlockedReason
 
 local function appearanceSnapshot(actor)
     local visual = actor and protectedCall(actor, "getHumanVisual") or nil
@@ -1030,7 +1031,7 @@ local function shouldWatchAlphaState(state)
         and state.sceneCulled ~= true
 end
 
-local function presentationRestoreBlockedReason(actor, state)
+presentationRestoreBlockedReason = function(actor, state)
     if not actor then
         return "actor_nil"
     end
@@ -1053,6 +1054,93 @@ local function presentationRestoreBlockedReason(actor, state)
         return "death_like"
     end
     return nil
+end
+
+local function appearanceTruthSnapshot(actor)
+    if not actor then
+        return {
+            ok = false,
+            failureCode = "actor_nil",
+            role = nil,
+            guardBlocked = "actor_nil",
+            descriptorOk = false,
+            humanVisualOk = false,
+            skinOk = false,
+            wornItemsOk = false,
+            itemVisualsOk = false,
+            hybridAppliedOk = false,
+            presentationRoleOk = false,
+            strictVisualOk = false,
+            overwrittenAfterRefresh = false,
+            signature = "nil",
+        }
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    local snapshot = appearanceSnapshot(actor)
+    local presentation = actorPresentationState(actor)
+    local descriptorOk = snapshot and snapshot.descriptor == true or false
+    local humanVisualOk = snapshot and snapshot.humanVisual == true or false
+    local skinOk = snapshot and snapshot.skin ~= nil and tostring(snapshot.skin) ~= "" or false
+    local wornItemsOk = snapshot and tonumber(snapshot.wornItems or 0) > 0 or false
+    local itemVisualsOk = snapshot and tonumber(snapshot.itemVisuals or 0) > 0 or false
+    local hybridAppliedOk = modData and modData.LWN_HybridAppearanceApplied == true or false
+    local role = presentation and presentation.presentationRole or snapshot and snapshot.role or nil
+    local presentationRoleOk = role ~= "reanimated_zombie" and role ~= "death_like_actor"
+    local strictVisualOk = descriptorOk
+        and humanVisualOk
+        and skinOk
+        and (wornItemsOk or itemVisualsOk)
+        and hybridAppliedOk
+    local guardBlocked = presentationRestoreBlockedReason(actor, presentation)
+    local signature = appearanceSignature(snapshot)
+    local lastAppliedSignature = modData and modData.LWN_AppearanceSignature or nil
+    local overwrittenAfterRefresh = false
+    if lastAppliedSignature and lastAppliedSignature ~= "" and signature ~= "nil" and lastAppliedSignature ~= signature then
+        overwrittenAfterRefresh = true
+    end
+
+    local failureCode = nil
+    if descriptorOk ~= true then
+        failureCode = "fail_descriptor_missing"
+    elseif humanVisualOk ~= true then
+        failureCode = "fail_human_visual_missing"
+    elseif skinOk ~= true then
+        failureCode = "fail_skin_nil"
+    elseif wornItemsOk ~= true and itemVisualsOk ~= true then
+        failureCode = "fail_worn_and_item_visuals_empty"
+    elseif hybridAppliedOk ~= true then
+        failureCode = "fail_hybrid_not_applied"
+    elseif presentationRoleOk ~= true then
+        failureCode = "fail_presentation_role_zombie"
+    elseif guardBlocked ~= nil then
+        failureCode = "fail_guard_blocked"
+    elseif overwrittenAfterRefresh == true then
+        failureCode = "fail_overwritten_after_refresh"
+    elseif strictVisualOk ~= true then
+        failureCode = "fail_strict_visual_incomplete"
+    end
+
+    return {
+        ok = strictVisualOk == true and presentationRoleOk == true and guardBlocked == nil,
+        failureCode = failureCode,
+        role = role,
+        guardBlocked = guardBlocked,
+        descriptorOk = descriptorOk,
+        humanVisualOk = humanVisualOk,
+        skinOk = skinOk,
+        wornItemsOk = wornItemsOk,
+        itemVisualsOk = itemVisualsOk,
+        hybridAppliedOk = hybridAppliedOk,
+        presentationRoleOk = presentationRoleOk,
+        strictVisualOk = strictVisualOk,
+        overwrittenAfterRefresh = overwrittenAfterRefresh,
+        itemVisualCount = snapshot and snapshot.itemVisuals or 0,
+        wornItemCount = snapshot and snapshot.wornItems or 0,
+        skin = snapshot and snapshot.skin or nil,
+        signature = signature,
+        lastAppliedSignature = lastAppliedSignature,
+    }
 end
 
 local function tracePresentationGuard(actor, action, status, reason, source, before, after)
@@ -2447,6 +2535,10 @@ end
 
 function Factory.getPresentationState(actor)
     return actorPresentationState(actor)
+end
+
+function Factory.getAppearanceTruthSnapshot(actor)
+    return appearanceTruthSnapshot(actor)
 end
 
 function Factory.presentationStateSummary(actor)
