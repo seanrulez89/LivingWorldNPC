@@ -110,6 +110,7 @@ But even after alpha-loop mitigation and create-hook fallback completion, the la
 - keep `IsoSurvivor` disabled in the debug/test rail
 - do not re-run current-path `IsoSurvivor` TEST 01B
 - do not blindly re-run the same `IsoPlayer` probe unless there is a **new model/materialization hypothesis**
+- do not casually repeat the final three pre-Bandits LWN experiments either; those are now documented in `docs/LAST_LWN_EXPERIMENT_PACKAGE_BEFORE_BANDITS_2026-03-29.md`
 
 ### Best current exact question
 If continuing the alt-carrier path, the next question should be:

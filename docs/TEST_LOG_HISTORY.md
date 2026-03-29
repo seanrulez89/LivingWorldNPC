@@ -913,3 +913,48 @@ For every new test cycle, append a new section using this structure:
 - Do not restart next session by repeating the same plain `IsoZombie` / `IsoSurvivor` / unchanged `IsoPlayer` probes.
 - If the `IsoPlayer` path is continued, begin from the narrower question of which exact engine or Lua path still provokes `ModelManager.Add` while `chr.legsSprite.modelSlot` is null.
 - Otherwise treat `IsoZombie` as the only currently stable shell for gameplay iteration and keep alt-carrier work as a separate, slower research track.
+
+## 2026-03-29 21:24 KST — Final pre-Bandits LWN experiment package mostly exhausted
+
+### In-game result
+- Three final `IsoZombie`-within-LWN experiments were attempted after the earlier `IsoSurvivor` / `IsoPlayer` spikes:
+  1. narrow guard/role relax,
+  2. overwrite/reassert cadence tracking,
+  3. runtime-settle alive reset.
+- None of the three produced a visible breakthrough.
+- The shell still looked zombie-like to the user.
+- TEST 02 still moved successfully in the mechanical sense, but movement/read did not become convincingly human-like.
+
+### Log signals
+- Experiment 1 definitely activated (`rgRelax=yes`), proving the patch path itself executed.
+- However final failure still converged on the same values:
+  - `failCode=fail_presentation_role_zombie`
+  - `guardBlocked=not_in_world`
+  - `rgRole=reanimated_zombie`
+- Experiment 2 produced a strong negative result:
+  - `owBest=5`
+  - `owNow=5`
+  - `owSeen=nil`
+  - `owReason=none`
+  - overwrite tracker lines remained `overwrite=false`
+- This means the branch did not show a pattern where a better state appeared and was later overwritten; instead it remained in the same bad basin from the first stable tracked stage.
+- Experiment 3 did not become a meaningful positive/negative test because the runtime-settle-triggered reset did not actually execute in the observed runs:
+  - `arReset=nil`
+  - `arTouched=nil`
+
+### Interpretation / lesson
+- Narrow guard relaxation is not enough by itself.
+- Overwrite/reassert does not currently appear to be the main explanation for the shell's failure shape.
+- The runtime-settle-triggered alive reset experiment, in its current form, does not meaningfully fire, so this exact trigger version should not be treated as still-untried.
+- Together, these results strongly suggest that the originally identified “last useful LWN-only experiments before Bandits” have now mostly been spent.
+
+### Code or document changes that followed
+- `aed2e69` — `Add minimal dummy role-guard relax lane`
+- `14d0cb6` — `Track appearance overwrite cadence for dummy lane`
+- `7e65017` — `Add runtime-settle alive reset experiment`
+- documented package conclusion in:
+  - `docs/LAST_LWN_EXPERIMENT_PACKAGE_BEFORE_BANDITS_2026-03-29.md`
+
+### Next thing to verify
+- If continuing `IsoZombie` work, avoid repeating these exact three experiments without a genuinely new mechanism.
+- If pivoting strategically, begin planning how to introduce narrower Bandits-style borrowing in a controlled, evidence-driven way rather than continuing same-shape LWN micro-variants.

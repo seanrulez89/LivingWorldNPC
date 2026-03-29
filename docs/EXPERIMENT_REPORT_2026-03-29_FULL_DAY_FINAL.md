@@ -48,6 +48,10 @@ The day already established enough to say:
 - `IsoZombie` is not mainly a clothing/descriptor-missing problem.
 - `IsoSurvivor` is quarantined.
 - `IsoPlayer` is the least hopeless alternative tested today, but its current construction path still does not produce a renderable visible NPC.
+- The final three pre-Bandits `IsoZombie`-within-LWN experiments were also attempted later the same day, and none of them meaningfully changed the branch outcome:
+  - narrow guard/role relax was not sufficient,
+  - overwrite/reassert did not appear to be the main issue,
+  - runtime-settle-triggered alive reset did not meaningfully fire.
 
 ---
 
