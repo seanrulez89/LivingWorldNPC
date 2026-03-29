@@ -410,29 +410,108 @@ local function applyAppearanceExperiment(record, actor, stageBase)
     return descriptor, detail
 end
 
+local function roleGuardSnapshot(actor)
+    if not actor then
+        return {
+            bodyDamage = false,
+            stats = false,
+            inWorld = false,
+            currentSquarePresent = false,
+            squarePresent = false,
+            anySquarePresent = false,
+            isZombie = false,
+            presentationRole = "actor_nil",
+            alpha = nil,
+            targetAlpha = nil,
+            modelRegistered = nil,
+            createHookPending = nil,
+            lastCreateHook = nil,
+        }
+    end
+
+    local currentSquare = protectedCall(actor, "getCurrentSquare")
+    local square = protectedCall(actor, "getSquare")
+    local presentation = LWN.ActorFactory and LWN.ActorFactory.getPresentationState and LWN.ActorFactory.getPresentationState(actor) or nil
+    local modData = protectedCall(actor, "getModData")
+
+    return {
+        bodyDamage = protectedCall(actor, "getBodyDamage") ~= nil,
+        stats = protectedCall(actor, "getStats") ~= nil,
+        inWorld = protectedCall(actor, "isExistInTheWorld") == true,
+        currentSquarePresent = currentSquare ~= nil,
+        squarePresent = square ~= nil,
+        anySquarePresent = currentSquare ~= nil or square ~= nil,
+        isZombie = protectedCall(actor, "isZombie") == true,
+        presentationRole = presentation and presentation.presentationRole or "unknown",
+        alpha = presentation and presentation.alpha or protectedCall(actor, "getAlpha", 0),
+        targetAlpha = presentation and presentation.targetAlpha or protectedCall(actor, "getTargetAlpha", 0),
+        modelRegistered = presentation and presentation.modelRegistered or (modData and modData.LWN_ModelRegistered) or nil,
+        createHookPending = modData and modData.LWN_CreateHookPending or nil,
+        lastCreateHook = modData and modData.LWN_LastCreateHook or nil,
+    }
+end
+
+local function roleGuardSummary(snapshot)
+    snapshot = snapshot or {}
+    return string.format(
+        "bodyDamage=%s stats=%s inWorld=%s currentSquare=%s square=%s anySquare=%s isZombie=%s role=%s alpha=%s targetAlpha=%s modelRegistered=%s createHookPending=%s lastCreateHook=%s",
+        tostring(snapshot.bodyDamage),
+        tostring(snapshot.stats),
+        tostring(snapshot.inWorld),
+        tostring(snapshot.currentSquarePresent),
+        tostring(snapshot.squarePresent),
+        tostring(snapshot.anySquarePresent),
+        tostring(snapshot.isZombie),
+        tostring(snapshot.presentationRole),
+        tostring(snapshot.alpha),
+        tostring(snapshot.targetAlpha),
+        tostring(snapshot.modelRegistered),
+        tostring(snapshot.createHookPending),
+        tostring(snapshot.lastCreateHook)
+    )
+end
+
+local function stampRoleGuardSnapshot(actor, source)
+    local modData = protectedCall(actor, "getModData")
+    local snapshot = roleGuardSnapshot(actor)
+    if modData then
+        modData.LWN_RoleGuardSource = source
+        modData.LWN_RoleGuardAt = worldAgeHours()
+        modData.LWN_RoleGuardBodyDamage = snapshot.bodyDamage == true
+        modData.LWN_RoleGuardStats = snapshot.stats == true
+        modData.LWN_RoleGuardInWorld = snapshot.inWorld == true
+        modData.LWN_RoleGuardCurrentSquare = snapshot.currentSquarePresent == true
+        modData.LWN_RoleGuardSquare = snapshot.squarePresent == true
+        modData.LWN_RoleGuardAnySquare = snapshot.anySquarePresent == true
+        modData.LWN_RoleGuardIsZombie = snapshot.isZombie == true
+        modData.LWN_RoleGuardPresentationRole = snapshot.presentationRole
+        modData.LWN_RoleGuardAlpha = snapshot.alpha
+        modData.LWN_RoleGuardTargetAlpha = snapshot.targetAlpha
+        modData.LWN_RoleGuardModelRegistered = snapshot.modelRegistered
+        modData.LWN_RoleGuardCreateHookPending = snapshot.createHookPending
+        modData.LWN_RoleGuardLastCreateHook = snapshot.lastCreateHook
+        modData.LWN_RoleGuardSummary = roleGuardSummary(snapshot)
+    end
+    return snapshot
+end
+
 local function assessAppearanceEligibility(actor)
     if not actor then
         return false, "appearance_ineligible actor=nil"
     end
 
-    local square = protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare")
-    local inWorld = protectedCall(actor, "isExistInTheWorld") == true
-    local isZombie = protectedCall(actor, "isZombie") == true
+    local snapshot = stampRoleGuardSnapshot(actor, "CarrierIsoZombie.assessAppearanceEligibility")
 
-    if not inWorld or not square or not isZombie then
+    if not snapshot.inWorld or not snapshot.anySquarePresent or not snapshot.isZombie then
         return false, string.format(
-            "appearance_ineligible inWorld=%s squarePresent=%s isZombie=%s",
-            tostring(inWorld),
-            tostring(square ~= nil),
-            tostring(isZombie)
+            "appearance_ineligible %s",
+            roleGuardSummary(snapshot)
         )
     end
 
     return true, string.format(
-        "appearance_eligible inWorld=%s squarePresent=%s isZombie=%s",
-        tostring(inWorld),
-        tostring(square ~= nil),
-        tostring(isZombie)
+        "appearance_eligible %s",
+        roleGuardSummary(snapshot)
     )
 end
 
@@ -1171,30 +1250,18 @@ local function assessRuntimeReadiness(actor)
         return false, "actor=nil"
     end
 
-    local bodyDamage = protectedCall(actor, "getBodyDamage")
-    local stats = protectedCall(actor, "getStats")
-    local square = protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare")
-    local inWorld = protectedCall(actor, "isExistInTheWorld") == true
-    local isZombie = protectedCall(actor, "isZombie") == true
+    local snapshot = stampRoleGuardSnapshot(actor, "CarrierIsoZombie.assessRuntimeReadiness")
 
-    if not bodyDamage or not inWorld or not square or not isZombie then
+    if not snapshot.bodyDamage or not snapshot.inWorld or not snapshot.anySquarePresent or not snapshot.isZombie then
         return false, string.format(
-            "runtime_core_missing bodyDamage=%s stats=%s inWorld=%s squarePresent=%s isZombie=%s",
-            tostring(bodyDamage ~= nil),
-            tostring(stats ~= nil),
-            tostring(inWorld),
-            tostring(square ~= nil),
-            tostring(isZombie)
+            "runtime_core_missing %s",
+            roleGuardSummary(snapshot)
         )
     end
 
     return true, string.format(
-        "runtime_ready bodyDamage=%s stats=%s inWorld=%s squarePresent=%s isZombie=%s",
-        tostring(bodyDamage ~= nil),
-        tostring(stats ~= nil),
-        tostring(inWorld),
-        tostring(square ~= nil),
-        tostring(isZombie)
+        "runtime_ready %s",
+        roleGuardSummary(snapshot)
     )
 end
 
@@ -1296,6 +1363,7 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
     local humanInit = modData and modData.LWN_HumanizationInitialApplied == true or false
     local profile = modData and modData.LWN_HumanizationProfile or humanizationProfile(record)
     local truth = LWN.ActorFactory and LWN.ActorFactory.getAppearanceTruthSnapshot and LWN.ActorFactory.getAppearanceTruthSnapshot(actor) or nil
+    local roleGuard = stampRoleGuardSnapshot(actor, source or "CarrierIsoZombie.probeHumanizationState")
 
     local ok = false
     local role = truth and truth.role or (protectedCall(actor, "isZombie") == true and "reanimated_zombie" or "alive_npc")
@@ -1341,10 +1409,11 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
         modData.LWN_HumanizationProbeGuardBlocked = guardBlocked
         modData.LWN_HumanizationProbeOverwrittenAfterRefresh = overwrittenAfterRefresh == true
         modData.LWN_HumanizationProbeFailureCode = failureCode
+        modData.LWN_HumanizationProbeRoleGuardSummary = roleGuardSummary(roleGuard)
     end
 
     local detail = string.format(
-        "role=%s humanInit=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s hybridApplied=%s roleOk=%s guardBlocked=%s overwritten=%s strictVisualOk=%s fail=%s skin=%s itemVisuals=%s wornItems=%s profile=%s",
+        "role=%s humanInit=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s hybridApplied=%s roleOk=%s guardBlocked=%s overwritten=%s strictVisualOk=%s fail=%s skin=%s itemVisuals=%s wornItems=%s profile=%s roleGuard={%s}",
         tostring(role),
         tostring(humanInit),
         tostring(descriptorOk),
@@ -1361,7 +1430,8 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
         tostring(skin),
         tostring(itemVisualCount),
         tostring(wornItemCount),
-        tostring(profile)
+        tostring(profile),
+        tostring(roleGuardSummary(roleGuard))
     )
 
     noteDummyAppearanceState(record, actor, ok, source, detail)
