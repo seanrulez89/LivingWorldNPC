@@ -1307,9 +1307,10 @@ local function issueDesignatedMoveCommand(record, player, options)
     return true, record, destination
 end
 
-local function runMovementAutomationTest01(player)
+local function runMovementAutomationTest01WithCarrier(player, carrierKind)
+    local lane = tostring(carrierKind or "isozombie")
     prepareAutomationCleanSlate(player, "automation_test_start")
-    local record, actor = spawnOneNearPlayerWithCarrier(player, "isozombie", {
+    local record, actor = spawnOneNearPlayerWithCarrier(player, lane, {
         harness = {
             forceFriendly = false,
             holdPosition = true,
@@ -1319,13 +1320,14 @@ local function runMovementAutomationTest01(player)
         },
     })
     if not record then
-        sayInfo(player, "TEST 01 failed: spawn failed")
+        sayInfo(player, string.format("TEST 01 failed: spawn failed (%s)", lane))
         return false
     end
 
     local state = automationState()
     state.active = true
-    state.scenario = "minimal_dummy_move_return_v1"
+    state.scenario = string.format("minimal_dummy_move_return_%s_v1", lane)
+    state.carrierKind = lane
     state.phase = "test_02_ready"
     state.npcId = record.id
     state.destination = nil
@@ -1335,13 +1337,13 @@ local function runMovementAutomationTest01(player)
 
     dumpRecordSummary(record, actor or findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
-    dumpAutomationOneLineSummary(record, actor or findActorForRecord(record), player, "TEST 01 SUMMARY")
+    dumpAutomationOneLineSummary(record, actor or findActorForRecord(record), player, string.format("TEST 01 SUMMARY [%s]", lane))
 
-    sayChecklist(player, "TEST 01 CHECK", {
+    sayChecklist(player, string.format("TEST 01 CHECK [%s]", lane), {
         "Look: only ONE test NPC should exist.",
-        "Check: shell lane should read dummy_idle.",
-        "Check: canWalk=yes and useless=no in the summary.",
-        "Check: probeOk=yes and appLock=yes; appFail=yes means visual rebuild still failed.",
+        "Check: shell lane / carrier kind shown in the summary.",
+        "Check: canWalk=yes and useless=no in the summary when possible.",
+        "Check: probeOk/appFail and role/guard fields for presentation truth.",
         "Look: same face, hair, and clothes stay stable.",
         "Look: idle posture reads human, not feral zombie.",
         "Listen: zombie audio should stay quiet.",
@@ -1350,9 +1352,27 @@ local function runMovementAutomationTest01(player)
     return true
 end
 
+local function runMovementAutomationTest01(player)
+    return runMovementAutomationTest01WithCarrier(player, "isozombie")
+end
+
+local function runMovementAutomationTest01IsoSurvivor(player)
+    return runMovementAutomationTest01WithCarrier(player, "isosurvivor")
+end
+
+local function isSupportedAutomationScenario(state)
+    if not state or state.active ~= true then
+        return false
+    end
+    local scenario = tostring(state.scenario or "")
+    return scenario == "minimal_dummy_move_return_v1"
+        or scenario == "minimal_dummy_move_return_isozombie_v1"
+        or scenario == "minimal_dummy_move_return_isosurvivor_v1"
+end
+
 local function runMovementAutomationTest02(player)
     local record, state = getAutomationRecord()
-    if not state.active or state.scenario ~= "minimal_dummy_move_return_v1" then
+    if not isSupportedAutomationScenario(state) then
         sayInfo(player, "No active test. Run TEST 01 first.")
         return false
     end
@@ -1374,9 +1394,10 @@ local function runMovementAutomationTest02(player)
     end
 
     setAutomationDestination(state, destination)
+    local lane = tostring(state.carrierKind or record.embodiment and record.embodiment.carrierKind or "unknown")
     dumpRecordSummary(record, findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
-    dumpAutomationOneLineSummary(record, findActorForRecord(record), player, "TEST 02 SUMMARY")
+    dumpAutomationOneLineSummary(record, findActorForRecord(record), player, string.format("TEST 02 SUMMARY [%s]", lane))
     state.phase = "test_03_ready"
     state.updatedAt = worldAgeHours()
     state.step = 2
@@ -1396,7 +1417,7 @@ end
 
 local function runMovementAutomationTest03(player)
     local record, state = getAutomationRecord()
-    if not state.active or state.scenario ~= "minimal_dummy_move_return_v1" then
+    if not isSupportedAutomationScenario(state) then
         sayInfo(player, "No active test. Run TEST 01 first.")
         return false
     end
@@ -1409,9 +1430,10 @@ local function runMovementAutomationTest03(player)
         return false
     end
 
+    local lane = tostring(state.carrierKind or record.embodiment and record.embodiment.carrierKind or "unknown")
     dumpRecordSummary(record, findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
-    dumpAutomationOneLineSummary(record, findActorForRecord(record), player, "TEST 03 SUMMARY")
+    dumpAutomationOneLineSummary(record, findActorForRecord(record), player, string.format("TEST 03 SUMMARY [%s]", lane))
     DebugTools.dumpLastActorFailure(player)
     state.phase = "test_04_ready"
     state.updatedAt = worldAgeHours()
@@ -1431,7 +1453,7 @@ end
 
 local function runMovementAutomationTest04(player)
     local record, state = getAutomationRecord()
-    if not state.active or state.scenario ~= "minimal_dummy_move_return_v1" then
+    if not isSupportedAutomationScenario(state) then
         sayInfo(player, "No active test. Run TEST 01 first.")
         return false
     end
@@ -1444,9 +1466,10 @@ local function runMovementAutomationTest04(player)
         return false
     end
 
+    local lane = tostring(state.carrierKind or record.embodiment and record.embodiment.carrierKind or "unknown")
     dumpRecordSummary(record, findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
-    dumpAutomationOneLineSummary(record, findActorForRecord(record), player, "TEST 04 SUMMARY")
+    dumpAutomationOneLineSummary(record, findActorForRecord(record), player, string.format("TEST 04 SUMMARY [%s]", lane))
     DebugTools.dumpNearbyZombieLikeObjects(player)
     DebugTools.dumpLastActorFailure(player)
     state.phase = "complete"
@@ -1663,6 +1686,10 @@ end
 
 function DebugTools.runAutomatedIsoZombieTest01(player)
     return runMovementAutomationTest01(player)
+end
+
+function DebugTools.runAutomatedIsoSurvivorTest01(player)
+    return runMovementAutomationTest01IsoSurvivor(player)
 end
 
 function DebugTools.runAutomatedIsoZombieTest02(player)
