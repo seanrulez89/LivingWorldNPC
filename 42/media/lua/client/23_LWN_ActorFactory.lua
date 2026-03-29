@@ -1626,21 +1626,37 @@ isModelRegistered = function(actor)
     return protectedCall(manager, "ContainsChar", actor)
 end
 
+local function spriteSlotReady(sprite)
+    if not sprite then
+        return false
+    end
+    return sprite.modelSlot ~= nil
+end
+
 local function modelSlotReadiness(actor)
     if not actor then
         return {
             legsSprite = false,
-            modelSlot = false,
+            legsModelSlot = false,
+            torsoSprite = false,
+            torsoModelSlot = false,
+            headSprite = false,
+            headModelSlot = false,
             ready = false,
         }
     end
 
     local legsSprite = actor.legsSprite or nil
-    local modelSlot = legsSprite and legsSprite.modelSlot or nil
+    local torsoSprite = actor.torsoSprite or nil
+    local headSprite = actor.headSprite or nil
     return {
         legsSprite = legsSprite ~= nil,
-        modelSlot = modelSlot ~= nil,
-        ready = legsSprite ~= nil and modelSlot ~= nil,
+        legsModelSlot = spriteSlotReady(legsSprite),
+        torsoSprite = torsoSprite ~= nil,
+        torsoModelSlot = spriteSlotReady(torsoSprite),
+        headSprite = headSprite ~= nil,
+        headModelSlot = spriteSlotReady(headSprite),
+        ready = spriteSlotReady(legsSprite),
     }
 end
 
@@ -1654,11 +1670,38 @@ local function refreshModelManager(actor, reason)
     local addAttempted = false
     local addSkipped = false
     local addSkipReason = nil
+    local descriptor = protectedCall(actor, "getDescriptor")
+
+    if before ~= true and isIsoPlayerCarrierActor(actor) and readiness.ready ~= true then
+        if descriptor then
+            protectedCall(actor, "InitSpriteParts", descriptor)
+        end
+        protectedCall(actor, "resetModel")
+        protectedCall(actor, "resetModelNextFrame")
+        protectedCall(actor, "reloadOutfit")
+        protectedCall(actor, "checkUpdateModelTextures")
+        protectedCall(actor, "onWornItemsChanged")
+        readiness = modelSlotReadiness(actor)
+    end
 
     if before ~= true then
         if isIsoPlayerCarrierActor(actor) and readiness.ready ~= true then
             addSkipped = true
-            addSkipReason = readiness.legsSprite ~= true and "legsSprite_nil" or "modelSlot_nil"
+            if readiness.legsSprite ~= true then
+                addSkipReason = "legsSprite_nil"
+            elseif readiness.legsModelSlot ~= true then
+                addSkipReason = "legs_modelSlot_nil"
+            elseif readiness.torsoSprite ~= true then
+                addSkipReason = "torsoSprite_nil"
+            elseif readiness.torsoModelSlot ~= true then
+                addSkipReason = "torso_modelSlot_nil"
+            elseif readiness.headSprite ~= true then
+                addSkipReason = "headSprite_nil"
+            elseif readiness.headModelSlot ~= true then
+                addSkipReason = "head_modelSlot_nil"
+            else
+                addSkipReason = "slot_unknown"
+            end
         else
             addAttempted = true
             protectedCall(manager, "Add", actor)
@@ -1684,12 +1727,17 @@ local function refreshModelManager(actor, reason)
         modData.LWN_LastModelAddSkipped = addSkipped == true
         modData.LWN_LastModelAddSkipReason = addSkipReason
         modData.LWN_LastModelLegsSpriteReady = readiness.legsSprite == true
-        modData.LWN_LastModelSlotReady = readiness.modelSlot == true
+        modData.LWN_LastModelLegsSlotReady = readiness.legsModelSlot == true
+        modData.LWN_LastModelTorsoSpriteReady = readiness.torsoSprite == true
+        modData.LWN_LastModelTorsoSlotReady = readiness.torsoModelSlot == true
+        modData.LWN_LastModelHeadSpriteReady = readiness.headSprite == true
+        modData.LWN_LastModelHeadSlotReady = readiness.headModelSlot == true
+        modData.LWN_LastModelSlotReady = readiness.legsModelSlot == true
         if addSkipped == true then
             modData.LWN_ModelAddSkipCount = (tonumber(modData.LWN_ModelAddSkipCount) or 0) + 1
         end
         modData.LWN_LastModelRegistrationDetail = string.format(
-            "carrier=%s before=%s after=%s addAttempted=%s addSkipped=%s skipReason=%s legsSpriteReady=%s modelSlotReady=%s expectedHook=%s lastCreateHook=%s postCreatePending=%s appliedBy=%s",
+            "carrier=%s before=%s after=%s addAttempted=%s addSkipped=%s skipReason=%s legsSprite=%s legsSlot=%s torsoSprite=%s torsoSlot=%s headSprite=%s headSlot=%s expectedHook=%s lastCreateHook=%s postCreatePending=%s appliedBy=%s",
             safeText(modData.LWN_CarrierKind),
             safeText(before),
             safeText(after),
@@ -1697,7 +1745,11 @@ local function refreshModelManager(actor, reason)
             safeText(addSkipped),
             safeText(addSkipReason),
             safeText(readiness.legsSprite),
-            safeText(readiness.modelSlot),
+            safeText(readiness.legsModelSlot),
+            safeText(readiness.torsoSprite),
+            safeText(readiness.torsoModelSlot),
+            safeText(readiness.headSprite),
+            safeText(readiness.headModelSlot),
             safeText(modData.LWN_CreateHookExpected),
             safeText(modData.LWN_LastCreateHook),
             safeText(modData.LWN_PostCreateHeavyPending),
@@ -1707,7 +1759,7 @@ local function refreshModelManager(actor, reason)
     if isDebugModeEnabled() then
         local state = actorPresentationState(actor)
         print(string.format(
-            "[LWN][RegistrationTrace] stage=model_refresh | reason=%s | npcId=%s | objectRef=%s | carrier=%s | beforeContains=%s | afterContains=%s | addAttempted=%s | addSkipped=%s | skipReason=%s | legsSpriteReady=%s | modelSlotReady=%s | refreshCount=%s | alphaClass=%s | world=%s | squarePresent=%s | expectedHook=%s | lastCreateHook=%s | createHookPending=%s | postCreatePending=%s | appliedBy=%s",
+            "[LWN][RegistrationTrace] stage=model_refresh | reason=%s | npcId=%s | objectRef=%s | carrier=%s | beforeContains=%s | afterContains=%s | addAttempted=%s | addSkipped=%s | skipReason=%s | legsSpriteReady=%s | legsSlotReady=%s | torsoSpriteReady=%s | torsoSlotReady=%s | headSpriteReady=%s | headSlotReady=%s | refreshCount=%s | alphaClass=%s | world=%s | squarePresent=%s | expectedHook=%s | lastCreateHook=%s | createHookPending=%s | postCreatePending=%s | appliedBy=%s",
             safeText(reason),
             safeText(getKnownNpcIdFromActor(actor)),
             safeText(objectRef(actor)),
@@ -1718,7 +1770,11 @@ local function refreshModelManager(actor, reason)
             safeText(addSkipped),
             safeText(addSkipReason),
             safeText(readiness.legsSprite),
-            safeText(readiness.modelSlot),
+            safeText(readiness.legsModelSlot),
+            safeText(readiness.torsoSprite),
+            safeText(readiness.torsoModelSlot),
+            safeText(readiness.headSprite),
+            safeText(readiness.headModelSlot),
             safeText(modData and modData.LWN_ModelRefreshCount or 0),
             safeText(classifyAlphaState(state)),
             safeText(state and state.world or nil),
@@ -3341,6 +3397,9 @@ function Factory.stabilizeIsoPlayerVisibility(record, actor, descriptor, source)
     protectedCall(actor, "setVisibleToNPCs", true)
     protectedCall(actor, "setNPC", true)
     protectedCall(actor, "setIsNPC", true)
+    if descriptor or protectedCall(actor, "getDescriptor") then
+        protectedCall(actor, "InitSpriteParts", descriptor or protectedCall(actor, "getDescriptor"))
+    end
     protectedCall(actor, "resetModel")
     protectedCall(actor, "resetModelNextFrame")
     protectedCall(actor, "onWornItemsChanged")
