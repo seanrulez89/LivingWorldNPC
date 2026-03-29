@@ -125,9 +125,31 @@ Do not restart with:
 - another `IsoPlayer` probe that simply repeats the same code path without a new materialization hypothesis,
 - generic “maybe clothes/descriptor didn’t apply” reasoning.
 
+## Late-session addendum — Bandits adoption actually started
+
+After this handoff was first written, late-session follow-up work continued on the new branch direction and should be treated as the newest context:
+
+1. `c82f8c6` — `Add Bandits probe checkpoints and settle reprobe`
+   - user-tested result still looked zombie-like,
+   - but `console.txt` proved the Bandits probe was **not** a no-op,
+   - key signals included:
+     - `bProbe=yes`
+     - `bEffect=partial_visual_shift`
+     - `bPostRole=reanimated_zombie`
+     - `bPostFail=fail_presentation_role_zombie`
+
+2. A follow-up **Bandits-first build lane** patch was then applied directly after that result.
+   - The dummy lane now has a test path where Bandits-style direct stamping is promoted from trailing helper to main build step.
+   - The same late-session patch also reduces the heavier old dummy post-build carrier stack in that lane to a more minimal shell-lane state.
+
+Read this document before resuming that line:
+- `docs/BANDITS_FIRST_BUILD_LANE_2026-03-29.md`
+
 ## One-line handoff summary
 
 The branch is now best understood as:
 - **`IsoZombie` = stable enough to study, but zombie-role trapped**
+- **late-session Bandits probe = real partial visual shift, but still loses final role ownership**
+- **Bandits-first build lane = newest active experiment**
 - **`IsoSurvivor` = alive-role hint, but engine-unsafe**
 - **`IsoPlayer` = runtime-valid, but still non-materialized / non-registered visually**

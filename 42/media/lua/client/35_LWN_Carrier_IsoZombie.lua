@@ -33,6 +33,7 @@ local ISOZOMBIE_APPEARANCE_REUSE = "desc+baseline+clothes+bridge"
 local ISOZOMBIE_ROLE_GUARD_RELAX_EXPERIMENT = true
 local ISOZOMBIE_ALIVE_RESET_AFTER_RUNTIME_SETTLE = true
 local ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE = true
+local ISOZOMBIE_BANDITS_FIRST_BUILD_LANE = true
 
 local function worldAgeHours()
     return getGameTime() and getGameTime():getWorldAgeHours() or 0
@@ -1174,8 +1175,58 @@ local function applyRelationshipCombatState(record, actor, options, policy)
     return policy
 end
 
+local function applyBanditsFirstDummyCarrierState(record, actor, policy, source)
+    if not actor then return nil end
+    policy = policy or relationshipCombatPolicy(record)
+    local mode = record and record.dummy and record.dummy.state == "move_to" and "move" or "idle"
+    local lane = mode == "move" and "dummy_move" or "dummy_idle"
+
+    applyShellLaneContract(record, actor, policy, {
+        source = source or "CarrierIsoZombie.applyBanditsFirstDummyCarrierState",
+        allowMovement = mode == "move",
+        neutralized = mode ~= "move",
+        clearCombat = true,
+        stopAudio = true,
+        forceLane = lane,
+    })
+
+    clearAllZombieAggro(actor, {
+        stopActions = mode ~= "move",
+        clearPath = mode ~= "move",
+    })
+    applyDummyVoicePrefix(actor)
+    applyDummyAudioMute(actor, source or "CarrierIsoZombie.applyBanditsFirstDummyCarrierState")
+    protectedCall(actor, "setGodMod", policy.allowPlayerAttack ~= true)
+    protectedCall(actor, "setNoTeeth", true)
+    protectedCall(actor, "setTarget", nil)
+    protectedCall(actor, "setLastTargettedBy", nil)
+    protectedCall(actor, "setAttackedBy", nil)
+    protectedCall(actor, "setEatBodyTarget", nil, false)
+    protectedCall(actor, "setSitAgainstWall", false)
+    protectedCall(actor, "setOnFloor", false)
+    protectedCall(actor, "setFallOnFront", false)
+    protectedCall(actor, "setMoving", mode == "move")
+    if mode ~= "move" then
+        protectedCall(actor, "StopAllActionQueue")
+        protectedCall(actor, "setPath2", nil)
+        protectedCall(actor, "clearVariable", "bPathfind")
+        protectedCall(actor, "setDir", IsoDirections and IsoDirections.S or nil)
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_BanditsFirstBuildLane = true
+        modData.LWN_BanditsFirstBuildLaneSource = source or "CarrierIsoZombie.applyBanditsFirstDummyCarrierState"
+        modData.LWN_BanditsFirstBuildLaneMode = mode
+        modData.LWN_BanditsFirstBuildLaneFlags = "minimal_shell_lane+audio_mute+no_posture_refresh"
+    end
+
+    return lane
+end
+
 local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, appearanceDetail)
     if not actor then return end
+    options = options or {}
     local modData = protectedCall(actor, "getModData")
     local policy = relationshipCombatPolicy(record)
     local summary = relationshipPolicySummary(record, policy)
@@ -1236,10 +1287,14 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
     registerManagedShell(record, actor, "CarrierIsoZombie.applyBasicZombieCarrierFlags")
 
     stampHybridSummary(record, actor, summary, descriptor, appearanceDetail)
-    applyPersistentIllusionPackage(record, actor, descriptor, policy)
-    applyRelationshipCombatState(record, actor, options, policy)
-    if isMinimalDummyRecord(record) then
-        applyHardDummyShellContract(record, actor, record and record.dummy and record.dummy.state == "move_to" and "move" or "idle", "CarrierIsoZombie.applyBasicZombieCarrierFlags")
+    if options.banditsFirstDummyMinFlags == true and isMinimalDummyRecord(record) then
+        applyBanditsFirstDummyCarrierState(record, actor, policy, options.source or "CarrierIsoZombie.applyBasicZombieCarrierFlags.bandits_first")
+    else
+        applyPersistentIllusionPackage(record, actor, descriptor, policy)
+        applyRelationshipCombatState(record, actor, options, policy)
+        if isMinimalDummyRecord(record) then
+            applyHardDummyShellContract(record, actor, record and record.dummy and record.dummy.state == "move_to" and "move" or "idle", "CarrierIsoZombie.applyBasicZombieCarrierFlags")
+        end
     end
 
     protectedCall(actor, "setFakeDead", false)
@@ -1593,6 +1648,51 @@ local function stampBanditsProbeCheckpoint(record, actor, stage, source)
     return truth, presentation, detail
 end
 
+local function runBanditsFirstBuild(record, actor, descriptor, profile, stageLabel, rebuildSource)
+    local modData = protectedCall(actor, "getModData")
+    local probeApplied = false
+    local probeDetail = "bandits_first_probe_unavailable"
+
+    if ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE == true
+        and isMinimalDummyRecord(record)
+        and LWN.ActorFactory
+        and LWN.ActorFactory.applyBanditsStyleVisualProbe
+    then
+        probeApplied, probeDetail = LWN.ActorFactory.applyBanditsStyleVisualProbe(
+            record,
+            actor,
+            descriptor,
+            {
+                source = rebuildSource .. ".bandits_visual_probe",
+            }
+        )
+        if modData then
+            modData.LWN_BanditsVisualProbeDetail = probeDetail
+            modData.LWN_BanditsVisualProbeStage = rebuildSource .. ".bandits_visual_probe"
+            modData.LWN_BanditsFirstBuildLane = true
+            modData.LWN_BanditsFirstBuildLaneStage = stageLabel
+            modData.LWN_BanditsFirstBuildLaneProbeApplied = probeApplied == true
+            modData.LWN_BanditsFirstBuildLaneProbeDetail = probeDetail
+        end
+        stampBanditsProbeCheckpoint(record, actor, stageLabel .. "_after_probe_refresh", rebuildSource .. ".bandits_visual_probe")
+    end
+
+    local appearanceDetail = normalizeAppearanceDetail(nil, {
+        applied = probeApplied == true,
+        experiment = "isozombie_bandits_first_build_v1",
+        reuse = "bandits_first_direct_stamp",
+        bridgeMode = modData and modData.LWN_BanditsVisualProbeBridge or "none",
+        descriptorMode = "bandits_first_seed",
+        descriptorSource = descriptor and "shell_humanizer_initial_seed" or "actor_descriptor_existing",
+        stage = stageLabel,
+        status = probeApplied == true and "applied" or "skipped",
+        profile = profile,
+        mode = "bandits_first_build_lane",
+    })
+
+    return appearanceDetail, probeApplied == true, probeDetail
+end
+
 local function buildInitialDummyAppearance(record, actor, source)
     if not (actor and isMinimalDummyRecord(record)) then
         return nil, nil, false, "not_minimal_dummy"
@@ -1603,6 +1703,7 @@ local function buildInitialDummyAppearance(record, actor, source)
     local appearanceDetail = nil
     local initialDetail = nil
     local rebuildSource = source or "CarrierIsoZombie.buildInitialDummyAppearance"
+    local banditsFirst = ISOZOMBIE_BANDITS_FIRST_BUILD_LANE == true and isMinimalDummyRecord(record)
 
     if LWN.ShellHumanizer and LWN.ShellHumanizer.applyInitial then
         descriptor, initialDetail = LWN.ShellHumanizer.applyInitial(record, actor, {
@@ -1612,50 +1713,68 @@ local function buildInitialDummyAppearance(record, actor, source)
         })
     end
 
-    if LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
-        descriptor, appearanceDetail = LWN.ShellHumanizer.maintain(record, actor, {
-            source = rebuildSource .. ".reapply",
-            profile = profile,
-            forceFull = true,
-            forceInitial = true,
-        })
-    else
-        descriptor, appearanceDetail = applyAppearanceExperiment(record, actor, "dummy_initial_rebuild")
-        appearanceDetail = normalizeAppearanceDetail(appearanceDetail, {
-            stage = "dummy_initial_rebuild",
-            status = appearanceDetail and appearanceDetail.applied == true and "applied" or "skipped",
-            profile = profile,
-            mode = "maintenance_full_reapply",
-        })
-    end
-
-    if initialDetail and appearanceDetail and appearanceDetail.applied ~= true then
-        appearanceDetail = initialDetail
-    end
-
-    if ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE == true
-        and isMinimalDummyRecord(record)
-        and LWN.ActorFactory
-        and LWN.ActorFactory.applyBanditsStyleVisualProbe
-    then
-        local _probeApplied, probeDetail = LWN.ActorFactory.applyBanditsStyleVisualProbe(
-            record,
-            actor,
-            descriptor,
-            {
-                source = rebuildSource .. ".bandits_visual_probe",
-            }
-        )
-        local modData = protectedCall(actor, "getModData")
-        if modData then
-            modData.LWN_BanditsVisualProbeDetail = probeDetail
-            modData.LWN_BanditsVisualProbeStage = rebuildSource .. ".bandits_visual_probe"
+    if banditsFirst ~= true then
+        if LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
+            descriptor, appearanceDetail = LWN.ShellHumanizer.maintain(record, actor, {
+                source = rebuildSource .. ".reapply",
+                profile = profile,
+                forceFull = true,
+                forceInitial = true,
+            })
+        else
+            descriptor, appearanceDetail = applyAppearanceExperiment(record, actor, "dummy_initial_rebuild")
+            appearanceDetail = normalizeAppearanceDetail(appearanceDetail, {
+                stage = "dummy_initial_rebuild",
+                status = appearanceDetail and appearanceDetail.applied == true and "applied" or "skipped",
+                profile = profile,
+                mode = "maintenance_full_reapply",
+            })
         end
-        stampBanditsProbeCheckpoint(record, actor, "after_probe_refresh", rebuildSource .. ".bandits_visual_probe")
+
+        if initialDetail and appearanceDetail and appearanceDetail.applied ~= true then
+            appearanceDetail = initialDetail
+        end
+
+        if ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE == true
+            and isMinimalDummyRecord(record)
+            and LWN.ActorFactory
+            and LWN.ActorFactory.applyBanditsStyleVisualProbe
+        then
+            local _probeApplied, probeDetail = LWN.ActorFactory.applyBanditsStyleVisualProbe(
+                record,
+                actor,
+                descriptor,
+                {
+                    source = rebuildSource .. ".bandits_visual_probe",
+                }
+            )
+            local modData = protectedCall(actor, "getModData")
+            if modData then
+                modData.LWN_BanditsVisualProbeDetail = probeDetail
+                modData.LWN_BanditsVisualProbeStage = rebuildSource .. ".bandits_visual_probe"
+            end
+            stampBanditsProbeCheckpoint(record, actor, "after_probe_refresh", rebuildSource .. ".bandits_visual_probe")
+        end
+    else
+        if descriptor == nil and LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
+            descriptor, _ = LWN.ShellHumanizer.maintain(record, actor, {
+                source = rebuildSource .. ".seed_descriptor",
+                profile = profile,
+                forceFull = true,
+                forceInitial = true,
+            })
+        end
+        if descriptor == nil then
+            descriptor, _ = applyAppearanceExperiment(record, actor, "bandits_first_seed")
+        end
+        appearanceDetail = select(1, runBanditsFirstBuild(record, actor, descriptor, profile, "bandits_first_initial_build", rebuildSource))
     end
 
-    applyBasicZombieCarrierFlags(record, actor, nil, descriptor, appearanceDetail)
-    stampBanditsProbeCheckpoint(record, actor, "after_basic_flags", rebuildSource .. ".post_basic_flags")
+    applyBasicZombieCarrierFlags(record, actor, {
+        banditsFirstDummyMinFlags = banditsFirst == true,
+        source = rebuildSource .. ".post_build_flags",
+    }, descriptor, appearanceDetail)
+    stampBanditsProbeCheckpoint(record, actor, banditsFirst == true and "bandits_first_after_min_flags" or "after_basic_flags", rebuildSource .. ".post_basic_flags")
     local ok, detail = probeHumanizationState(record, actor, appearanceDetail, rebuildSource .. ".probe")
     trace(ok and "dummy_appearance_locked" or "dummy_appearance_failed", record, string.format(
         "source=%s detail=%s",
@@ -1678,47 +1797,73 @@ local function runPostRuntimeSettleRebuild(record, actor, source)
     local rebuildSource = source or "CarrierIsoZombie.runtimeSettleRebuild"
     local descriptor = protectedCall(actor, "getDescriptor")
     local appearanceDetail = nil
+    local banditsFirst = ISOZOMBIE_BANDITS_FIRST_BUILD_LANE == true and isMinimalDummyRecord(record)
 
-    if LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
-        descriptor, appearanceDetail = LWN.ShellHumanizer.maintain(record, actor, {
-            source = rebuildSource,
-            profile = profile,
-            forceFull = true,
-            forceInitial = true,
-        })
-    else
-        descriptor, appearanceDetail = applyAppearanceExperiment(record, actor, "runtime_settle_rebuild")
-        appearanceDetail = normalizeAppearanceDetail(appearanceDetail, {
-            stage = "runtime_settle_rebuild",
-            status = appearanceDetail and appearanceDetail.applied == true and "applied" or "skipped",
-            profile = profile,
-            mode = "post_settle_full_reapply",
-        })
-    end
-
-    if ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE == true
-        and isMinimalDummyRecord(record)
-        and LWN.ActorFactory
-        and LWN.ActorFactory.applyBanditsStyleVisualProbe
-    then
-        local _probeApplied, probeDetail = LWN.ActorFactory.applyBanditsStyleVisualProbe(
-            record,
-            actor,
-            descriptor,
-            {
-                source = rebuildSource .. ".bandits_visual_probe",
-            }
-        )
-        local modData = protectedCall(actor, "getModData")
-        if modData then
-            modData.LWN_BanditsVisualProbeDetail = probeDetail
-            modData.LWN_BanditsVisualProbeStage = rebuildSource .. ".bandits_visual_probe"
+    if banditsFirst ~= true then
+        if LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
+            descriptor, appearanceDetail = LWN.ShellHumanizer.maintain(record, actor, {
+                source = rebuildSource,
+                profile = profile,
+                forceFull = true,
+                forceInitial = true,
+            })
+        else
+            descriptor, appearanceDetail = applyAppearanceExperiment(record, actor, "runtime_settle_rebuild")
+            appearanceDetail = normalizeAppearanceDetail(appearanceDetail, {
+                stage = "runtime_settle_rebuild",
+                status = appearanceDetail and appearanceDetail.applied == true and "applied" or "skipped",
+                profile = profile,
+                mode = "post_settle_full_reapply",
+            })
         end
-        stampBanditsProbeCheckpoint(record, actor, "post_runtime_settle_after_probe", rebuildSource .. ".bandits_visual_probe")
+
+        if ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE == true
+            and isMinimalDummyRecord(record)
+            and LWN.ActorFactory
+            and LWN.ActorFactory.applyBanditsStyleVisualProbe
+        then
+            local _probeApplied, probeDetail = LWN.ActorFactory.applyBanditsStyleVisualProbe(
+                record,
+                actor,
+                descriptor,
+                {
+                    source = rebuildSource .. ".bandits_visual_probe",
+                }
+            )
+            local modData = protectedCall(actor, "getModData")
+            if modData then
+                modData.LWN_BanditsVisualProbeDetail = probeDetail
+                modData.LWN_BanditsVisualProbeStage = rebuildSource .. ".bandits_visual_probe"
+            end
+            stampBanditsProbeCheckpoint(record, actor, "post_runtime_settle_after_probe", rebuildSource .. ".bandits_visual_probe")
+        end
+    else
+        if descriptor == nil and LWN.ShellHumanizer and LWN.ShellHumanizer.applyInitial then
+            descriptor, _ = LWN.ShellHumanizer.applyInitial(record, actor, {
+                source = rebuildSource .. ".initial_seed",
+                profile = profile,
+                force = true,
+            })
+        end
+        if descriptor == nil and LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
+            descriptor, _ = LWN.ShellHumanizer.maintain(record, actor, {
+                source = rebuildSource .. ".seed_descriptor",
+                profile = profile,
+                forceFull = true,
+                forceInitial = true,
+            })
+        end
+        if descriptor == nil then
+            descriptor, _ = applyAppearanceExperiment(record, actor, "bandits_first_runtime_settle_seed")
+        end
+        appearanceDetail = select(1, runBanditsFirstBuild(record, actor, descriptor, profile, "bandits_first_post_runtime_settle_build", rebuildSource))
     end
 
-    applyBasicZombieCarrierFlags(record, actor, nil, descriptor, appearanceDetail)
-    stampBanditsProbeCheckpoint(record, actor, "post_runtime_settle_after_basic_flags", rebuildSource .. ".post_basic_flags")
+    applyBasicZombieCarrierFlags(record, actor, {
+        banditsFirstDummyMinFlags = banditsFirst == true,
+        source = rebuildSource .. ".post_build_flags",
+    }, descriptor, appearanceDetail)
+    stampBanditsProbeCheckpoint(record, actor, banditsFirst == true and "bandits_first_post_runtime_settle_after_min_flags" or "post_runtime_settle_after_basic_flags", rebuildSource .. ".post_basic_flags")
     local ok, detail = probeHumanizationState(record, actor, appearanceDetail, rebuildSource .. ".probe")
 
     local modData = protectedCall(actor, "getModData")

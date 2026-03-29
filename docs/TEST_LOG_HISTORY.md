@@ -44,6 +44,39 @@ For every new test cycle, append a new section using this structure:
 - This file is intended to help large refactors keep contact with actual test evidence.
 - Use this file for cross-day test/result continuity; do not keep appending new-day technical work into an older `WORK_NOTES_YYYY-MM-DD.md` file.
 
+## 2026-03-29 22:18 KST — Bandits probe checkpoint pass still ends zombie-looking
+
+### In-game result
+- user-tested result remained the same visible outcome: the shell still looked like a zombie.
+- this was after the late-session checkpoint patch that added Bandits probe net-effect reporting and settle re-probe instrumentation.
+
+### Log signals
+- `/mnt/c/Users/seanr/Zomboid/console.txt` showed the Bandits probe was actually running:
+  - `bProbe=yes`
+  - `bStage=CarrierIsoZombie.sync.rebuild.bandits_visual_probe`
+- the probe was not a total no-op:
+  - `bEffect=partial_visual_shift`
+  - appearance diff changed real fields such as skin / itemVisual count / persistentOutfitId
+- but the final state still converged on zombie-owned presentation truth:
+  - `bPostRole=reanimated_zombie`
+  - `bPostFail=fail_presentation_role_zombie`
+  - `roleOk=no`
+  - `guardBlocked=not_in_world`
+
+### Interpretation / lesson
+- the Bandits-style direct visual probe can shift some appearance-related state, so “probe did nothing” is no longer the right reading.
+- however, when used as a trailing helper behind the current LWN dummy build path, it still loses the final presentation ownership fight.
+- this means the next useful experiment is not “more tiny probe logging” or “one more old-LWN rebuild tweak.”
+- the next useful experiment is to promote Bandits-style stamping into the main dummy build lane and reduce the heavier post-build carrier refresh stack.
+
+### Code or document changes that followed
+- a new late-session structural patch was prepared to create a **Bandits-first build lane** for the minimal dummy path.
+- documentation was added in `docs/BANDITS_FIRST_BUILD_LANE_2026-03-29.md` so the next session does not confuse the checkpoint patch with the later structural pivot.
+
+### Next thing to verify
+- whether the new Bandits-first build lane changes the final post-flags role away from `reanimated_zombie`.
+- whether the minimal shell-lane variant stays stable enough for the current TEST flow while reducing the old refresh-heavy dummy stack.
+
 ## 2026-03-13 09:14 KST — Best-so-far test, alive actor still invisible
 
 ### In-game result
