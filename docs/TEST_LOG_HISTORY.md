@@ -77,6 +77,44 @@ For every new test cycle, append a new section using this structure:
 - whether the new Bandits-first build lane changes the final post-flags role away from `reanimated_zombie`.
 - whether the minimal shell-lane variant stays stable enough for the current TEST flow while reducing the old refresh-heavy dummy stack.
 
+## 2026-03-29 23:09 KST — Bandits-first lane active, but final zombie-owned role still survives
+
+### In-game result
+- user tested the late-session Bandits-first dummy build lane.
+- the shell still read as zombie-like in-game.
+- the active test flow remained usable enough to continue through the current minimal dummy scenario.
+
+### Log signals
+- `console.txt` confirmed the Bandits-first lane was truly active:
+  - `bFirst=yes`
+  - `bFirstMode=idle`
+- Bandits-style stamping still caused a real appearance shift:
+  - `bEffect=partial_visual_shift`
+  - appearance diff lines changed skin / hair / item-visual count / outfit id
+- representative debug line still ended at zombie-owned failure:
+  - `roleOk=no`
+  - `failCode=fail_presentation_role_zombie`
+  - `presentationRole=reanimated_zombie`
+- a stronger early-state clue also showed up:
+  - during the early Bandits-first build moments the actor could still be `world=false` / `world=nil`
+  - with `alpha=0.00` and `targetAlpha=0.00`
+- summary fields `bPostRole` / `bPostFail` could show `none`, but the lower-level checkpoint lines still showed the post-min-flags state remaining zombie-owned.
+
+### Interpretation / lesson
+- this was an important narrowing result.
+- it means the late-session branch is no longer asking whether Bandits-style stamping runs at all; it clearly does.
+- it also means simply promoting Bandits-style stamping to the main dummy build lane is still not sufficient by itself to defeat the final zombie-owned presentation/runtime truth.
+- the next useful question is therefore not “copy more appearance,” but “what exact stage after world-registration / alpha recovery still preserves or reasserts `presentationRole=reanimated_zombie`?”
+
+### Code or document changes that followed
+- the branch already contained the new Bandits-first build lane (`14ab8b2`), debug-menu trim (`acda710`), and log-throttling patch (`98d952a`).
+- an end-of-day late-session wrap-up document was prepared so the next session can start from the correct causal point instead of replaying the whole evening mentally.
+
+### Next thing to verify
+- fix the summary instrumentation mismatch so Bandits-first post-min-flags checkpoints populate `bPostRole` / `bPostFail` correctly.
+- add one sharper checkpoint after world-registration + first meaningful alpha recovery.
+- then re-run the normal `TEST RESET -> TEST 01 -> STATUS -> TEST 02 -> STATUS -> TEST 03 -> STATUS` flow.
+
 ## 2026-03-13 09:14 KST — Best-so-far test, alive actor still invisible
 
 ### In-game result

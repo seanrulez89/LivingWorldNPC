@@ -138,18 +138,60 @@ After this handoff was first written, late-session follow-up work continued on t
      - `bPostRole=reanimated_zombie`
      - `bPostFail=fail_presentation_role_zombie`
 
-2. A follow-up **Bandits-first build lane** patch was then applied directly after that result.
-   - The dummy lane now has a test path where Bandits-style direct stamping is promoted from trailing helper to main build step.
-   - The same late-session patch also reduces the heavier old dummy post-build carrier stack in that lane to a more minimal shell-lane state.
+2. `14ab8b2` — `Promote Bandits-first dummy build lane`
+   - the minimal dummy lane now has a test path where Bandits-style direct stamping is promoted from trailing helper to main build step,
+   - the old heavier dummy post-build carrier stack is reduced toward a minimal shell-lane state in that test path.
 
-Read this document before resuming that line:
+3. `acda710` — `Trim debug menu to active test flow`
+   - the active test menu was reduced to the current branch question only:
+     - `TEST RESET`
+     - `TEST 01`
+     - `TEST 02`
+     - `TEST 03`
+     - `TEST STATUS`
+
+4. `98d952a` — `Throttle noisy guard and dummy shell logs`
+   - repeated low-value guard / dummy-contract spam was reduced,
+   - while preserving the lines that directly answer the current experiment.
+
+5. Latest late-session in-game result after the Bandits-first build lane patch:
+   - `bFirst=yes`
+   - `bFirstMode=idle`
+   - `bEffect=partial_visual_shift`
+   - visible-state diffs still change,
+   - but final failure still remains zombie-owned:
+     - `presentationRole=reanimated_zombie`
+     - `failCode=fail_presentation_role_zombie`
+
+6. One important instrumentation caveat now exists:
+   - `MOVE SUMMARY` may still show `bPostRole=none` / `bPostFail=none` in the Bandits-first lane,
+   - but that is currently a summary-field mismatch, not proof that no post-flags state existed.
+   - The underlying checkpoint lines already show the post-min-flags state still landing at zombie-owned failure.
+
+Read these documents before resuming that line:
+- `docs/END_OF_DAY_WRAPUP_2026-03-29_LATE.md`
 - `docs/BANDITS_FIRST_BUILD_LANE_2026-03-29.md`
+
+## Exact next-session start order
+
+1. Read `docs/END_OF_DAY_WRAPUP_2026-03-29_LATE.md`
+2. Fix the Bandits-first summary mismatch so post-min-flags checkpoints populate `bPostRole` / `bPostFail`
+3. Add one sharper checkpoint after world-registration + first meaningful alpha recovery
+4. Then run:
+   - `TEST RESET`
+   - `TEST 01`
+   - `TEST STATUS`
+   - `TEST 02`
+   - `TEST STATUS`
+   - `TEST 03`
+   - `TEST STATUS`
 
 ## One-line handoff summary
 
 The branch is now best understood as:
 - **`IsoZombie` = stable enough to study, but zombie-role trapped**
 - **late-session Bandits probe = real partial visual shift, but still loses final role ownership**
-- **Bandits-first build lane = newest active experiment**
+- **Bandits-first build lane = implemented and confirmed active, but still blocked by zombie-owned presentation/runtime truth**
+- **next session = fix summary mismatch, then instrument the exact post-world-registration / post-alpha checkpoint where zombie-owned presentation still survives**
 - **`IsoSurvivor` = alive-role hint, but engine-unsafe**
 - **`IsoPlayer` = runtime-valid, but still non-materialized / non-registered visually**
