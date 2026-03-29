@@ -1269,6 +1269,18 @@ local function tracePresentationGuard(actor, action, status, reason, source, bef
             repeatThreshold = 64,
             repeatInterval = 256,
         }
+    elseif status == "suppressed" and reason == "repeated_identical_zero_state" then
+        sampleOptions = {
+            repeatCheckpoints = { 8 },
+            repeatThreshold = 32,
+            repeatInterval = 256,
+        }
+    elseif status == "partial" and action == "restore_false_flags" and reason == "post_check_not_restored" then
+        sampleOptions = {
+            repeatCheckpoints = { 4, 16 },
+            repeatThreshold = 32,
+            repeatInterval = 256,
+        }
     end
     local sample = sampleDebugEvent("presentation_guard", sampleKey, signature, sampleOptions)
     if sample.emit ~= true then

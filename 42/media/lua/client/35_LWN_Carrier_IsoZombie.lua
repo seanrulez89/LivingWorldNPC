@@ -83,6 +83,21 @@ local function sampleSuffix(sample)
 end
 
 local function trace(stage, record, detail)
+    local sampleOptions = nil
+    if stage == "dummy_contract_idle_applied" then
+        sampleOptions = {
+            repeatCheckpoints = { 4 },
+            repeatThreshold = 16,
+            repeatInterval = 256,
+        }
+    elseif stage == "dummy_contract_move_applied" then
+        sampleOptions = {
+            repeatCheckpoints = { 4, 16 },
+            repeatThreshold = 32,
+            repeatInterval = 128,
+        }
+    end
+
     local sample = sampleDebugEvent(
         "carrier_isozombie_trace",
         table.concat({
@@ -92,7 +107,8 @@ local function trace(stage, record, detail)
         table.concat({
             safeText(stage),
             normalizeSampleValue(detail),
-        }, "|")
+        }, "|"),
+        sampleOptions
     )
     if sample.emit ~= true then
         return
