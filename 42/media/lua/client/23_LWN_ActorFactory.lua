@@ -3666,7 +3666,31 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
     local beforeAppearance = appearanceSnapshot(actor)
     local beforeSignature = appearanceSignature(beforeAppearance)
     local desc = descriptor or protectedCall(actor, "getDescriptor")
-    local descVisual = desc and protectedCall(desc, "getHumanVisual") or nil
+    local descriptorMode = descriptor and "explicit_descriptor" or "actor_descriptor_existing"
+    if not desc and record and Factory.buildDescriptor then
+        desc, descriptorMode = Factory.buildDescriptor(record)
+        descriptorMode = descriptorMode or "buildDescriptor_fallback"
+    end
+    if not desc then
+        if modData then
+            modData.LWN_BanditsVisualProbe = true
+            modData.LWN_BanditsVisualProbeApplied = false
+            modData.LWN_BanditsVisualProbeSource = probeSource
+            modData.LWN_BanditsVisualProbeAt = worldAgeHours()
+            modData.LWN_BanditsVisualProbeNetEffect = "descriptor_missing"
+            modData.LWN_BanditsVisualProbeDescriptorMode = "descriptor_missing"
+        end
+        logBanditsFactory(
+            "applyBanditsStyleVisualProbe.descriptor_missing",
+            record,
+            actor,
+            probeSource,
+            "descriptor=nil"
+        )
+        return false, "descriptor=nil"
+    end
+
+    local descVisual = protectedCall(desc, "getHumanVisual")
     local actorVisual = protectedCall(actor, "getHumanVisual")
     local itemVisuals = safeActorItemVisuals(actor)
     local wornItems = safeActorWornItems(actor)
@@ -3677,8 +3701,9 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
         actor,
         probeSource,
         string.format(
-            "descriptor=%s beforeSig=%s beforeRole=%s itemVisuals=%s wornItems=%s",
+            "descriptor=%s descriptorMode=%s beforeSig=%s beforeRole=%s itemVisuals=%s wornItems=%s",
             safeText(desc ~= nil),
+            safeText(descriptorMode),
             safeText(beforeSignature),
             safeText(beforeAppearance and beforeAppearance.role or nil),
             safeText(beforeAppearance and beforeAppearance.itemVisuals or nil),
@@ -3695,6 +3720,12 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
 
     applyFemaleFlags(actor, record and record.identity and record.identity.female == true)
     protectedCall(actor, "setHealth", record and record.stats and record.stats.health or protectedCall(actor, "getHealth"))
+
+    local activeDescriptor, preBind = materializeDescriptorVisual(record or {}, actor, desc, "bandits_stage1_pre_clothing", {
+        dressup = true,
+        initSpriteParts = true,
+    })
+    setBaselineHumanVisual(record or {}, actor, activeDescriptor)
 
     if actorVisual and descVisual then
         local skin = protectedCall(descVisual, "getSkinTexture") or protectedCall(descVisual, "getSkinTextureName")
@@ -3719,6 +3750,11 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
         end
     end
 
+    ensureVisibleClothing(actor)
+    local finalizedDescriptor, finalized = materializeDescriptorVisual(record or {}, actor, activeDescriptor, "bandits_stage1_post_clothing", {
+        dressup = false,
+        initSpriteParts = true,
+    })
     local directAppearance = appearanceSnapshot(actor)
     local directSignature = appearanceSignature(directAppearance)
     logBanditsFactory(
@@ -3727,9 +3763,12 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
         actor,
         probeSource,
         string.format(
-            "before=%s direct=%s role=%s skin=%s hair=%s beard=%s itemVisuals=%s wornItems=%s",
+            "before=%s direct=%s descriptorMode=%s preDress=%s postInit=%s role=%s skin=%s hair=%s beard=%s itemVisuals=%s wornItems=%s",
             safeText(beforeSignature),
             safeText(directSignature),
+            safeText(descriptorMode),
+            safeText(preBind and preBind.dressup == true),
+            safeText(finalized and finalized.initSpriteParts == true),
             safeText(directAppearance and directAppearance.role or nil),
             safeText(directAppearance and directAppearance.skin or nil),
             safeText(directAppearance and directAppearance.hair or nil),
@@ -3738,22 +3777,7 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
             safeText(directAppearance and directAppearance.wornItems or nil)
         )
     )
-    stageTrace("ActorFactory", "banditsVisualProbe.after_direct_copy", record, actor, desc, {
-        source = probeSource,
-        detail = string.format(
-            "before=%s direct=%s role=%s skin=%s hair=%s beard=%s itemVisuals=%s wornItems=%s",
-            safeText(beforeSignature),
-            safeText(directSignature),
-            safeText(directAppearance and directAppearance.role or nil),
-            safeText(directAppearance and directAppearance.skin or nil),
-            safeText(directAppearance and directAppearance.hair or nil),
-            safeText(directAppearance and directAppearance.beard or nil),
-            safeText(directAppearance and directAppearance.itemVisuals or nil),
-            safeText(directAppearance and directAppearance.wornItems or nil)
-        ),
-    })
 
-    ensureVisibleClothing(actor)
     local bridge = bridgeWornItemsToItemVisuals(actor)
     logBanditsFactory(
         "applyBanditsStyleVisualProbe.after_bridge",
@@ -3762,6 +3786,7 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
         probeSource,
         string.format("bridge=%s", safeText(bridge and bridge.mode or "none"))
     )
+
     refreshActorPresentation(actor)
     local afterAppearance = appearanceSnapshot(actor)
     local afterSignature = appearanceSignature(afterAppearance)
@@ -3790,6 +3815,7 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
         modData.LWN_BanditsVisualProbeSource = probeSource
         modData.LWN_BanditsVisualProbeAt = worldAgeHours()
         modData.LWN_BanditsVisualProbeBridge = bridge and bridge.mode or "none"
+        modData.LWN_BanditsVisualProbeDescriptorMode = descriptorMode
         modData.LWN_BanditsVisualProbeBeforeSignature = beforeSignature
         modData.LWN_BanditsVisualProbeDirectSignature = directSignature
         modData.LWN_BanditsVisualProbeAfterSignature = afterSignature
@@ -3808,31 +3834,20 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
         actor,
         probeSource,
         string.format(
-            "before=%s direct=%s after=%s bridge=%s effect=%s afterRole=%s",
+            "before=%s direct=%s after=%s bridge=%s effect=%s afterRole=%s descriptorMode=%s",
             safeText(beforeSignature),
             safeText(directSignature),
             safeText(afterSignature),
             safeText(bridge and bridge.mode or "none"),
             safeText(netEffect),
-            safeText(afterAppearance and afterAppearance.role or nil)
+            safeText(afterAppearance and afterAppearance.role or nil),
+            safeText(descriptorMode)
         )
     )
-    stageTrace("ActorFactory", "banditsVisualProbe.ready", record, actor, desc, {
-        source = probeSource,
-        detail = string.format(
-            "before=%s direct=%s after=%s bridge=%s effect=%s itemVisuals=%s wornItems=%s",
-            safeText(beforeSignature),
-            safeText(directSignature),
-            safeText(afterSignature),
-            safeText(bridge and bridge.mode or "none"),
-            safeText(netEffect),
-            safeText(afterAppearance and afterAppearance.itemVisuals or nil),
-            safeText(afterAppearance and afterAppearance.wornItems or nil)
-        ),
-    })
 
     return true, string.format(
-        "bandits_direct_visual_probe_v1 before=%s direct=%s after=%s bridge=%s effect=%s",
+        "bandits_stage1_visual_pass descriptorMode=%s before=%s direct=%s after=%s bridge=%s effect=%s",
+        tostring(descriptorMode),
         tostring(beforeSignature),
         tostring(directSignature),
         tostring(afterSignature),

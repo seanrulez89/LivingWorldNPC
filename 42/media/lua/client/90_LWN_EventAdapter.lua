@@ -194,6 +194,44 @@ local function restampManagedActor(record, actor, source)
     return true
 end
 
+local function reapplyRecoveredDummyShell(record, actor, source)
+    if not (record and actor and isMinimalDummyRecord(record)) then
+        return false
+    end
+
+    local mode = isDummyMoveAuthorityActive(record) and "move" or "idle"
+    applyRecoveryAttackQuarantine(record, source or "EventAdapter.reapplyRecoveredDummyShell")
+    restampManagedActor(record, actor, source or "EventAdapter.reapplyRecoveredDummyShell")
+    if LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
+        LWN.Carriers.isozombie.enforceHardDummyShell(
+            record,
+            actor,
+            mode,
+            source or "EventAdapter.reapplyRecoveredDummyShell"
+        )
+    elseif LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.reassertManagedShellContract then
+        LWN.Carriers.isozombie.reassertManagedShellContract(record, actor, {
+            source = source or "EventAdapter.reapplyRecoveredDummyShell",
+            allowMovement = mode == "move",
+            neutralized = mode ~= "move",
+            clearCombat = true,
+            stopAudio = true,
+            forceLane = mode == "move" and "dummy_move" or "dummy_idle",
+        })
+    end
+    protectedCall(actor, "setTarget", nil)
+    protectedCall(actor, "setLastTargettedBy", nil)
+    protectedCall(actor, "setAttackedBy", nil)
+    protectedCall(actor, "setEatBodyTarget", nil, false)
+    protectedCall(actor, "setNoTeeth", true)
+    if mode ~= "move" then
+        protectedCall(actor, "StopAllActionQueue")
+        protectedCall(actor, "setPath2", nil)
+        protectedCall(actor, "setMoving", false)
+    end
+    return true
+end
+
 local function hardReNeutralize(record, actor, source)
     if not (record and actor and harnessQuarantine(record)) then
         return false
@@ -954,6 +992,7 @@ local function findCachedManagedShell(record, source)
     local actor = LWN.Carriers.isozombie.getKnownShellByNpcId(record.id)
     if actor and isRecoverableShellCandidate(record, actor) then
         restampManagedActor(record, actor, source or "findCachedManagedShell")
+        reapplyRecoveredDummyShell(record, actor, source or "findCachedManagedShell")
         traceStage("recovery.cached_hit", record, actor, {
             source = source or "findCachedManagedShell",
             detail = "cached managed shell accepted",
@@ -1089,6 +1128,7 @@ local function tryReclaimHandleActor(record, actor, source)
     })
 
     restampManagedActor(record, actor, source or "tryReclaimHandleActor")
+    reapplyRecoveredDummyShell(record, actor, source or "tryReclaimHandleActor")
     if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
         LWN.ActorFactory.ensureActorInWorld(actor, getAnchorSquare(record))
     end
@@ -1194,6 +1234,7 @@ local function resolveEmbodiedActor(record)
     local handle = getCarrierHandle(record)
     local handleActor = handle and handle.actor or nil
     if handleActor and isCarrierActorUsable(record, handleActor) then
+        reapplyRecoveredDummyShell(record, handleActor, "resolveEmbodiedActor.handle_recovered")
         traceStage("resolveEmbodiedActor.handle_recovered", record, handleActor, {
             source = "resolveEmbodiedActor",
             detail = "using carrier handle actor before nearby scan",
@@ -1220,7 +1261,11 @@ local function resolveEmbodiedActor(record)
             if LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
                 LWN.EmbodimentManager.touchGrace(record)
             end
-            hardReNeutralize(record, actor, "resolveEmbodiedActor.relinked")
+            if harnessQuarantine(record) then
+                hardReNeutralize(record, actor, "resolveEmbodiedActor.relinked")
+            else
+                reapplyRecoveredDummyShell(record, actor, "resolveEmbodiedActor.relinked")
+            end
             traceEmbodiedDeathLike(record, actor, "resolveEmbodiedActor.relinked")
             traceStage("resolveEmbodiedActor.relinked_near_anchor", record, actor, {
                 source = "resolveEmbodiedActor",

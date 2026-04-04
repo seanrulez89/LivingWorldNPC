@@ -1856,11 +1856,11 @@ local function runBanditsFirstBuild(record, actor, descriptor, profile, stageLab
 
     local appearanceDetail = normalizeAppearanceDetail(nil, {
         applied = probeApplied == true,
-        experiment = "isozombie_bandits_first_build_v1",
-        reuse = "bandits_first_direct_stamp",
+        experiment = "isozombie_bandits_stage1_visual_pass",
+        reuse = "bandits_stage1_direct_visual_pass",
         bridgeMode = modData and modData.LWN_BanditsVisualProbeBridge or "none",
-        descriptorMode = "bandits_first_seed",
-        descriptorSource = descriptor and "shell_humanizer_initial_seed" or "actor_descriptor_existing",
+        descriptorMode = probeApplied == true and "bandits_stage1_functional_pass" or "bandits_stage1_skipped",
+        descriptorSource = descriptor and "bandits_stage1_seeded_descriptor" or "bandits_stage1_descriptor_missing",
         stage = stageLabel,
         status = probeApplied == true and "applied" or "skipped",
         profile = profile,
@@ -1941,18 +1941,8 @@ local function buildInitialDummyAppearance(record, actor, source)
         end
     else
         logBanditsPathEntry(record, actor, "buildInitialDummyAppearance.bandits_first", rebuildSource, "enter_bandits_first_branch")
-        if descriptor == nil and LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
-            descriptor, _ = LWN.ShellHumanizer.maintain(record, actor, {
-                source = rebuildSource .. ".seed_descriptor",
-                profile = profile,
-                forceFull = true,
-                forceInitial = true,
-            })
-            stampBanditsProbeCheckpoint(record, actor, "bandits_first_after_seed_descriptor", rebuildSource .. ".seed_descriptor")
-        end
-        if descriptor == nil then
-            descriptor, _ = applyAppearanceExperiment(record, actor, "bandits_first_seed")
-            stampBanditsProbeCheckpoint(record, actor, "bandits_first_after_seed_experiment", rebuildSource .. ".seed_experiment")
+        if descriptor == nil and LWN.ActorFactory and LWN.ActorFactory.buildDescriptor then
+            descriptor, _ = LWN.ActorFactory.buildDescriptor(record)
         end
         appearanceDetail = select(1, runBanditsFirstBuild(record, actor, descriptor, profile, "bandits_first_initial_build", rebuildSource))
     end
@@ -2041,18 +2031,8 @@ local function runPostRuntimeSettleRebuild(record, actor, source)
             })
             stampBanditsProbeCheckpoint(record, actor, "bandits_first_post_runtime_settle_after_apply_initial", rebuildSource .. ".initial_seed")
         end
-        if descriptor == nil and LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
-            descriptor, _ = LWN.ShellHumanizer.maintain(record, actor, {
-                source = rebuildSource .. ".seed_descriptor",
-                profile = profile,
-                forceFull = true,
-                forceInitial = true,
-            })
-            stampBanditsProbeCheckpoint(record, actor, "bandits_first_post_runtime_settle_after_seed_descriptor", rebuildSource .. ".seed_descriptor")
-        end
-        if descriptor == nil then
-            descriptor, _ = applyAppearanceExperiment(record, actor, "bandits_first_runtime_settle_seed")
-            stampBanditsProbeCheckpoint(record, actor, "bandits_first_post_runtime_settle_after_seed_experiment", rebuildSource .. ".seed_experiment")
+        if descriptor == nil and LWN.ActorFactory and LWN.ActorFactory.buildDescriptor then
+            descriptor, _ = LWN.ActorFactory.buildDescriptor(record)
         end
         appearanceDetail = select(1, runBanditsFirstBuild(record, actor, descriptor, profile, "bandits_first_post_runtime_settle_build", rebuildSource))
     end
