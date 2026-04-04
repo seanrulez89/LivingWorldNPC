@@ -56,10 +56,21 @@ local function sayInfo(player, text)
     print("[LWN][Debug] " .. tostring(text))
 end
 
+local function logInfo(text)
+    print("[LWN][Debug] " .. tostring(text))
+end
+
+local function sayShortAndLog(player, shortText, logText)
+    if player and player.Say and shortText then
+        player:Say(tostring(shortText))
+    end
+    print("[LWN][Debug] " .. tostring(logText or shortText or ""))
+end
+
 local function sayChecklist(player, title, lines)
-    sayInfo(player, tostring(title))
+    sayShortAndLog(player, tostring(title), tostring(title))
     for i = 1, #lines do
-        sayInfo(player, tostring(lines[i]))
+        logInfo(tostring(lines[i]))
     end
 end
 
@@ -210,14 +221,14 @@ end
 
 local function dumpAutomationOneLineSummary(record, actor, player, label)
     if not record then
-        sayInfo(player, tostring(label or "TEST SUMMARY") .. " npc=nil")
+        sayShortAndLog(player, tostring(label or "TEST SUMMARY") .. " npc=nil", tostring(label or "TEST SUMMARY") .. " npc=nil")
         return false
     end
     local moveLine = movementSummaryLine(record, actor)
     local recoveryLine = recoverySummaryLine(record, actor)
-    sayInfo(player, tostring(label or "TEST SUMMARY"))
-    sayInfo(player, moveLine)
-    sayInfo(player, recoveryLine)
+    sayShortAndLog(player, tostring(label or "TEST SUMMARY"), tostring(label or "TEST SUMMARY"))
+    logInfo(moveLine)
+    logInfo(recoveryLine)
     print("[LWN][Debug] automation summary :: " .. moveLine)
     print("[LWN][Debug] automation summary :: " .. recoveryLine)
     return true
@@ -1871,20 +1882,25 @@ end
 function DebugTools.dumpAutomatedIsoZombieTestStatus(player)
     local record, state = getAutomationRecord()
     local destination = state.destination or {}
-    sayInfo(player, string.format(
-        "TEST STATUS scenario=%s phase=%s npcId=%s active=%s dest=%s,%s,%s %s",
-        tostring(state.scenario),
-        tostring(state.phase),
-        tostring(state.npcId),
-        tostring(state.active),
-        tostring(destination.x or "nil"),
-        tostring(destination.y or "nil"),
-        tostring(destination.z or "nil"),
-        tostring(destination.label or "")
-    ))
+    sayShortAndLog(
+        player,
+        string.format("TEST STATUS %s", tostring(state.phase or "unknown")),
+        string.format(
+            "TEST STATUS scenario=%s phase=%s npcId=%s active=%s dest=%s,%s,%s %s",
+            tostring(state.scenario),
+            tostring(state.phase),
+            tostring(state.npcId),
+            tostring(state.active),
+            tostring(destination.x or "nil"),
+            tostring(destination.y or "nil"),
+            tostring(destination.z or "nil"),
+            tostring(destination.label or "")
+        )
+    )
     if record then
         dumpRecordSummary(record, findActorForRecord(record), player)
         dumpMovementAudioForRecord(record, player)
+        dumpAutomationOneLineSummary(record, findActorForRecord(record), player, "TEST STATUS SUMMARY")
         return true
     end
     return false
