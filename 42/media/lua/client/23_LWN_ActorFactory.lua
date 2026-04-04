@@ -1229,21 +1229,90 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
     local checkpointStage = tostring(stage or "unknown")
     local checkpointSource = tostring(source or "unknown")
     local checkpointDetail = tostring(detail or "none")
+    local checkpointAt = worldAgeHours()
+    local role = presentation and presentation.presentationRole or nil
+    local fail = truth and truth.failureCode or nil
+    local guard = truth and truth.guardBlocked or nil
+    local signature = truth and truth.signature or nil
+    local previousRole = modData and modData.LWN_LastPresentationObservedRole or nil
+    local previousFail = modData and modData.LWN_LastPresentationObservedFail or nil
+    local previousStage = modData and modData.LWN_LastPresentationObservedStage or nil
+    local roleTransition = previousRole ~= nil and previousRole ~= role
+    local failTransition = previousFail ~= nil and previousFail ~= fail
 
     if modData then
         modData.LWN_LastPresentationCheckpointStage = checkpointStage
         modData.LWN_LastPresentationCheckpointSource = checkpointSource
         modData.LWN_LastPresentationCheckpointDetail = checkpointDetail
-        modData.LWN_LastPresentationCheckpointAt = worldAgeHours()
-        modData.LWN_LastPresentationCheckpointRole = presentation and presentation.presentationRole or nil
+        modData.LWN_LastPresentationCheckpointAt = checkpointAt
+        modData.LWN_LastPresentationCheckpointRole = role
         modData.LWN_LastPresentationCheckpointWorld = presentation and presentation.world == true or false
         modData.LWN_LastPresentationCheckpointSquare = presentation and presentation.squarePresent == true or false
         modData.LWN_LastPresentationCheckpointAlpha = presentation and presentation.alpha or nil
         modData.LWN_LastPresentationCheckpointTargetAlpha = presentation and presentation.targetAlpha or nil
         modData.LWN_LastPresentationCheckpointModelRegistered = presentation and presentation.modelRegistered or nil
-        modData.LWN_LastPresentationCheckpointFail = truth and truth.failureCode or nil
-        modData.LWN_LastPresentationCheckpointGuard = truth and truth.guardBlocked or nil
-        modData.LWN_LastPresentationCheckpointSignature = truth and truth.signature or nil
+        modData.LWN_LastPresentationCheckpointFail = fail
+        modData.LWN_LastPresentationCheckpointGuard = guard
+        modData.LWN_LastPresentationCheckpointSignature = signature
+
+        if modData.LWN_FirstPresentationObservedStage == nil then
+            modData.LWN_FirstPresentationObservedStage = checkpointStage
+            modData.LWN_FirstPresentationObservedAt = checkpointAt
+            modData.LWN_FirstPresentationObservedRole = role
+            modData.LWN_FirstPresentationObservedFail = fail
+            modData.LWN_FirstPresentationObservedGuard = guard
+            modData.LWN_FirstPresentationObservedSignature = signature
+        end
+
+        if roleTransition then
+            modData.LWN_PresentationRoleTransitionCount = (tonumber(modData.LWN_PresentationRoleTransitionCount) or 0) + 1
+            modData.LWN_LastPresentationRoleTransitionAt = checkpointAt
+            modData.LWN_LastPresentationRoleTransitionStage = checkpointStage
+            modData.LWN_LastPresentationRoleTransitionSource = checkpointSource
+            modData.LWN_LastPresentationRoleTransitionFrom = previousRole
+            modData.LWN_LastPresentationRoleTransitionTo = role
+            modData.LWN_LastPresentationRoleTransitionFail = fail
+            modData.LWN_LastPresentationRoleTransitionGuard = guard
+            modData.LWN_LastPresentationRoleTransitionDetail = checkpointDetail
+
+            if role == "reanimated_zombie" and modData.LWN_FirstZombieRoleObservedStage == nil then
+                modData.LWN_FirstZombieRoleObservedStage = checkpointStage
+                modData.LWN_FirstZombieRoleObservedAt = checkpointAt
+                modData.LWN_FirstZombieRoleObservedFrom = previousRole
+                modData.LWN_FirstZombieRoleObservedFail = fail
+                modData.LWN_FirstZombieRoleObservedGuard = guard
+                modData.LWN_FirstZombieRoleObservedSource = checkpointSource
+            end
+        end
+
+        if failTransition then
+            modData.LWN_PresentationFailTransitionCount = (tonumber(modData.LWN_PresentationFailTransitionCount) or 0) + 1
+            modData.LWN_LastPresentationFailTransitionAt = checkpointAt
+            modData.LWN_LastPresentationFailTransitionStage = checkpointStage
+            modData.LWN_LastPresentationFailTransitionSource = checkpointSource
+            modData.LWN_LastPresentationFailTransitionFrom = previousFail
+            modData.LWN_LastPresentationFailTransitionTo = fail
+            modData.LWN_LastPresentationFailTransitionRole = role
+            modData.LWN_LastPresentationFailTransitionGuard = guard
+            modData.LWN_LastPresentationFailTransitionDetail = checkpointDetail
+
+            if fail ~= nil and modData.LWN_FirstPresentationFailureStage == nil then
+                modData.LWN_FirstPresentationFailureStage = checkpointStage
+                modData.LWN_FirstPresentationFailureAt = checkpointAt
+                modData.LWN_FirstPresentationFailureCode = fail
+                modData.LWN_FirstPresentationFailureRole = role
+                modData.LWN_FirstPresentationFailureGuard = guard
+                modData.LWN_FirstPresentationFailureSource = checkpointSource
+            end
+        end
+
+        modData.LWN_LastPresentationObservedStage = checkpointStage
+        modData.LWN_LastPresentationObservedAt = checkpointAt
+        modData.LWN_LastPresentationObservedRole = role
+        modData.LWN_LastPresentationObservedFail = fail
+        modData.LWN_LastPresentationObservedGuard = guard
+        modData.LWN_LastPresentationObservedSignature = signature
+        modData.LWN_LastPresentationObservedSource = checkpointSource
 
         if string.find(checkpointStage, "world_registration", 1, true) then
             modData.LWN_WorldRegistrationCheckpointStage = checkpointStage
@@ -1276,22 +1345,57 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
 
     if isDebugModeEnabled() then
         print(string.format(
-            "[LWN][Checkpoint] stage=%s | source=%s | npcId=%s | objectRef=%s | role=%s | world=%s | square=%s | alpha=%s | targetAlpha=%s | modelRegistered=%s | fail=%s | guard=%s | sig=%s | detail=%s",
+            "[LWN][Checkpoint] stage=%s | source=%s | npcId=%s | objectRef=%s | role=%s | world=%s | square=%s | alpha=%s | targetAlpha=%s | modelRegistered=%s | fail=%s | guard=%s | sig=%s | roleTransition=%s | failTransition=%s | prevStage=%s | prevRole=%s | prevFail=%s | detail=%s",
             safeText(checkpointStage),
             safeText(checkpointSource),
             safeText(getKnownNpcIdFromActor(actor)),
             safeText(objectRef(actor)),
-            safeText(presentation and presentation.presentationRole or nil),
+            safeText(role),
             safeText(presentation and presentation.world or nil),
             safeText(presentation and presentation.squarePresent or nil),
             safeNumber(presentation and presentation.alpha or nil),
             safeNumber(presentation and presentation.targetAlpha or nil),
             safeText(presentation and presentation.modelRegistered or nil),
-            safeText(truth and truth.failureCode or nil),
-            safeText(truth and truth.guardBlocked or nil),
-            safeText(truth and truth.signature or nil),
+            safeText(fail),
+            safeText(guard),
+            safeText(signature),
+            safeText(roleTransition),
+            safeText(failTransition),
+            safeText(previousStage),
+            safeText(previousRole),
+            safeText(previousFail),
             safeText(checkpointDetail)
         ))
+
+        if roleTransition then
+            print(string.format(
+                "[LWN][Transition] kind=role | npcId=%s | from=%s | to=%s | stage=%s | source=%s | fail=%s | guard=%s | prevStage=%s | detail=%s",
+                safeText(getKnownNpcIdFromActor(actor)),
+                safeText(previousRole),
+                safeText(role),
+                safeText(checkpointStage),
+                safeText(checkpointSource),
+                safeText(fail),
+                safeText(guard),
+                safeText(previousStage),
+                safeText(checkpointDetail)
+            ))
+        end
+
+        if failTransition then
+            print(string.format(
+                "[LWN][Transition] kind=fail | npcId=%s | from=%s | to=%s | stage=%s | source=%s | role=%s | guard=%s | prevStage=%s | detail=%s",
+                safeText(getKnownNpcIdFromActor(actor)),
+                safeText(previousFail),
+                safeText(fail),
+                safeText(checkpointStage),
+                safeText(checkpointSource),
+                safeText(role),
+                safeText(guard),
+                safeText(previousStage),
+                safeText(checkpointDetail)
+            ))
+        end
     end
 
     return {
@@ -1300,6 +1404,11 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
         stage = checkpointStage,
         source = checkpointSource,
         detail = checkpointDetail,
+        roleTransition = roleTransition,
+        failTransition = failTransition,
+        previousStage = previousStage,
+        previousRole = previousRole,
+        previousFail = previousFail,
     }
 end
 

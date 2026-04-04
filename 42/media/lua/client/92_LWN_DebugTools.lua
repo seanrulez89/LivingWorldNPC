@@ -85,7 +85,7 @@ local function movementSummaryLine(record, actor)
     local command = record and record.companion and record.companion.command or {}
     local telemetry = command and command.movementTelemetry or {}
     return string.format(
-        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s motor=%s commit=%s moving=%s attacking=%s target=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s appLock=%s appFail=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s roleOk=%s guardBlocked=%s failCode=%s overwritten=%s rgWorld=%s rgBody=%s rgCurSq=%s rgSq=%s rgRole=%s rgRelax=%s owBest=%s owNow=%s owStage=%s owSeen=%s owReason=%s arReset=%s arTouched=%s bProbe=%s bStage=%s bEffect=%s bPostStage=%s bPostRole=%s bPostFail=%s bPostWorld=%s bPostSq=%s bPostAlpha=%s bPostTargetAlpha=%s bPostModel=%s wrStage=%s wrRole=%s wrFail=%s wrWorld=%s wrSq=%s wrAlpha=%s wrTargetAlpha=%s wrModel=%s arStage=%s arRole=%s arFail=%s arWorld=%s arSq=%s arAlpha=%s arTargetAlpha=%s arModel=%s cpStage=%s cpRole=%s cpFail=%s cpWorld=%s cpSq=%s cpAlpha=%s cpTargetAlpha=%s cpModel=%s bFirst=%s bFirstMode=%s",
+        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s motor=%s commit=%s moving=%s attacking=%s target=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s appLock=%s appFail=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s roleOk=%s guardBlocked=%s failCode=%s overwritten=%s rgWorld=%s rgBody=%s rgCurSq=%s rgSq=%s rgRole=%s rgRelax=%s owBest=%s owNow=%s owStage=%s owSeen=%s owReason=%s arReset=%s arTouched=%s bProbe=%s bStage=%s bEffect=%s bPostStage=%s bPostRole=%s bPostFail=%s bPostWorld=%s bPostSq=%s bPostAlpha=%s bPostTargetAlpha=%s bPostModel=%s wrStage=%s wrRole=%s wrFail=%s wrWorld=%s wrSq=%s wrAlpha=%s wrTargetAlpha=%s wrModel=%s arStage=%s arRole=%s arFail=%s arWorld=%s arSq=%s arAlpha=%s arTargetAlpha=%s arModel=%s cpStage=%s cpRole=%s cpFail=%s cpWorld=%s cpSq=%s cpAlpha=%s cpTargetAlpha=%s cpModel=%s trRoleCount=%s trRoleFrom=%s trRoleTo=%s trRoleStage=%s trFailCount=%s trFailFrom=%s trFailTo=%s trFailStage=%s firstZombieStage=%s firstZombieFrom=%s firstFailStage=%s firstFailCode=%s bFirst=%s bFirstMode=%s",
         tostring(record and record.id or "nil"),
         tostring(modData and modData.LWN_ShellLaneContract or modData and modData.LWN_ShellMode or "none"),
         tostring(command.kind or "none"),
@@ -169,6 +169,18 @@ local function movementSummaryLine(record, actor)
         numberText(modData and modData.LWN_LastPresentationCheckpointAlpha, 2),
         numberText(modData and modData.LWN_LastPresentationCheckpointTargetAlpha, 2),
         boolText(modData and modData.LWN_LastPresentationCheckpointModelRegistered),
+        tostring(modData and modData.LWN_PresentationRoleTransitionCount or 0),
+        tostring(modData and modData.LWN_LastPresentationRoleTransitionFrom or "none"),
+        tostring(modData and modData.LWN_LastPresentationRoleTransitionTo or "none"),
+        tostring(modData and modData.LWN_LastPresentationRoleTransitionStage or "none"),
+        tostring(modData and modData.LWN_PresentationFailTransitionCount or 0),
+        tostring(modData and modData.LWN_LastPresentationFailTransitionFrom or "none"),
+        tostring(modData and modData.LWN_LastPresentationFailTransitionTo or "none"),
+        tostring(modData and modData.LWN_LastPresentationFailTransitionStage or "none"),
+        tostring(modData and modData.LWN_FirstZombieRoleObservedStage or "none"),
+        tostring(modData and modData.LWN_FirstZombieRoleObservedFrom or "none"),
+        tostring(modData and modData.LWN_FirstPresentationFailureStage or "none"),
+        tostring(modData and modData.LWN_FirstPresentationFailureCode or "none"),
         boolText(modData and modData.LWN_BanditsFirstBuildLane),
         tostring(modData and modData.LWN_BanditsFirstBuildLaneMode or "none")
     )
