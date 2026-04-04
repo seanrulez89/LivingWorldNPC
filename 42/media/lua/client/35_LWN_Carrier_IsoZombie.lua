@@ -1636,6 +1636,8 @@ local function stampBanditsProbeCheckpoint(record, actor, stage, source)
     local checkpointAlpha = presentation and presentation.alpha or nil
     local checkpointTargetAlpha = presentation and presentation.targetAlpha or nil
     local checkpointModelRegistered = presentation and presentation.modelRegistered or nil
+    local checkpointNpcId = modData and modData.LWN_NpcId or record and record.id or nil
+    local checkpointRef = tostring(actor)
     local isPostBuildCheckpoint = stageText == "after_basic_flags"
         or string.find(stageText, "after_min_flags", 1, true) ~= nil
         or string.find(stageText, "after_basic_flags", 1, true) ~= nil
@@ -1685,6 +1687,30 @@ local function stampBanditsProbeCheckpoint(record, actor, stage, source)
         end
     end
 
+    local checkpointLine = string.format(
+        "[LWN][BanditsCheckpoint] stage=%s | source=%s | npcId=%s | objectRef=%s | role=%s | fail=%s | guard=%s | world=%s | square=%s | alpha=%s | targetAlpha=%s | modelRegistered=%s | descOk=%s | visualOk=%s | skinOk=%s | wornOk=%s | itemVisualOk=%s | overwritten=%s | sig=%s",
+        tostring(stageText),
+        tostring(source or "CarrierIsoZombie.bandits_probe_checkpoint"),
+        tostring(checkpointNpcId or "nil"),
+        tostring(checkpointRef or "nil"),
+        tostring(role or "nil"),
+        tostring(fail or "none"),
+        tostring(guard or "none"),
+        tostring(checkpointWorld),
+        tostring(checkpointSquare),
+        tostring(checkpointAlpha),
+        tostring(checkpointTargetAlpha),
+        tostring(checkpointModelRegistered),
+        tostring(truth and truth.descriptorOk == true),
+        tostring(truth and truth.humanVisualOk == true),
+        tostring(truth and truth.skinOk == true),
+        tostring(truth and truth.wornItemsOk == true),
+        tostring(truth and truth.itemVisualsOk == true),
+        tostring(truth and truth.overwrittenAfterRefresh == true),
+        tostring(signature or "nil")
+    )
+
+    print(checkpointLine)
     trace("bandits_probe_" .. tostring(stageText), record, string.format(
         "source=%s %s",
         tostring(source or "CarrierIsoZombie.bandits_probe_checkpoint"),
