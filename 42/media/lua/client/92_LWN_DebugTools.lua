@@ -103,6 +103,8 @@ local function numberText(value, decimals)
     return string.format("%." .. tostring(decimals or 2) .. "f", value)
 end
 
+local findActorForRecord
+
 local function actorModData(record, actor)
     actor = actor or findActorForRecord(record)
     return actor and actor.getModData and actor:getModData() or nil, actor
@@ -472,7 +474,7 @@ local function ensureMinimalDummyState(record)
     return dummy
 end
 
-local function findActorForRecord(record)
+findActorForRecord = function(record)
     if not record or (Store.isAlive and not Store.isAlive(record)) then
         return nil
     end
