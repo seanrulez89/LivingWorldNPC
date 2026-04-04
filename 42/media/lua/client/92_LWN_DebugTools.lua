@@ -1218,6 +1218,17 @@ local function getAutomationRecord()
     return record, state
 end
 
+local function setAutomationReturnRecoveryMode(record, enabled, source)
+    if not record then return false end
+    record.embodiment = record.embodiment or {}
+    record.debugHarness = record.debugHarness or {}
+    record.embodiment.allowDebugDespawnForReturnTest = enabled == true
+    record.embodiment.allowDebugDespawnForReturnTestAt = worldAgeHours()
+    record.embodiment.allowDebugDespawnForReturnTestSource = tostring(source or "unknown")
+    record.debugHarness.returnRecoveryMode = enabled == true
+    return true
+end
+
 local function setAutomationDestination(state, destination)
     if not state then return end
     if not destination then
@@ -1638,10 +1649,11 @@ local function runMovementAutomationTest03(player)
     dumpMovementAudioForRecord(record, player)
     dumpAutomationOneLineSummary(record, findActorForRecord(record), player, string.format("TEST 03 SUMMARY [%s]", lane))
     DebugTools.dumpLastActorFailure(player)
+    setAutomationReturnRecoveryMode(record, true, "TEST_03_READY")
     state.phase = "test_04_ready"
     state.updatedAt = worldAgeHours()
     state.step = 3
-    logTestAction("TEST_03_READY", state, record, "await_test_04")
+    logTestAction("TEST_03_READY", state, record, "await_test_04 return_despawn=enabled")
     sayChecklist(player, "TEST 03 CHECK", {
         "Confirm: destination walk succeeded or failed.",
         "Check: final command status matches what you saw.",
@@ -1649,6 +1661,7 @@ local function runMovementAutomationTest03(player)
         "Check: watchdog should stay NO; if YES, pathing happened without real displacement.",
         "Check: totalDelta and squareChanged tell you whether movement was real or statue-like.",
         "If failed, note whether it was hostile leak, path-only, or watchdog no-displacement.",
+        "Return-test despawn mode is now armed for this debug NPC.",
         "Now walk far away, then return to this NPC.",
         "After you return, click TEST 04.",
     })
@@ -1681,6 +1694,7 @@ local function runMovementAutomationTest04(player)
     dumpAutomationOneLineSummary(record, findActorForRecord(record), player, string.format("TEST 04 SUMMARY [%s]", lane))
     DebugTools.dumpNearbyZombieLikeObjects(player)
     DebugTools.dumpLastActorFailure(player)
+    setAutomationReturnRecoveryMode(record, false, "TEST_04_COMPLETE")
     state.phase = "complete"
     state.updatedAt = worldAgeHours()
     state.step = 4
@@ -1919,6 +1933,10 @@ function DebugTools.runAutomatedIsoZombieTest04(player)
 end
 
 function DebugTools.resetAutomatedIsoZombieTest(player)
+    local record = getAutomationRecord()
+    if record then
+        setAutomationReturnRecoveryMode(record, false, "TEST_RESET")
+    end
     logTestAction("TEST_RESET", automationState(), nil, "manual_reset")
     prepareAutomationCleanSlate(player, "manual_reset")
     return true

@@ -557,6 +557,9 @@ end
 local function debugNpcShouldStayEmbodied(record)
     if not record then return false end
     if record.debugSpawnOnly ~= true then return false end
+    if record.embodiment and record.embodiment.allowDebugDespawnForReturnTest == true then
+        return false
+    end
     if not (LWN.Config and LWN.Config.Debug and LWN.Config.Debug.KeepDebugSpawnsEmbodied == true) then
         return false
     end
