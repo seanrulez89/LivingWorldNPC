@@ -1220,6 +1220,85 @@ local function appearanceTruthSnapshot(actor)
     }
 end
 
+local function classifyPresentationTransitionCause(previousStage, previousRole, previousFail, presentation, truth, checkpointStage, checkpointSource)
+    local currentRole = presentation and presentation.presentationRole or nil
+    local currentFail = truth and truth.failureCode or nil
+    local world = presentation and presentation.world == true or false
+    local square = presentation and presentation.squarePresent == true or false
+    local alpha = presentation and presentation.alpha or nil
+    local targetAlpha = presentation and presentation.targetAlpha or nil
+    local modelRegistered = presentation and presentation.modelRegistered == true or false
+    local alphaZero = (type(alpha) == "number" and alpha <= 0.01)
+        or presentation and presentation.alphaZero == true
+    local targetZero = (type(targetAlpha) == "number" and targetAlpha <= 0.01)
+        or presentation and presentation.targetAlphaZero == true
+
+    local cause = "checkpoint_observed"
+    if string.find(tostring(checkpointStage), "world_registration", 1, true) then
+        cause = world and square and "world_registration_checkpoint" or "world_registration_incomplete"
+    elseif string.find(tostring(checkpointStage), "alpha_repair", 1, true) then
+        if alphaZero or targetZero then
+            cause = "alpha_repair_zero_persisted"
+        else
+            cause = "alpha_repair_checkpoint"
+        end
+    elseif string.find(tostring(checkpointStage), "refresh_presentation", 1, true) then
+        cause = modelRegistered and "refresh_model_checkpoint" or "refresh_before_model_registration"
+    elseif string.find(tostring(checkpointStage), "bandits", 1, true) then
+        cause = "bandits_probe_checkpoint"
+    end
+
+    if currentRole == "reanimated_zombie" and previousRole ~= currentRole then
+        if string.find(tostring(checkpointStage), "world_registration", 1, true) then
+            cause = "zombie_role_after_world_registration"
+        elseif string.find(tostring(checkpointStage), "alpha_repair", 1, true) then
+            cause = "zombie_role_after_alpha_repair"
+        elseif string.find(tostring(checkpointStage), "refresh_presentation", 1, true) then
+            cause = "zombie_role_after_refresh"
+        elseif string.find(tostring(checkpointStage), "bandits", 1, true) then
+            cause = "zombie_role_after_bandits_probe"
+        else
+            cause = "zombie_role_transition"
+        end
+    end
+
+    if currentFail ~= previousFail and currentFail ~= nil then
+        if currentFail == "fail_presentation_role_zombie" then
+            if string.find(tostring(checkpointStage), "world_registration", 1, true) then
+                cause = "fail_role_zombie_after_world_registration"
+            elseif string.find(tostring(checkpointStage), "alpha_repair", 1, true) then
+                cause = "fail_role_zombie_after_alpha_repair"
+            elseif string.find(tostring(checkpointStage), "refresh_presentation", 1, true) then
+                cause = "fail_role_zombie_after_refresh"
+            elseif string.find(tostring(checkpointStage), "bandits", 1, true) then
+                cause = "fail_role_zombie_after_bandits_probe"
+            else
+                cause = "fail_role_zombie_transition"
+            end
+        elseif currentFail == "fail_guard_blocked" then
+            cause = "fail_guard_blocked_transition"
+        elseif currentFail == "fail_overwritten_after_refresh" then
+            cause = "fail_overwritten_after_refresh_transition"
+        elseif currentFail == "fail_hybrid_not_applied" then
+            cause = "fail_hybrid_not_applied_transition"
+        else
+            cause = "fail_transition"
+        end
+    end
+
+    if world ~= true then
+        cause = cause .. ":world_false"
+    elseif square ~= true then
+        cause = cause .. ":square_missing"
+    elseif modelRegistered ~= true then
+        cause = cause .. ":model_unregistered"
+    elseif alphaZero or targetZero then
+        cause = cause .. ":alpha_zeroish"
+    end
+
+    return cause
+end
+
 local function recordPresentationCheckpoint(actor, stage, source, detail)
     if not actor then return nil end
 
@@ -1239,6 +1318,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
     local previousStage = modData and modData.LWN_LastPresentationObservedStage or nil
     local roleTransition = previousRole ~= nil and previousRole ~= role
     local failTransition = previousFail ~= nil and previousFail ~= fail
+    local transitionCause = classifyPresentationTransitionCause(previousStage, previousRole, previousFail, presentation, truth, checkpointStage, checkpointSource)
 
     if modData then
         modData.LWN_LastPresentationCheckpointStage = checkpointStage
@@ -1254,6 +1334,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
         modData.LWN_LastPresentationCheckpointFail = fail
         modData.LWN_LastPresentationCheckpointGuard = guard
         modData.LWN_LastPresentationCheckpointSignature = signature
+        modData.LWN_LastPresentationCheckpointCause = transitionCause
 
         if modData.LWN_FirstPresentationObservedStage == nil then
             modData.LWN_FirstPresentationObservedStage = checkpointStage
@@ -1274,6 +1355,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
             modData.LWN_LastPresentationRoleTransitionFail = fail
             modData.LWN_LastPresentationRoleTransitionGuard = guard
             modData.LWN_LastPresentationRoleTransitionDetail = checkpointDetail
+            modData.LWN_LastPresentationRoleTransitionCause = transitionCause
 
             if role == "reanimated_zombie" and modData.LWN_FirstZombieRoleObservedStage == nil then
                 modData.LWN_FirstZombieRoleObservedStage = checkpointStage
@@ -1282,6 +1364,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
                 modData.LWN_FirstZombieRoleObservedFail = fail
                 modData.LWN_FirstZombieRoleObservedGuard = guard
                 modData.LWN_FirstZombieRoleObservedSource = checkpointSource
+                modData.LWN_FirstZombieRoleObservedCause = transitionCause
             end
         end
 
@@ -1295,6 +1378,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
             modData.LWN_LastPresentationFailTransitionRole = role
             modData.LWN_LastPresentationFailTransitionGuard = guard
             modData.LWN_LastPresentationFailTransitionDetail = checkpointDetail
+            modData.LWN_LastPresentationFailTransitionCause = transitionCause
 
             if fail ~= nil and modData.LWN_FirstPresentationFailureStage == nil then
                 modData.LWN_FirstPresentationFailureStage = checkpointStage
@@ -1303,6 +1387,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
                 modData.LWN_FirstPresentationFailureRole = role
                 modData.LWN_FirstPresentationFailureGuard = guard
                 modData.LWN_FirstPresentationFailureSource = checkpointSource
+                modData.LWN_FirstPresentationFailureCause = transitionCause
             end
         end
 
@@ -1313,6 +1398,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
         modData.LWN_LastPresentationObservedGuard = guard
         modData.LWN_LastPresentationObservedSignature = signature
         modData.LWN_LastPresentationObservedSource = checkpointSource
+        modData.LWN_LastPresentationObservedCause = transitionCause
 
         if string.find(checkpointStage, "world_registration", 1, true) then
             modData.LWN_WorldRegistrationCheckpointStage = checkpointStage
@@ -1326,6 +1412,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
             modData.LWN_WorldRegistrationCheckpointFail = modData.LWN_LastPresentationCheckpointFail
             modData.LWN_WorldRegistrationCheckpointGuard = modData.LWN_LastPresentationCheckpointGuard
             modData.LWN_WorldRegistrationCheckpointSignature = modData.LWN_LastPresentationCheckpointSignature
+            modData.LWN_WorldRegistrationCheckpointCause = modData.LWN_LastPresentationCheckpointCause
         end
 
         if string.find(checkpointStage, "alpha_repair", 1, true) then
@@ -1340,12 +1427,13 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
             modData.LWN_AlphaRepairCheckpointFail = modData.LWN_LastPresentationCheckpointFail
             modData.LWN_AlphaRepairCheckpointGuard = modData.LWN_LastPresentationCheckpointGuard
             modData.LWN_AlphaRepairCheckpointSignature = modData.LWN_LastPresentationCheckpointSignature
+            modData.LWN_AlphaRepairCheckpointCause = modData.LWN_LastPresentationCheckpointCause
         end
     end
 
     if isDebugModeEnabled() then
         print(string.format(
-            "[LWN][Checkpoint] stage=%s | source=%s | npcId=%s | objectRef=%s | role=%s | world=%s | square=%s | alpha=%s | targetAlpha=%s | modelRegistered=%s | fail=%s | guard=%s | sig=%s | roleTransition=%s | failTransition=%s | prevStage=%s | prevRole=%s | prevFail=%s | detail=%s",
+            "[LWN][Checkpoint] stage=%s | source=%s | npcId=%s | objectRef=%s | role=%s | world=%s | square=%s | alpha=%s | targetAlpha=%s | modelRegistered=%s | fail=%s | guard=%s | sig=%s | cause=%s | roleTransition=%s | failTransition=%s | prevStage=%s | prevRole=%s | prevFail=%s | detail=%s",
             safeText(checkpointStage),
             safeText(checkpointSource),
             safeText(getKnownNpcIdFromActor(actor)),
@@ -1359,6 +1447,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
             safeText(fail),
             safeText(guard),
             safeText(signature),
+            safeText(transitionCause),
             safeText(roleTransition),
             safeText(failTransition),
             safeText(previousStage),
@@ -1369,7 +1458,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
 
         if roleTransition then
             print(string.format(
-                "[LWN][Transition] kind=role | npcId=%s | from=%s | to=%s | stage=%s | source=%s | fail=%s | guard=%s | prevStage=%s | detail=%s",
+                "[LWN][Transition] kind=role | npcId=%s | from=%s | to=%s | stage=%s | source=%s | fail=%s | guard=%s | cause=%s | prevStage=%s | detail=%s",
                 safeText(getKnownNpcIdFromActor(actor)),
                 safeText(previousRole),
                 safeText(role),
@@ -1377,6 +1466,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
                 safeText(checkpointSource),
                 safeText(fail),
                 safeText(guard),
+                safeText(transitionCause),
                 safeText(previousStage),
                 safeText(checkpointDetail)
             ))
@@ -1384,7 +1474,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
 
         if failTransition then
             print(string.format(
-                "[LWN][Transition] kind=fail | npcId=%s | from=%s | to=%s | stage=%s | source=%s | role=%s | guard=%s | prevStage=%s | detail=%s",
+                "[LWN][Transition] kind=fail | npcId=%s | from=%s | to=%s | stage=%s | source=%s | role=%s | guard=%s | cause=%s | prevStage=%s | detail=%s",
                 safeText(getKnownNpcIdFromActor(actor)),
                 safeText(previousFail),
                 safeText(fail),
@@ -1392,6 +1482,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
                 safeText(checkpointSource),
                 safeText(role),
                 safeText(guard),
+                safeText(transitionCause),
                 safeText(previousStage),
                 safeText(checkpointDetail)
             ))
@@ -1409,6 +1500,7 @@ local function recordPresentationCheckpoint(actor, stage, source, detail)
         previousStage = previousStage,
         previousRole = previousRole,
         previousFail = previousFail,
+        cause = transitionCause,
     }
 end
 
