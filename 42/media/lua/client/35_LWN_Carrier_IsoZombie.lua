@@ -1626,37 +1626,66 @@ local function stampBanditsProbeCheckpoint(record, actor, stage, source)
     local truth = LWN.ActorFactory.getAppearanceTruthSnapshot and LWN.ActorFactory.getAppearanceTruthSnapshot(actor) or nil
     local presentation = LWN.ActorFactory.getPresentationState and LWN.ActorFactory.getPresentationState(actor) or nil
     local modData = protectedCall(actor, "getModData")
+    local stageText = tostring(stage or "nil")
+    local role = presentation and presentation.presentationRole or truth and truth.role or nil
+    local fail = truth and truth.failureCode or nil
+    local guard = truth and truth.guardBlocked or nil
+    local signature = truth and truth.signature or nil
+    local checkpointWorld = presentation and presentation.world or nil
+    local checkpointSquare = presentation and presentation.squarePresent or nil
+    local checkpointAlpha = presentation and presentation.alpha or nil
+    local checkpointTargetAlpha = presentation and presentation.targetAlpha or nil
+    local checkpointModelRegistered = presentation and presentation.modelRegistered or nil
+    local isPostBuildCheckpoint = stageText == "after_basic_flags"
+        or string.find(stageText, "after_min_flags", 1, true) ~= nil
+        or string.find(stageText, "after_basic_flags", 1, true) ~= nil
     local detail = string.format(
-        "stage=%s role=%s fail=%s guard=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s overwritten=%s sig=%s",
-        tostring(stage),
-        tostring(presentation and presentation.presentationRole or truth and truth.role or "nil"),
-        tostring(truth and truth.failureCode or "none"),
-        tostring(truth and truth.guardBlocked or "none"),
+        "stage=%s role=%s fail=%s guard=%s world=%s square=%s alpha=%s targetAlpha=%s modelRegistered=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s overwritten=%s sig=%s",
+        stageText,
+        tostring(role or "nil"),
+        tostring(fail or "none"),
+        tostring(guard or "none"),
+        tostring(checkpointWorld),
+        tostring(checkpointSquare),
+        tostring(checkpointAlpha),
+        tostring(checkpointTargetAlpha),
+        tostring(checkpointModelRegistered),
         tostring(truth and truth.descriptorOk == true),
         tostring(truth and truth.humanVisualOk == true),
         tostring(truth and truth.skinOk == true),
         tostring(truth and truth.wornItemsOk == true),
         tostring(truth and truth.itemVisualsOk == true),
         tostring(truth and truth.overwrittenAfterRefresh == true),
-        tostring(truth and truth.signature or "nil")
+        tostring(signature or "nil")
     )
 
     if modData then
-        modData.LWN_BanditsVisualProbeCheckpointStage = stage
+        modData.LWN_BanditsVisualProbeCheckpointStage = stageText
         modData.LWN_BanditsVisualProbeCheckpointAt = worldAgeHours()
-        modData.LWN_BanditsVisualProbeCheckpointRole = presentation and presentation.presentationRole or truth and truth.role or nil
-        modData.LWN_BanditsVisualProbeCheckpointFail = truth and truth.failureCode or nil
-        modData.LWN_BanditsVisualProbeCheckpointGuard = truth and truth.guardBlocked or nil
-        modData.LWN_BanditsVisualProbeCheckpointSignature = truth and truth.signature or nil
-        if stage == "after_basic_flags" then
-            modData.LWN_BanditsVisualProbePostFlagsRole = presentation and presentation.presentationRole or truth and truth.role or nil
-            modData.LWN_BanditsVisualProbePostFlagsFail = truth and truth.failureCode or nil
-            modData.LWN_BanditsVisualProbePostFlagsGuard = truth and truth.guardBlocked or nil
-            modData.LWN_BanditsVisualProbePostFlagsSignature = truth and truth.signature or nil
+        modData.LWN_BanditsVisualProbeCheckpointRole = role
+        modData.LWN_BanditsVisualProbeCheckpointFail = fail
+        modData.LWN_BanditsVisualProbeCheckpointGuard = guard
+        modData.LWN_BanditsVisualProbeCheckpointSignature = signature
+        modData.LWN_BanditsVisualProbeCheckpointWorld = checkpointWorld == true
+        modData.LWN_BanditsVisualProbeCheckpointSquare = checkpointSquare == true
+        modData.LWN_BanditsVisualProbeCheckpointAlpha = checkpointAlpha
+        modData.LWN_BanditsVisualProbeCheckpointTargetAlpha = checkpointTargetAlpha
+        modData.LWN_BanditsVisualProbeCheckpointModelRegistered = checkpointModelRegistered
+        if isPostBuildCheckpoint then
+            modData.LWN_BanditsVisualProbePostFlagsStage = stageText
+            modData.LWN_BanditsVisualProbePostFlagsRole = role
+            modData.LWN_BanditsVisualProbePostFlagsFail = fail
+            modData.LWN_BanditsVisualProbePostFlagsGuard = guard
+            modData.LWN_BanditsVisualProbePostFlagsSignature = signature
+            modData.LWN_BanditsVisualProbePostFlagsWorld = checkpointWorld == true
+            modData.LWN_BanditsVisualProbePostFlagsSquare = checkpointSquare == true
+            modData.LWN_BanditsVisualProbePostFlagsAlpha = checkpointAlpha
+            modData.LWN_BanditsVisualProbePostFlagsTargetAlpha = checkpointTargetAlpha
+            modData.LWN_BanditsVisualProbePostFlagsModelRegistered = checkpointModelRegistered
         end
     end
 
-    trace("bandits_probe_" .. tostring(stage), record, string.format(
+    trace("bandits_probe_" .. tostring(stageText), record, string.format(
         "source=%s %s",
         tostring(source or "CarrierIsoZombie.bandits_probe_checkpoint"),
         tostring(detail)
