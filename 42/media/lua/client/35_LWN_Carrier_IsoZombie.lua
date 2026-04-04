@@ -1618,6 +1618,97 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
     return ok, detail
 end
 
+local function clearBanditsObservationState(record, actor, reason)
+    if not actor then
+        return false
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    if not modData then
+        return false
+    end
+
+    modData.LWN_BanditsVisualProbeCheckpointStage = nil
+    modData.LWN_BanditsVisualProbeCheckpointAt = nil
+    modData.LWN_BanditsVisualProbeCheckpointRole = nil
+    modData.LWN_BanditsVisualProbeCheckpointFail = nil
+    modData.LWN_BanditsVisualProbeCheckpointGuard = nil
+    modData.LWN_BanditsVisualProbeCheckpointSignature = nil
+    modData.LWN_BanditsVisualProbeCheckpointWorld = nil
+    modData.LWN_BanditsVisualProbeCheckpointSquare = nil
+    modData.LWN_BanditsVisualProbeCheckpointAlpha = nil
+    modData.LWN_BanditsVisualProbeCheckpointTargetAlpha = nil
+    modData.LWN_BanditsVisualProbeCheckpointModelRegistered = nil
+    modData.LWN_BanditsVisualProbePostFlagsStage = nil
+    modData.LWN_BanditsVisualProbePostFlagsRole = nil
+    modData.LWN_BanditsVisualProbePostFlagsFail = nil
+    modData.LWN_BanditsVisualProbePostFlagsGuard = nil
+    modData.LWN_BanditsVisualProbePostFlagsSignature = nil
+    modData.LWN_BanditsVisualProbePostFlagsWorld = nil
+    modData.LWN_BanditsVisualProbePostFlagsSquare = nil
+    modData.LWN_BanditsVisualProbePostFlagsAlpha = nil
+    modData.LWN_BanditsVisualProbePostFlagsTargetAlpha = nil
+    modData.LWN_BanditsVisualProbePostFlagsModelRegistered = nil
+    modData.LWN_BanditsVisualProbeApplied = nil
+    modData.LWN_BanditsVisualProbeDetail = nil
+    modData.LWN_BanditsVisualProbeStage = nil
+    modData.LWN_BanditsVisualProbeNetEffect = nil
+    modData.LWN_BanditsFirstBuildLane = nil
+    modData.LWN_BanditsFirstBuildLaneSource = nil
+    modData.LWN_BanditsFirstBuildLaneMode = nil
+    modData.LWN_BanditsFirstBuildLaneFlags = nil
+    modData.LWN_BanditsFirstBuildLaneStage = nil
+    modData.LWN_BanditsFirstBuildLaneProbeApplied = nil
+    modData.LWN_BanditsFirstBuildLaneProbeDetail = nil
+    modData.LWN_BanditsPathEnterCount = nil
+    modData.LWN_BanditsPathLastEnter = nil
+    modData.LWN_BanditsPathLastSource = nil
+    modData.LWN_BanditsPathLastDetail = nil
+    modData.LWN_BanditsPathLastAt = nil
+    modData.LWN_BanditsPathLastNpcId = nil
+    modData.LWN_BanditsPathLastActorRef = nil
+    modData.LWN_BanditsPathResetReason = tostring(reason or "unknown")
+    modData.LWN_BanditsPathResetAt = worldAgeHours()
+
+    print(string.format(
+        "[LWN][BanditsPath] reset reason=%s | npcId=%s | objectRef=%s",
+        tostring(reason or "unknown"),
+        tostring(modData.LWN_NpcId or record and record.id or "nil"),
+        tostring(actor)
+    ))
+    return true
+end
+
+local function logBanditsPathEntry(record, actor, entry, source, detail)
+    if not actor then
+        return false
+    end
+
+    local modData = protectedCall(actor, "getModData")
+    local count = nil
+    if modData then
+        count = (tonumber(modData.LWN_BanditsPathEnterCount) or 0) + 1
+        modData.LWN_BanditsPathEnterCount = count
+        modData.LWN_BanditsPathLastEnter = tostring(entry or "unknown")
+        modData.LWN_BanditsPathLastSource = tostring(source or "unknown")
+        modData.LWN_BanditsPathLastDetail = tostring(detail or "none")
+        modData.LWN_BanditsPathLastAt = worldAgeHours()
+        modData.LWN_BanditsPathLastNpcId = modData.LWN_NpcId or record and record.id or nil
+        modData.LWN_BanditsPathLastActorRef = tostring(actor)
+    end
+
+    print(string.format(
+        "[LWN][BanditsPath] enter=%s | source=%s | npcId=%s | objectRef=%s | count=%s | detail=%s",
+        tostring(entry or "unknown"),
+        tostring(source or "unknown"),
+        tostring(modData and modData.LWN_NpcId or record and record.id or "nil"),
+        tostring(actor),
+        tostring(count or "nil"),
+        tostring(detail or "none")
+    ))
+    return true
+end
+
 local function stampBanditsProbeCheckpoint(record, actor, stage, source)
     if not (actor and LWN.ActorFactory) then
         return nil
@@ -1724,6 +1815,7 @@ local function runBanditsFirstBuild(record, actor, descriptor, profile, stageLab
     local probeApplied = false
     local probeDetail = "bandits_first_probe_unavailable"
 
+    logBanditsPathEntry(record, actor, "runBanditsFirstBuild", rebuildSource, string.format("stage=%s descriptor=%s profile=%s", tostring(stageLabel), tostring(descriptor ~= nil), tostring(profile or "nil")))
     stampBanditsProbeCheckpoint(record, actor, stageLabel .. "_pre_direct_probe", rebuildSource .. ".bandits_pre_direct_probe")
 
     if ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE == true
@@ -1779,6 +1871,9 @@ local function buildInitialDummyAppearance(record, actor, source)
     local rebuildSource = source or "CarrierIsoZombie.buildInitialDummyAppearance"
     local banditsFirst = ISOZOMBIE_BANDITS_FIRST_BUILD_LANE == true and isMinimalDummyRecord(record)
 
+    clearBanditsObservationState(record, actor, rebuildSource .. ".begin")
+    logBanditsPathEntry(record, actor, "buildInitialDummyAppearance", rebuildSource, string.format("banditsFirst=%s descriptor=%s", tostring(banditsFirst == true), tostring(descriptor ~= nil)))
+
     if LWN.ShellHumanizer and LWN.ShellHumanizer.applyInitial then
         descriptor, initialDetail = LWN.ShellHumanizer.applyInitial(record, actor, {
             source = rebuildSource .. ".initial",
@@ -1791,6 +1886,7 @@ local function buildInitialDummyAppearance(record, actor, source)
     end
 
     if banditsFirst ~= true then
+        logBanditsPathEntry(record, actor, "buildInitialDummyAppearance.non_bandits", rebuildSource, "using_standard_dummy_rebuild")
         if LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
             descriptor, appearanceDetail = LWN.ShellHumanizer.maintain(record, actor, {
                 source = rebuildSource .. ".reapply",
@@ -1833,6 +1929,7 @@ local function buildInitialDummyAppearance(record, actor, source)
             stampBanditsProbeCheckpoint(record, actor, "after_probe_refresh", rebuildSource .. ".bandits_visual_probe")
         end
     else
+        logBanditsPathEntry(record, actor, "buildInitialDummyAppearance.bandits_first", rebuildSource, "enter_bandits_first_branch")
         if descriptor == nil and LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
             descriptor, _ = LWN.ShellHumanizer.maintain(record, actor, {
                 source = rebuildSource .. ".seed_descriptor",
@@ -1881,7 +1978,11 @@ local function runPostRuntimeSettleRebuild(record, actor, source)
     local appearanceDetail = nil
     local banditsFirst = ISOZOMBIE_BANDITS_FIRST_BUILD_LANE == true and isMinimalDummyRecord(record)
 
+    clearBanditsObservationState(record, actor, rebuildSource .. ".begin")
+    logBanditsPathEntry(record, actor, "runPostRuntimeSettleRebuild", rebuildSource, string.format("banditsFirst=%s descriptor=%s", tostring(banditsFirst == true), tostring(descriptor ~= nil)))
+
     if banditsFirst ~= true then
+        logBanditsPathEntry(record, actor, "runPostRuntimeSettleRebuild.non_bandits", rebuildSource, "using_standard_post_settle_rebuild")
         if LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
             descriptor, appearanceDetail = LWN.ShellHumanizer.maintain(record, actor, {
                 source = rebuildSource,
@@ -1920,6 +2021,7 @@ local function runPostRuntimeSettleRebuild(record, actor, source)
             stampBanditsProbeCheckpoint(record, actor, "post_runtime_settle_after_probe", rebuildSource .. ".bandits_visual_probe")
         end
     else
+        logBanditsPathEntry(record, actor, "runPostRuntimeSettleRebuild.bandits_first", rebuildSource, "enter_bandits_first_post_settle_branch")
         if descriptor == nil and LWN.ShellHumanizer and LWN.ShellHumanizer.applyInitial then
             descriptor, _ = LWN.ShellHumanizer.applyInitial(record, actor, {
                 source = rebuildSource .. ".initial_seed",
@@ -2081,6 +2183,7 @@ function Carrier.spawn(record, options)
     local humanizationDetail = nil
 
     if isMinimalDummyRecord(record) then
+        logBanditsPathEntry(record, actor, "Carrier.spawn.initial_dummy_callsite", "CarrierIsoZombie.spawn", "before_buildInitialDummyAppearance")
         _, appearanceDetail, humanizationOk, humanizationDetail = buildInitialDummyAppearance(record, actor, "CarrierIsoZombie.spawn.initial_dummy")
         appearanceEligible = humanizationOk == true
         appearanceGateDetail = humanizationDetail
@@ -2180,6 +2283,7 @@ function Carrier.sync(record, handle, options)
     local humanizationOk = false
     local humanizationDetail = nil
     if isMinimalDummyRecord(record) and record.dummy and (record.dummy.appearanceLocked ~= true or record.dummy.appearanceRebuildPending == true) then
+        logBanditsPathEntry(record, actor, "Carrier.sync.rebuild_callsite", "CarrierIsoZombie.sync", string.format("appearanceLocked=%s rebuildPending=%s", tostring(record.dummy and record.dummy.appearanceLocked == true), tostring(record.dummy and record.dummy.appearanceRebuildPending == true)))
         _, appearanceDetail, humanizationOk, humanizationDetail = rebuildDummyAppearance(record, actor, "CarrierIsoZombie.sync.rebuild")
         appearanceEligible = humanizationOk == true
         appearanceGateDetail = humanizationDetail
@@ -2246,6 +2350,7 @@ function Carrier.sync(record, handle, options)
 
     if wasSettlePending == true and handle.runtime.runtimeSettleRebuildDone ~= true then
         local _settleDescriptor
+        logBanditsPathEntry(record, actor, "Carrier.sync.post_runtime_settle_callsite", "CarrierIsoZombie.sync", string.format("wasSettlePending=%s runtimeSettleRebuildDone=%s", tostring(wasSettlePending == true), tostring(handle.runtime.runtimeSettleRebuildDone == true)))
         _settleDescriptor, appearanceDetail, humanizationOk, humanizationDetail = runPostRuntimeSettleRebuild(
             record,
             actor,
