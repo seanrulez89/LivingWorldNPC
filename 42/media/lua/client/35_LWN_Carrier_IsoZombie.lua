@@ -1631,6 +1631,8 @@ local function clearBanditsObservationState(record, actor, reason)
     end
 
     modData.LWN_BanditsVisualProbeCheckpointStage = nil
+    modData.LWN_BanditsVisualProbeCheckpointSource = nil
+    modData.LWN_BanditsVisualProbeCheckpointDetail = nil
     modData.LWN_BanditsVisualProbeCheckpointAt = nil
     modData.LWN_BanditsVisualProbeCheckpointRole = nil
     modData.LWN_BanditsVisualProbeCheckpointFail = nil
@@ -1669,6 +1671,11 @@ local function clearBanditsObservationState(record, actor, reason)
     modData.LWN_BanditsPathLastAt = nil
     modData.LWN_BanditsPathLastNpcId = nil
     modData.LWN_BanditsPathLastActorRef = nil
+    modData.LWN_BanditsFactoryStage = nil
+    modData.LWN_BanditsFactorySource = nil
+    modData.LWN_BanditsFactoryDetail = nil
+    modData.LWN_BanditsFactoryAt = nil
+    modData.LWN_BanditsFactoryCount = nil
     modData.LWN_BanditsPathResetReason = tostring(reason or "unknown")
     modData.LWN_BanditsPathResetAt = worldAgeHours()
 
@@ -1756,6 +1763,8 @@ local function stampBanditsProbeCheckpoint(record, actor, stage, source)
 
     if modData then
         modData.LWN_BanditsVisualProbeCheckpointStage = stageText
+        modData.LWN_BanditsVisualProbeCheckpointSource = tostring(source or "CarrierIsoZombie.bandits_probe_checkpoint")
+        modData.LWN_BanditsVisualProbeCheckpointDetail = detail
         modData.LWN_BanditsVisualProbeCheckpointAt = worldAgeHours()
         modData.LWN_BanditsVisualProbeCheckpointRole = role
         modData.LWN_BanditsVisualProbeCheckpointFail = fail

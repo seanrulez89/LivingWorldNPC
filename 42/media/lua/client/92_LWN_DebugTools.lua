@@ -114,7 +114,7 @@ local function movementSummaryLine(record, actor)
     local command = record and record.companion and record.companion.command or {}
     local telemetry = command and command.movementTelemetry or {}
     return string.format(
-        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s motor=%s commit=%s moving=%s attacking=%s target=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s appLock=%s appFail=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s roleOk=%s guardBlocked=%s failCode=%s overwritten=%s rgWorld=%s rgBody=%s rgCurSq=%s rgSq=%s rgRole=%s rgRelax=%s owBest=%s owNow=%s owStage=%s owSeen=%s owReason=%s arReset=%s arTouched=%s bProbe=%s bStage=%s bEffect=%s bPathCount=%s bPathEnter=%s bPathSource=%s bPathReset=%s bPostStage=%s bPostRole=%s bPostFail=%s bPostWorld=%s bPostSq=%s bPostAlpha=%s bPostTargetAlpha=%s bPostModel=%s wrStage=%s wrRole=%s wrFail=%s wrWorld=%s wrSq=%s wrAlpha=%s wrTargetAlpha=%s wrModel=%s wrCause=%s arStage=%s arRole=%s arFail=%s arWorld=%s arSq=%s arAlpha=%s arTargetAlpha=%s arModel=%s arCause=%s cpStage=%s cpRole=%s cpFail=%s cpWorld=%s cpSq=%s cpAlpha=%s cpTargetAlpha=%s cpModel=%s cpCause=%s trRoleCount=%s trRoleFrom=%s trRoleTo=%s trRoleStage=%s trRoleCause=%s trFailCount=%s trFailFrom=%s trFailTo=%s trFailStage=%s trFailCause=%s firstZombieStage=%s firstZombieFrom=%s firstZombieCause=%s firstFailStage=%s firstFailCode=%s firstFailCause=%s bFirst=%s bFirstMode=%s",
+        "MOVE SUMMARY npc=%s lane=%s cmd=%s/%s motor=%s commit=%s moving=%s attacking=%s target=%s path2=%s totalDelta=%s delta=%s,%s squareChanged=%s watchdog=%s canWalk=%s useless=%s humanInit=%s probeOk=%s appLock=%s appFail=%s descOk=%s visualOk=%s skinOk=%s wornOk=%s itemVisualOk=%s roleOk=%s guardBlocked=%s failCode=%s overwritten=%s rgWorld=%s rgBody=%s rgCurSq=%s rgSq=%s rgRole=%s rgRelax=%s owBest=%s owNow=%s owStage=%s owSeen=%s owReason=%s arReset=%s arTouched=%s bProbe=%s bStage=%s bEffect=%s bPathCount=%s bPathEnter=%s bPathSource=%s bPathReset=%s bCpStage=%s bCpSource=%s bCpRole=%s bCpFail=%s bCpWorld=%s bCpSq=%s bCpAlpha=%s bCpTargetAlpha=%s bCpModel=%s bfCount=%s bfStage=%s bfSource=%s bPostStage=%s bPostRole=%s bPostFail=%s bPostWorld=%s bPostSq=%s bPostAlpha=%s bPostTargetAlpha=%s bPostModel=%s wrStage=%s wrRole=%s wrFail=%s wrWorld=%s wrSq=%s wrAlpha=%s wrTargetAlpha=%s wrModel=%s wrCause=%s arStage=%s arRole=%s arFail=%s arWorld=%s arSq=%s arAlpha=%s arTargetAlpha=%s arModel=%s arCause=%s cpStage=%s cpRole=%s cpFail=%s cpWorld=%s cpSq=%s cpAlpha=%s cpTargetAlpha=%s cpModel=%s cpCause=%s trRoleCount=%s trRoleFrom=%s trRoleTo=%s trRoleStage=%s trRoleCause=%s trFailCount=%s trFailFrom=%s trFailTo=%s trFailStage=%s trFailCause=%s firstZombieStage=%s firstZombieFrom=%s firstZombieCause=%s firstFailStage=%s firstFailCode=%s firstFailCause=%s bFirst=%s bFirstMode=%s",
         tostring(record and record.id or "nil"),
         tostring(modData and modData.LWN_ShellLaneContract or modData and modData.LWN_ShellMode or "none"),
         tostring(command.kind or "none"),
@@ -170,6 +170,18 @@ local function movementSummaryLine(record, actor)
         tostring(modData and modData.LWN_BanditsPathLastEnter or "none"),
         tostring(modData and modData.LWN_BanditsPathLastSource or "none"),
         tostring(modData and modData.LWN_BanditsPathResetReason or "none"),
+        tostring(modData and modData.LWN_BanditsVisualProbeCheckpointStage or "none"),
+        tostring(modData and modData.LWN_BanditsVisualProbeCheckpointSource or "none"),
+        tostring(modData and modData.LWN_BanditsVisualProbeCheckpointRole or "none"),
+        tostring(modData and modData.LWN_BanditsVisualProbeCheckpointFail or "none"),
+        boolText(modData and modData.LWN_BanditsVisualProbeCheckpointWorld),
+        boolText(modData and modData.LWN_BanditsVisualProbeCheckpointSquare),
+        numberText(modData and modData.LWN_BanditsVisualProbeCheckpointAlpha, 2),
+        numberText(modData and modData.LWN_BanditsVisualProbeCheckpointTargetAlpha, 2),
+        boolText(modData and modData.LWN_BanditsVisualProbeCheckpointModelRegistered),
+        tostring(modData and modData.LWN_BanditsFactoryCount or 0),
+        tostring(modData and modData.LWN_BanditsFactoryStage or "none"),
+        tostring(modData and modData.LWN_BanditsFactorySource or "none"),
         tostring(modData and modData.LWN_BanditsVisualProbePostFlagsStage or "none"),
         tostring(modData and modData.LWN_BanditsVisualProbePostFlagsRole or "none"),
         tostring(modData and modData.LWN_BanditsVisualProbePostFlagsFail or "none"),
