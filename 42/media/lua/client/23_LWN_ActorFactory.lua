@@ -1220,6 +1220,89 @@ local function appearanceTruthSnapshot(actor)
     }
 end
 
+local function recordPresentationCheckpoint(actor, stage, source, detail)
+    if not actor then return nil end
+
+    local modData = protectedCall(actor, "getModData")
+    local presentation = actorPresentationState(actor)
+    local truth = appearanceTruthSnapshot(actor)
+    local checkpointStage = tostring(stage or "unknown")
+    local checkpointSource = tostring(source or "unknown")
+    local checkpointDetail = tostring(detail or "none")
+
+    if modData then
+        modData.LWN_LastPresentationCheckpointStage = checkpointStage
+        modData.LWN_LastPresentationCheckpointSource = checkpointSource
+        modData.LWN_LastPresentationCheckpointDetail = checkpointDetail
+        modData.LWN_LastPresentationCheckpointAt = worldAgeHours()
+        modData.LWN_LastPresentationCheckpointRole = presentation and presentation.presentationRole or nil
+        modData.LWN_LastPresentationCheckpointWorld = presentation and presentation.world == true or false
+        modData.LWN_LastPresentationCheckpointSquare = presentation and presentation.squarePresent == true or false
+        modData.LWN_LastPresentationCheckpointAlpha = presentation and presentation.alpha or nil
+        modData.LWN_LastPresentationCheckpointTargetAlpha = presentation and presentation.targetAlpha or nil
+        modData.LWN_LastPresentationCheckpointModelRegistered = presentation and presentation.modelRegistered or nil
+        modData.LWN_LastPresentationCheckpointFail = truth and truth.failureCode or nil
+        modData.LWN_LastPresentationCheckpointGuard = truth and truth.guardBlocked or nil
+        modData.LWN_LastPresentationCheckpointSignature = truth and truth.signature or nil
+
+        if string.find(checkpointStage, "world_registration", 1, true) then
+            modData.LWN_WorldRegistrationCheckpointStage = checkpointStage
+            modData.LWN_WorldRegistrationCheckpointAt = modData.LWN_LastPresentationCheckpointAt
+            modData.LWN_WorldRegistrationCheckpointRole = modData.LWN_LastPresentationCheckpointRole
+            modData.LWN_WorldRegistrationCheckpointWorld = modData.LWN_LastPresentationCheckpointWorld
+            modData.LWN_WorldRegistrationCheckpointSquare = modData.LWN_LastPresentationCheckpointSquare
+            modData.LWN_WorldRegistrationCheckpointAlpha = modData.LWN_LastPresentationCheckpointAlpha
+            modData.LWN_WorldRegistrationCheckpointTargetAlpha = modData.LWN_LastPresentationCheckpointTargetAlpha
+            modData.LWN_WorldRegistrationCheckpointModelRegistered = modData.LWN_LastPresentationCheckpointModelRegistered
+            modData.LWN_WorldRegistrationCheckpointFail = modData.LWN_LastPresentationCheckpointFail
+            modData.LWN_WorldRegistrationCheckpointGuard = modData.LWN_LastPresentationCheckpointGuard
+            modData.LWN_WorldRegistrationCheckpointSignature = modData.LWN_LastPresentationCheckpointSignature
+        end
+
+        if string.find(checkpointStage, "alpha_repair", 1, true) then
+            modData.LWN_AlphaRepairCheckpointStage = checkpointStage
+            modData.LWN_AlphaRepairCheckpointAt = modData.LWN_LastPresentationCheckpointAt
+            modData.LWN_AlphaRepairCheckpointRole = modData.LWN_LastPresentationCheckpointRole
+            modData.LWN_AlphaRepairCheckpointWorld = modData.LWN_LastPresentationCheckpointWorld
+            modData.LWN_AlphaRepairCheckpointSquare = modData.LWN_LastPresentationCheckpointSquare
+            modData.LWN_AlphaRepairCheckpointAlpha = modData.LWN_LastPresentationCheckpointAlpha
+            modData.LWN_AlphaRepairCheckpointTargetAlpha = modData.LWN_LastPresentationCheckpointTargetAlpha
+            modData.LWN_AlphaRepairCheckpointModelRegistered = modData.LWN_LastPresentationCheckpointModelRegistered
+            modData.LWN_AlphaRepairCheckpointFail = modData.LWN_LastPresentationCheckpointFail
+            modData.LWN_AlphaRepairCheckpointGuard = modData.LWN_LastPresentationCheckpointGuard
+            modData.LWN_AlphaRepairCheckpointSignature = modData.LWN_LastPresentationCheckpointSignature
+        end
+    end
+
+    if isDebugModeEnabled() then
+        print(string.format(
+            "[LWN][Checkpoint] stage=%s | source=%s | npcId=%s | objectRef=%s | role=%s | world=%s | square=%s | alpha=%s | targetAlpha=%s | modelRegistered=%s | fail=%s | guard=%s | sig=%s | detail=%s",
+            safeText(checkpointStage),
+            safeText(checkpointSource),
+            safeText(getKnownNpcIdFromActor(actor)),
+            safeText(objectRef(actor)),
+            safeText(presentation and presentation.presentationRole or nil),
+            safeText(presentation and presentation.world or nil),
+            safeText(presentation and presentation.squarePresent or nil),
+            safeNumber(presentation and presentation.alpha or nil),
+            safeNumber(presentation and presentation.targetAlpha or nil),
+            safeText(presentation and presentation.modelRegistered or nil),
+            safeText(truth and truth.failureCode or nil),
+            safeText(truth and truth.guardBlocked or nil),
+            safeText(truth and truth.signature or nil),
+            safeText(checkpointDetail)
+        ))
+    end
+
+    return {
+        presentation = presentation,
+        truth = truth,
+        stage = checkpointStage,
+        source = checkpointSource,
+        detail = checkpointDetail,
+    }
+end
+
 local function tracePresentationGuard(actor, action, status, reason, source, before, after)
     if not actor then return end
 
@@ -1926,6 +2009,7 @@ local function repairVisibleAlpha(actor, reason)
         modData.LWN_LastAlphaRepairAt = worldAgeHours()
     end
 
+    recordPresentationCheckpoint(actor, "alpha_repair_before", "repairVisibleAlpha", reason)
     traceAlphaRequest(actor, "setAlphaAndTarget", 1.0, reason .. ".setAlphaAndTarget")
     if isIsoPlayerCarrierActor(actor) then
         if modData then
@@ -1949,6 +2033,7 @@ local function repairVisibleAlpha(actor, reason)
     end
 
     local after = actorPresentationState(actor)
+    recordPresentationCheckpoint(actor, "alpha_repair_after", "repairVisibleAlpha", reason)
     local repaired = after
         and ((type(after.alpha) ~= "number" or after.alpha > 0.01)
             and (type(after.targetAlpha) ~= "number" or after.targetAlpha > 0.01))
@@ -2634,6 +2719,7 @@ local function ensureActorRegisteredInWorld(actor, square)
     protectedCall(actor, "setZ", sz)
     protectedCall(actor, "setCurrent", square)
     protectedCall(actor, "setMovingSquareNow")
+    recordPresentationCheckpoint(actor, "world_registration_before_add", "ensureActorRegisteredInWorld", string.format("carrier=%s square=%s", tostring(modData and modData.LWN_CarrierKind or "unknown"), coordSummary(sx, sy, sz)))
 
     if protectedCall(actor, "isExistInTheWorld") ~= true then
         protectedCall(actor, "addToWorld")
@@ -2650,6 +2736,7 @@ local function ensureActorRegisteredInWorld(actor, square)
         end
     end
 
+    recordPresentationCheckpoint(actor, "world_registration_after_add", "ensureActorRegisteredInWorld", "after_add_to_world_attempts")
     restoreEmbodiedPresentationFlags(actor, "ensureActorRegisteredInWorld")
     if isIsoPlayerCarrierActor(actor) then
         protectedCall(actor, "setInvisible", false)
@@ -2659,13 +2746,16 @@ local function ensureActorRegisteredInWorld(actor, square)
         protectedCall(actor, "setIsNPC", true)
         protectedCall(actor, "setVisibleToNPCs", true)
     end
+    recordPresentationCheckpoint(actor, "world_registration_after_restore_flags", "ensureActorRegisteredInWorld", "after_restore_flags")
     repairVisibleAlpha(actor, "ensureActorRegisteredInWorld")
+    recordPresentationCheckpoint(actor, "world_registration_after_alpha_repair", "ensureActorRegisteredInWorld", "after_alpha_repair")
     protectedCall(actor, "resetModel")
     protectedCall(actor, "resetModelNextFrame")
     local modelRegistered = refreshModelManager(actor, "world_registration")
 
     currentSquare = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
     local inWorld = protectedCall(actor, "isExistInTheWorld")
+    recordPresentationCheckpoint(actor, "world_registration_after_model_refresh", "ensureActorRegisteredInWorld", "after_model_refresh")
     if modData then
         modData.LWN_LastWorldRegistrationAt = worldAgeHours()
         modData.LWN_LastWorldRegistrationSquare = coordSummary(sx, sy, sz)
@@ -3150,14 +3240,18 @@ refreshActorPresentation = function(actor)
     if not actor then return end
 
     local isIsoZombieCarrier = isIsoZombieCarrierActor(actor)
+    local modData = protectedCall(actor, "getModData")
 
+    recordPresentationCheckpoint(actor, "refresh_presentation_before", "refreshActorPresentation", tostring(modData and modData.LWN_CarrierKind or "unknown"))
     restoreEmbodiedPresentationFlags(actor, "refreshActorPresentation")
+    recordPresentationCheckpoint(actor, "refresh_presentation_after_restore_flags", "refreshActorPresentation", tostring(modData and modData.LWN_CarrierKind or "unknown"))
     if not isIsoZombieCarrier then
         protectedCall(actor, "setNPC", true)
         protectedCall(actor, "setIsNPC", true)
     end
     protectedCall(actor, "setVisibleToNPCs", true)
     repairVisibleAlpha(actor, "refreshActorPresentation")
+    recordPresentationCheckpoint(actor, "refresh_presentation_after_alpha_repair", "refreshActorPresentation", tostring(modData and modData.LWN_CarrierKind or "unknown"))
 
     local inv = protectedCall(actor, "getInventory")
     if inv then
@@ -3168,6 +3262,7 @@ refreshActorPresentation = function(actor)
     protectedCall(actor, "resetModel")
     protectedCall(actor, "resetModelNextFrame")
     refreshModelManager(actor, "presentation")
+    recordPresentationCheckpoint(actor, "refresh_presentation_after_model_refresh", "refreshActorPresentation", tostring(modData and modData.LWN_CarrierKind or "unknown"))
 end
 Factory.refreshActorPresentation = refreshActorPresentation
 
