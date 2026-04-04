@@ -1,6 +1,8 @@
 LWN = LWN or {}
 LWN.DebugTools = LWN.DebugTools or {}
 
+print("[LWN][Boot] file=92_LWN_DebugTools")
+
 -- Development-only helpers. They should stay available in debug builds because
 -- most embodiment failures are easiest to diagnose from live saves.
 local DebugTools = LWN.DebugTools
@@ -54,6 +56,22 @@ local function sayInfo(player, text)
         player:Say(text)
     end
     print("[LWN][Debug] " .. tostring(text))
+end
+
+local function logTestAction(action, state, record, detail)
+    local scenario = state and state.scenario or nil
+    local phase = state and state.phase or nil
+    local npcId = state and state.npcId or record and record.id or nil
+    local active = state and state.active or nil
+    print(string.format(
+        "[LWN][TestAction] action=%s | scenario=%s | phase=%s | npcId=%s | active=%s | detail=%s",
+        tostring(action or "unknown"),
+        tostring(scenario or "nil"),
+        tostring(phase or "nil"),
+        tostring(npcId or "nil"),
+        tostring(active),
+        tostring(detail or "none")
+    ))
 end
 
 local function logInfo(text)
@@ -1419,6 +1437,7 @@ end
 
 local function runMovementAutomationTest01WithCarrier(player, carrierKind)
     local lane = tostring(carrierKind or "isozombie")
+    logTestAction("TEST_01_BEGIN", automationState(), nil, string.format("carrier=%s", tostring(lane)))
     prepareAutomationCleanSlate(player, "automation_test_start")
     local record, actor = spawnOneNearPlayerWithCarrier(player, lane, {
         harness = {
@@ -1444,6 +1463,7 @@ local function runMovementAutomationTest01WithCarrier(player, carrierKind)
     state.startedAt = worldAgeHours()
     state.updatedAt = state.startedAt
     state.step = 1
+    logTestAction("TEST_01_READY", state, record, string.format("carrier=%s spawnedActor=%s", tostring(lane), tostring((actor or findActorForRecord(record)) ~= nil)))
 
     dumpRecordSummary(record, actor or findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
@@ -1467,6 +1487,7 @@ local function runMovementAutomationTest01(player)
 end
 
 local function runIsoPlayerViabilityProbe(player)
+    logTestAction("ISOPLAYER_PROBE_BEGIN", automationState(), nil, "observe_only")
     prepareAutomationCleanSlate(player, "isoplayer_probe_start")
     local record, actor = spawnOneNearPlayerWithCarrier(player, "isoplayer", {
         harness = {
@@ -1492,6 +1513,7 @@ local function runIsoPlayerViabilityProbe(player)
     state.startedAt = worldAgeHours()
     state.updatedAt = state.startedAt
     state.step = 1
+    logTestAction("ISOPLAYER_PROBE_READY", state, record, string.format("spawnedActor=%s", tostring((actor or findActorForRecord(record)) ~= nil)))
 
     dumpRecordSummary(record, actor or findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
@@ -1530,6 +1552,7 @@ end
 
 local function runMovementAutomationTest02(player)
     local record, state = getAutomationRecord()
+    logTestAction("TEST_02_BEGIN", state, record, "enter")
     if isIsoPlayerProbeScenario(state) then
         sayInfo(player, "IsoPlayer probe is observe-only. Do not run TEST 02 from this state.")
         return false
@@ -1563,6 +1586,7 @@ local function runMovementAutomationTest02(player)
     state.phase = "test_03_ready"
     state.updatedAt = worldAgeHours()
     state.step = 2
+    logTestAction("TEST_02_READY", state, record, string.format("dest=%s", tostring(destination and destination.label or "nil")))
     sayChecklist(player, "TEST 02 CHECK", {
         string.format("Watch: NPC walks to %s.", tostring(destination and destination.label or "TEST MARK")),
         "Check: shell lane should stay dummy_move during movement.",
@@ -1579,6 +1603,7 @@ end
 
 local function runMovementAutomationTest03(player)
     local record, state = getAutomationRecord()
+    logTestAction("TEST_03_BEGIN", state, record, "enter")
     if isIsoPlayerProbeScenario(state) then
         sayInfo(player, "IsoPlayer probe is observe-only. Do not run TEST 03 from this state.")
         return false
@@ -1604,6 +1629,7 @@ local function runMovementAutomationTest03(player)
     state.phase = "test_04_ready"
     state.updatedAt = worldAgeHours()
     state.step = 3
+    logTestAction("TEST_03_READY", state, record, "await_test_04")
     sayChecklist(player, "TEST 03 CHECK", {
         "Confirm: destination walk succeeded or failed.",
         "Check: final command status matches what you saw.",
@@ -1619,6 +1645,7 @@ end
 
 local function runMovementAutomationTest04(player)
     local record, state = getAutomationRecord()
+    logTestAction("TEST_04_BEGIN", state, record, "enter")
     if isIsoPlayerProbeScenario(state) then
         sayInfo(player, "IsoPlayer probe is observe-only. Do not run TEST 04 from this state.")
         return false
@@ -1645,6 +1672,7 @@ local function runMovementAutomationTest04(player)
     state.phase = "complete"
     state.updatedAt = worldAgeHours()
     state.step = 4
+    logTestAction("TEST_04_COMPLETE", state, record, "complete")
     sayChecklist(player, "TEST 04 CHECK", {
         "Look: appearance still matches after return.",
         "Look: posture and movement still read human-ish.",
@@ -1879,6 +1907,7 @@ function DebugTools.runAutomatedIsoZombieTest04(player)
 end
 
 function DebugTools.resetAutomatedIsoZombieTest(player)
+    logTestAction("TEST_RESET", automationState(), nil, "manual_reset")
     prepareAutomationCleanSlate(player, "manual_reset")
     return true
 end
@@ -1886,6 +1915,7 @@ end
 function DebugTools.dumpAutomatedIsoZombieTestStatus(player)
     local record, state = getAutomationRecord()
     local destination = state.destination or {}
+    logTestAction("TEST_STATUS", state, record, string.format("dest=%s,%s,%s", tostring(destination.x or "nil"), tostring(destination.y or "nil"), tostring(destination.z or "nil")))
     sayShortAndLog(
         player,
         string.format("TEST STATUS %s", tostring(state.phase or "unknown")),

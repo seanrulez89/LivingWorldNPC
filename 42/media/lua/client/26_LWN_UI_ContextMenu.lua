@@ -356,6 +356,12 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
+    settingsSub:addOption("TEST 04 - Return/Recovery Check", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest04 then
+            LWN.DebugTools.runAutomatedIsoZombieTest04(p)
+        end
+    end)
+
     settingsSub:addOption("TEST STATUS - Dump Current", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.dumpAutomatedIsoZombieTestStatus then
             LWN.DebugTools.dumpAutomatedIsoZombieTestStatus(p)

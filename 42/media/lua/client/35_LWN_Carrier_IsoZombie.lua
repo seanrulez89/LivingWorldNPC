@@ -1,6 +1,8 @@
 LWN = LWN or {}
 LWN.Carriers = LWN.Carriers or {}
 
+print("[LWN][Boot] file=35_LWN_Carrier_IsoZombie")
+
 local Carrier = {}
 LWN.Carriers.isozombie = Carrier
 

@@ -1,6 +1,8 @@
 LWN = LWN or {}
 LWN.ActorFactory = LWN.ActorFactory or {}
 
+print("[LWN][Boot] file=23_LWN_ActorFactory")
+
 -- Embodied actors are a render/runtime cache over canonical ModData records.
 -- This module is responsible for making that cache visible and debuggable.
 local Factory = LWN.ActorFactory
@@ -1930,6 +1932,26 @@ local function logInfo(message, record, actor, extra)
     end
 end
 
+local function logBanditsFactory(stage, record, actor, source, detail)
+    local modData = actor and protectedCall(actor, "getModData") or nil
+    if modData then
+        modData.LWN_BanditsFactoryStage = tostring(stage or "unknown")
+        modData.LWN_BanditsFactorySource = tostring(source or "unknown")
+        modData.LWN_BanditsFactoryDetail = tostring(detail or "none")
+        modData.LWN_BanditsFactoryAt = worldAgeHours()
+        modData.LWN_BanditsFactoryCount = (tonumber(modData.LWN_BanditsFactoryCount) or 0) + 1
+    end
+    print(string.format(
+        "[LWN][BanditsFactory] stage=%s | source=%s | npcId=%s | objectRef=%s | count=%s | detail=%s",
+        safeText(stage),
+        safeText(source),
+        safeText(modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or record and record.id or nil),
+        safeText(objectRef(actor)),
+        safeText(modData and modData.LWN_BanditsFactoryCount or nil),
+        safeText(detail)
+    ))
+end
+
 modelManager = function()
     if ModelManager and ModelManager.instance then
         return ModelManager.instance
@@ -3635,6 +3657,7 @@ end
 
 function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options)
     if not actor then
+        print("[LWN][BanditsFactory] stage=applyBanditsStyleVisualProbe.actor_nil | source=applyBanditsStyleVisualProbe | npcId=nil | objectRef=nil | count=nil | detail=actor=nil")
         return false, "actor=nil"
     end
 
@@ -3647,6 +3670,21 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
     local actorVisual = protectedCall(actor, "getHumanVisual")
     local itemVisuals = safeActorItemVisuals(actor)
     local wornItems = safeActorWornItems(actor)
+
+    logBanditsFactory(
+        "applyBanditsStyleVisualProbe.enter",
+        record,
+        actor,
+        probeSource,
+        string.format(
+            "descriptor=%s beforeSig=%s beforeRole=%s itemVisuals=%s wornItems=%s",
+            safeText(desc ~= nil),
+            safeText(beforeSignature),
+            safeText(beforeAppearance and beforeAppearance.role or nil),
+            safeText(beforeAppearance and beforeAppearance.itemVisuals or nil),
+            safeText(beforeAppearance and beforeAppearance.wornItems or nil)
+        )
+    )
 
     if itemVisuals then
         protectedCall(itemVisuals, "clear")
@@ -3683,6 +3721,23 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
 
     local directAppearance = appearanceSnapshot(actor)
     local directSignature = appearanceSignature(directAppearance)
+    logBanditsFactory(
+        "applyBanditsStyleVisualProbe.after_direct_copy",
+        record,
+        actor,
+        probeSource,
+        string.format(
+            "before=%s direct=%s role=%s skin=%s hair=%s beard=%s itemVisuals=%s wornItems=%s",
+            safeText(beforeSignature),
+            safeText(directSignature),
+            safeText(directAppearance and directAppearance.role or nil),
+            safeText(directAppearance and directAppearance.skin or nil),
+            safeText(directAppearance and directAppearance.hair or nil),
+            safeText(directAppearance and directAppearance.beard or nil),
+            safeText(directAppearance and directAppearance.itemVisuals or nil),
+            safeText(directAppearance and directAppearance.wornItems or nil)
+        )
+    )
     stageTrace("ActorFactory", "banditsVisualProbe.after_direct_copy", record, actor, desc, {
         source = probeSource,
         detail = string.format(
@@ -3700,11 +3755,34 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
 
     ensureVisibleClothing(actor)
     local bridge = bridgeWornItemsToItemVisuals(actor)
+    logBanditsFactory(
+        "applyBanditsStyleVisualProbe.after_bridge",
+        record,
+        actor,
+        probeSource,
+        string.format("bridge=%s", safeText(bridge and bridge.mode or "none"))
+    )
     refreshActorPresentation(actor)
     local afterAppearance = appearanceSnapshot(actor)
     local afterSignature = appearanceSignature(afterAppearance)
     local netEffect = classifyBanditsProbeNetEffect(beforeAppearance, directAppearance, afterAppearance, bridge)
     stampAppearanceDiff(record, actor, probeSource, beforeAppearance, afterAppearance)
+    logBanditsFactory(
+        "applyBanditsStyleVisualProbe.after_refresh",
+        record,
+        actor,
+        probeSource,
+        string.format(
+            "before=%s direct=%s after=%s effect=%s role=%s itemVisuals=%s wornItems=%s",
+            safeText(beforeSignature),
+            safeText(directSignature),
+            safeText(afterSignature),
+            safeText(netEffect),
+            safeText(afterAppearance and afterAppearance.role or nil),
+            safeText(afterAppearance and afterAppearance.itemVisuals or nil),
+            safeText(afterAppearance and afterAppearance.wornItems or nil)
+        )
+    )
 
     if modData then
         modData.LWN_BanditsVisualProbe = true
@@ -3724,6 +3802,21 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
         modData.LWN_BanditsVisualProbeNetEffect = netEffect
     end
 
+    logBanditsFactory(
+        "applyBanditsStyleVisualProbe.ready",
+        record,
+        actor,
+        probeSource,
+        string.format(
+            "before=%s direct=%s after=%s bridge=%s effect=%s afterRole=%s",
+            safeText(beforeSignature),
+            safeText(directSignature),
+            safeText(afterSignature),
+            safeText(bridge and bridge.mode or "none"),
+            safeText(netEffect),
+            safeText(afterAppearance and afterAppearance.role or nil)
+        )
+    )
     stageTrace("ActorFactory", "banditsVisualProbe.ready", record, actor, desc, {
         source = probeSource,
         detail = string.format(
