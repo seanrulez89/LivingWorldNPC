@@ -175,8 +175,8 @@ Read these documents before resuming that line:
 ## Exact next-session start order
 
 1. Read `docs/END_OF_DAY_WRAPUP_2026-03-29_LATE.md`
-2. Fix the Bandits-first summary mismatch so post-min-flags checkpoints populate `bPostRole` / `bPostFail`
-3. Add one sharper checkpoint after world-registration + first meaningful alpha recovery
+2. Read the 2026-04-04 instrumentation note appended to `docs/TEST_LOG_HISTORY.md`
+3. Do **not** spend the first test proving the same old visual outcome again; use the new checkpoint/transition fields to locate the first zombie-owned transition point
 4. Then run:
    - `TEST RESET`
    - `TEST 01`
@@ -185,6 +185,73 @@ Read these documents before resuming that line:
    - `TEST STATUS`
    - `TEST 03`
    - `TEST STATUS`
+5. Read the new summary fields in this exact order:
+   - `wr*` (world-registration checkpoint)
+   - `ar*` (alpha-repair checkpoint)
+   - `bPost*` (Bandits-first post-build checkpoint)
+   - `trRole*` / `trFail*` (transition point and likely cause)
+   - `firstZombie*` / `firstFail*` (first observed irreversible-looking failure point)
+6. Main branch question for that run:
+   - does `presentationRole=reanimated_zombie` first appear during world registration,
+   - after alpha repair,
+   - during refresh/model pass,
+   - or only at the Bandits-first post-build checkpoint?
+
+## Addendum — instrumentation work completed on 2026-04-04 before the next home test
+
+The late-session to-do items listed above have now been completed on branch `spike/bandits-visual-probe-v1`.
+
+The following commits were added specifically to make the next in-game run more causal and less ambiguous:
+
+- `74c803b` — `Fix Bandits-first post-build checkpoint summary`
+- `ecc92af` — `Add structured presentation checkpoints for pre-test diagnosis`
+- `48b39c3` — `Track presentation role and failure transitions`
+- `75ac613` — `Summarize likely causes for presentation transitions`
+
+### What these new fields mean at a glance
+
+- `bPost*`
+  - Bandits-first post-build snapshot after post-min-flags recognition was fixed.
+- `wr*`
+  - the most recent world-registration checkpoint snapshot.
+- `ar*`
+  - the most recent alpha-repair checkpoint snapshot.
+- `cp*`
+  - the most recent generic presentation checkpoint snapshot.
+- `trRole*`
+  - the most recent role transition, if one occurred.
+- `trFail*`
+  - the most recent failure-code transition, if one occurred.
+- `firstZombie*`
+  - the first checkpoint where zombie-owned role was observed after tracked observation began.
+- `firstFail*`
+  - the first checkpoint where a concrete failure code was observed after tracked observation began.
+
+### How to interpret the new cause strings
+
+Treat the `*Cause` fields as **likely-cause shorthand**, not absolute proof.
+They are meant to reduce ambiguity fast during live testing.
+
+Examples:
+- `zombie_role_after_world_registration:model_unregistered`
+  - the first observed zombie-role transition happened at a world-registration checkpoint and model registration was still not healthy.
+- `fail_role_zombie_after_alpha_repair:alpha_zeroish`
+  - the first observed fail-code transition to zombie-role failure aligned with alpha-repair timing and zero-ish alpha state still mattered.
+- `refresh_model_checkpoint`
+  - the checkpoint itself likely belongs to the refresh/model layer, even if no hard transition happened at that exact line.
+- `bandits_probe_checkpoint`
+  - the observed state belongs to the Bandits-first probe path and should be compared against `wr*` / `ar*` rather than treated in isolation.
+
+### What should count as progress in the next test
+
+Progress is **not** “the NPC still looked zombie-like, same as before.”
+Progress is any test that cleanly answers one of these:
+
+- zombie-role trap is already present by world registration,
+- zombie-role trap appears only after alpha repair,
+- zombie-role trap appears only after refresh/model pass,
+- Bandits-first post-build state is still the first clear zombie-owned checkpoint,
+- or role stays stable while only fail-code transitions later.
 
 ## One-line handoff summary
 

@@ -115,6 +115,107 @@ For every new test cycle, append a new section using this structure:
 - add one sharper checkpoint after world-registration + first meaningful alpha recovery.
 - then re-run the normal `TEST RESET -> TEST 01 -> STATUS -> TEST 02 -> STATUS -> TEST 03 -> STATUS` flow.
 
+## 2026-04-04 11:48 KST — Pre-test instrumentation pass to separate world/alpha/refresh causes before next home test
+
+### In-game result
+- no new in-game run was performed in this work block.
+- this was an intentional code-only pass done while user was away from the test machine.
+- the purpose was to make the next single in-game test much more diagnostic instead of repeating the same zombie-looking outcome with ambiguous logs.
+
+### Log signals
+- no fresh gameplay result exists yet.
+- instead, the branch now records several new structured summaries and transitions that the next test should surface:
+  - Bandits-first post-build summary fields now recognize post-min-flags stages correctly, so `bPostRole` / `bPostFail` should stop falling back to misleading `none` when the checkpoint actually exists.
+  - new world-registration checkpoints:
+    - `wrStage`
+    - `wrRole`
+    - `wrFail`
+    - `wrWorld`
+    - `wrSq`
+    - `wrAlpha`
+    - `wrTargetAlpha`
+    - `wrModel`
+    - `wrCause`
+  - new alpha-repair checkpoints:
+    - `arStage`
+    - `arRole`
+    - `arFail`
+    - `arWorld`
+    - `arSq`
+    - `arAlpha`
+    - `arTargetAlpha`
+    - `arModel`
+    - `arCause`
+  - new last-checkpoint fields:
+    - `cpStage`
+    - `cpRole`
+    - `cpFail`
+    - `cpWorld`
+    - `cpSq`
+    - `cpAlpha`
+    - `cpTargetAlpha`
+    - `cpModel`
+    - `cpCause`
+  - new transition summaries:
+    - `trRoleCount`
+    - `trRoleFrom`
+    - `trRoleTo`
+    - `trRoleStage`
+    - `trRoleCause`
+    - `trFailCount`
+    - `trFailFrom`
+    - `trFailTo`
+    - `trFailStage`
+    - `trFailCause`
+    - `firstZombieStage`
+    - `firstZombieFrom`
+    - `firstZombieCause`
+    - `firstFailStage`
+    - `firstFailCode`
+    - `firstFailCause`
+- new console-side lines should also appear during the next test when debug is enabled:
+  - `[LWN][Checkpoint] ... cause=...`
+  - `[LWN][Transition] kind=role ... cause=...`
+  - `[LWN][Transition] kind=fail ... cause=...`
+
+### Interpretation / lesson
+- the branch is no longer relying only on final-state snapshots.
+- the next test should now be able to distinguish at least four much clearer cases:
+  - zombie role already present immediately after world registration,
+  - zombie role or fail code introduced only after alpha repair,
+  - zombie role or fail code introduced only after refresh/model steps,
+  - zombie-owned failure already present at Bandits-first post-build checkpoints.
+- this means the next meaningful question is now framed as a transition problem rather than a vague “still looks zombie-like” problem.
+- if the next test still ends with `presentationRole=reanimated_zombie`, that alone will no longer be enough; the new priority is exactly **where it first became true** and **which checkpoint cause string was attached**.
+
+### Code or document changes that followed
+- `74c803b` — `Fix Bandits-first post-build checkpoint summary`
+- `ecc92af` — `Add structured presentation checkpoints for pre-test diagnosis`
+- `48b39c3` — `Track presentation role and failure transitions`
+- `75ac613` — `Summarize likely causes for presentation transitions`
+- documentation was updated so the next at-home test can be interpreted without reverse-engineering the new field names on the spot.
+
+### Next thing to verify
+- run exactly one clean verification cycle:
+  - `TEST RESET`
+  - `TEST 01`
+  - `TEST STATUS`
+  - `TEST 02`
+  - `TEST STATUS`
+  - `TEST 03`
+  - `TEST STATUS`
+- during that run, read the new fields in this order:
+  1. `wr*`
+  2. `ar*`
+  3. `bPost*`
+  4. `trRole*` / `trFail*`
+  5. `firstZombie*` / `firstFail*`
+- especially check whether the first zombie-owned role is first seen at:
+  - world registration,
+  - alpha repair,
+  - refresh/model pass,
+  - or Bandits-first post-build checkpoint.
+
 ## 2026-03-13 09:14 KST — Best-so-far test, alive actor still invisible
 
 ### In-game result
