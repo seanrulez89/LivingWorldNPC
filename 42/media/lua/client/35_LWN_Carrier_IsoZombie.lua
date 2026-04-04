@@ -1698,6 +1698,8 @@ local function runBanditsFirstBuild(record, actor, descriptor, profile, stageLab
     local probeApplied = false
     local probeDetail = "bandits_first_probe_unavailable"
 
+    stampBanditsProbeCheckpoint(record, actor, stageLabel .. "_pre_direct_probe", rebuildSource .. ".bandits_pre_direct_probe")
+
     if ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE == true
         and isMinimalDummyRecord(record)
         and LWN.ActorFactory
@@ -1719,6 +1721,7 @@ local function runBanditsFirstBuild(record, actor, descriptor, profile, stageLab
             modData.LWN_BanditsFirstBuildLaneProbeApplied = probeApplied == true
             modData.LWN_BanditsFirstBuildLaneProbeDetail = probeDetail
         end
+        stampBanditsProbeCheckpoint(record, actor, stageLabel .. "_post_direct_probe", rebuildSource .. ".bandits_visual_probe")
         stampBanditsProbeCheckpoint(record, actor, stageLabel .. "_after_probe_refresh", rebuildSource .. ".bandits_visual_probe")
     end
 
@@ -1756,6 +1759,9 @@ local function buildInitialDummyAppearance(record, actor, source)
             profile = profile,
             force = true,
         })
+        if banditsFirst == true then
+            stampBanditsProbeCheckpoint(record, actor, "bandits_first_after_apply_initial", rebuildSource .. ".initial")
+        end
     end
 
     if banditsFirst ~= true then
@@ -1808,13 +1814,18 @@ local function buildInitialDummyAppearance(record, actor, source)
                 forceFull = true,
                 forceInitial = true,
             })
+            stampBanditsProbeCheckpoint(record, actor, "bandits_first_after_seed_descriptor", rebuildSource .. ".seed_descriptor")
         end
         if descriptor == nil then
             descriptor, _ = applyAppearanceExperiment(record, actor, "bandits_first_seed")
+            stampBanditsProbeCheckpoint(record, actor, "bandits_first_after_seed_experiment", rebuildSource .. ".seed_experiment")
         end
         appearanceDetail = select(1, runBanditsFirstBuild(record, actor, descriptor, profile, "bandits_first_initial_build", rebuildSource))
     end
 
+    if banditsFirst == true then
+        stampBanditsProbeCheckpoint(record, actor, "bandits_first_before_min_flags", rebuildSource .. ".pre_min_flags")
+    end
     applyBasicZombieCarrierFlags(record, actor, {
         banditsFirstDummyMinFlags = banditsFirst == true,
         source = rebuildSource .. ".post_build_flags",
@@ -1889,6 +1900,7 @@ local function runPostRuntimeSettleRebuild(record, actor, source)
                 profile = profile,
                 force = true,
             })
+            stampBanditsProbeCheckpoint(record, actor, "bandits_first_post_runtime_settle_after_apply_initial", rebuildSource .. ".initial_seed")
         end
         if descriptor == nil and LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
             descriptor, _ = LWN.ShellHumanizer.maintain(record, actor, {
@@ -1897,13 +1909,18 @@ local function runPostRuntimeSettleRebuild(record, actor, source)
                 forceFull = true,
                 forceInitial = true,
             })
+            stampBanditsProbeCheckpoint(record, actor, "bandits_first_post_runtime_settle_after_seed_descriptor", rebuildSource .. ".seed_descriptor")
         end
         if descriptor == nil then
             descriptor, _ = applyAppearanceExperiment(record, actor, "bandits_first_runtime_settle_seed")
+            stampBanditsProbeCheckpoint(record, actor, "bandits_first_post_runtime_settle_after_seed_experiment", rebuildSource .. ".seed_experiment")
         end
         appearanceDetail = select(1, runBanditsFirstBuild(record, actor, descriptor, profile, "bandits_first_post_runtime_settle_build", rebuildSource))
     end
 
+    if banditsFirst == true then
+        stampBanditsProbeCheckpoint(record, actor, "bandits_first_post_runtime_settle_before_min_flags", rebuildSource .. ".pre_min_flags")
+    end
     applyBasicZombieCarrierFlags(record, actor, {
         banditsFirstDummyMinFlags = banditsFirst == true,
         source = rebuildSource .. ".post_build_flags",
