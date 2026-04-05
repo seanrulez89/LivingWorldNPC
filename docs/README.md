@@ -4,6 +4,8 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Fresh synthesis / triage
 
+- `NEXT_SESSION_HANDOFF_2026-04-05.md`
+  - hard scope reset for the current branch: ignore return/recovery/walking for now, focus only on whether spawn-time Bandits-led build work can make the NPC read as human for even 1 second
 - `NEXT_SESSION_HANDOFF_2026-03-26.md`
   - restart guide for the new movement-capable non-hostile shell pass: what landed, how the shell-mode split now works, and what to verify next in-game
 - `MOVEMENT_CAPABLE_NON_HOSTILE_SHELL_2026-03-26.md`
@@ -45,7 +47,10 @@ This directory contains research notes, audits, workflow references, and experim
 
 ## Current blocker / next spike
 
-- for the most current branch-level judgment, read `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md` first
+- for the most current branch-level judgment, read `NEXT_SESSION_HANDOFF_2026-04-05.md` first
+- current immediate goal is no longer movement / return-path correctness; it is **spawn-time human appearance, even for 1 second**
+- current active strategic lane remains gradual Bandits-style adoption on top of the `IsoZombie` shell, not a return to wider lifecycle debugging
+- for older strategic background, `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md` is still useful historical context
 - the notes below are the 2026-03-20 session snapshot and are useful as historical context, not as the latest final verdict
 - current active carrier direction is `IsoZombie`, not `IsoPlayer`
 - the hybrid appearance experiment now really runs on the live `IsoZombie` shell, but the shell still renders through zombie presentation (`reanimated_zombie`, zombie body skin)

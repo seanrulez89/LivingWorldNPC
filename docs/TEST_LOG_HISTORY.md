@@ -43,6 +43,8 @@ For every new test cycle, append a new section using this structure:
 - If an observation later turns out to be wrong, do not erase it; append a correction in a later entry.
 - This file is intended to help large refactors keep contact with actual test evidence.
 - Use this file for cross-day test/result continuity; do not keep appending new-day technical work into an older `WORK_NOTES_YYYY-MM-DD.md` file.
+- 2026-04-05 scope reset: until the project can produce a spawned NPC that reads as human for even 1 second, new entries should focus primarily on **spawn-time appearance evidence**.
+- During that phase, return/recovery/movement details should be logged only when they directly explain why the initial human-looking spawn did or did not happen.
 
 ## 2026-03-29 22:18 KST — Bandits probe checkpoint pass still ends zombie-looking
 
