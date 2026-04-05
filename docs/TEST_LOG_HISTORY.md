@@ -1184,3 +1184,59 @@ For every new test cycle, append a new section using this structure:
 - inspect the exact recoverable-candidate rejection conditions that fire after `despawn_radius` on TEST 04.
 - determine whether `allowDebugDespawnForReturnTest` / clean return mode is discarding identity markers too early for later reclaim.
 - verify whether replacement generation is not being attempted at all, or is being attempted but immediately aborted before any visible embodied shell is created.
+
+## 2026-04-05 15:10 KST — patched TEST 04 still leaves visible hostile shell; identity loss happens before reclaim
+
+### In-game result
+- user completed another TEST 04 pass after the recovery-trace patch.
+- on return, the NPC did **not** disappear this time.
+- however, it still gained hostility / aggression instead of staying a managed neutral dummy shell.
+
+### Log signals
+- test target was `LWN-000046`.
+- before despawn, the shell was still visibly zombie-owned in presentation terms:
+  - repeated `presentationRole=reanimated_zombie`
+  - repeated `fail_presentation_role_zombie`
+- during return-test despawn, the new preservation instrumentation did partially work:
+  - `CarrierIsoZombie stage=retire.shallow ... lastNpcId=LWN-000046 shellMarker=isozombie:LWN-000046 returnRecovery=true`
+  - `unregisterActor.complete ... handlePreserved=true handleActor=IsoZombie ID:77`
+  - TEST 04 / TEST STATUS later showed `handleStatus=hidden_recoverable`
+- however, recovery still failed in a stricter, now better-explained way:
+  - repeated `recovery.cached_miss` with `reason=actor=nil`
+  - repeated `recovery.candidate_missing`
+  - crucially, the preserved handle actor was rejected as:
+    - `handleReason=identity_mismatch`
+    - `activeNpcId=nil`
+    - `knownNpcId=nil`
+    - `lastNpcId=nil`
+    - `harnessLabel=nil`
+    - `shellMarker=nil`
+    - `managed=false`
+- TEST 04 / TEST STATUS both agreed on the same broken state:
+  - record remained `state=hidden`
+  - handle ref still pointed at the old `IsoZombie ID:77`
+  - but that actor no longer carried any recoverable identity markers
+  - no positive `handle_recovered` or `tryEmbody.replacement_precheck` signal appeared in the reviewed slice
+
+### Interpretation / lesson
+- this patch clarified the failure shape substantially.
+- the main problem is no longer just “we lost the handle” or “we cannot see why it was rejected.”
+- now we can say more precisely:
+  - the original shell survives as a world object strongly enough to remain visible / aggressive,
+  - the registry keeps a handle to that shell,
+  - **but the shell loses every identity marker needed for reclaim** before recovery selection runs.
+- in other words, continuity is currently breaking at the **identity persistence** layer, not merely at handle retention.
+- the hostile visible return is therefore consistent with the logs:
+  - world object survives,
+  - managed ownership does not.
+
+### Code or document changes that followed
+- no additional runtime code change in this entry yet.
+- this result was recorded because it upgrades the diagnosis from vague “hostile return” to explicit “handle survives, identity evaporates, reclaim rejects.”
+
+### Next thing to verify
+- determine exactly where `LWN_LastNpcId`, shell marker, harness label, and managed contract are being cleared or lost after `retire.shallow`.
+- check whether engine/world re-registration is recreating or sanitizing the zombie modData after removal.
+- likely next patch direction:
+  - either restamp identity onto the preserved handle before recovery selection,
+  - or allow the `hidden_recoverable` handle itself to qualify as reclaimable even when marker persistence fails.
