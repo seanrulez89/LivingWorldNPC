@@ -1130,3 +1130,57 @@ For every new test cycle, append a new section using this structure:
 ### Next thing to verify
 - If continuing `IsoZombie` work, avoid repeating these exact three experiments without a genuinely new mechanism.
 - If pivoting strategically, begin planning how to introduce narrower Bandits-style borrowing in a controlled, evidence-driven way rather than continuing same-shape LWN micro-variants.
+
+## 2026-04-05 10:01 KST — TEST 04 return still collapses into hostile unmanaged zombie with no replacement
+
+### In-game result
+- user completed the distance-return portion of TEST 04.
+- after moving far away and returning, the previously spawned zombie-shell NPC had become a normal attacking zombie and actively attacked the player.
+- unlike some earlier return-path runs, no obvious replacement NPC appeared near the anchor after the hostile return.
+
+### Log signals
+- repo state at review time was branch `spike/bandits-visual-probe-v1` with recent TEST 04-related commits:
+  - `5ef7584` — `Promote Bandits stage-1 pass and reconnect dummy recovery`
+  - `9294a2e` — `Make TEST 04 use clean return recovery mode`
+  - `9106200` — `Fix TEST 04/status crash from forward local reference`
+- the managed record for `LWN-000044` was explicitly despawned into hidden state by distance logic:
+  - `cleanupReason=despawn_radius`
+  - `recordState=hidden`
+  - `preserveActorWorldObject=false`
+  - `CarrierIsoZombie stage=retire.shallow`
+- after that despawn, the harness repeatedly failed to recover a managed shell:
+  - repeated `recovery.cached_miss`
+  - repeated `recovery.candidate_missing`
+  - `handleRef=nil`
+  - TEST 04 / TEST STATUS both showed `state=hidden`, `actor=nil`, `embodiedState=hidden`
+- one important continuity clue did appear later:
+  - the old cached actor ref (`IsoZombie ID:3`) reappeared in-world far from the original anchor,
+  - but now with `knownNpcId=nil`, `lastNpcId=nil`, `presentationRole=reanimated_zombie`, `sceneCulled=true`, `alpha=0.34`, `targetAlpha=0.00`,
+  - and the harness logged `cached shell rejected by recoverable-candidate check`.
+- the nearby census during TEST 04 found only unmanaged zombie-like bodies near the player:
+  - `count=2`
+  - both had `managed=false`, `npcId=nil`, `lastNpcId=nil`, `cleanupCandidate=true`
+- in the observed return-phase slice, no positive recovery/replacement signal was seen:
+  - no `handle_recovered`
+  - no visible `tryEmbody.replacement_precheck`
+  - no new embodied replacement shell near the player-facing return location
+
+### Interpretation / lesson
+- this run narrows the failure shape further.
+- the current TEST 04 problem is not best described as “managed shell returns but looks wrong.”
+- instead, the continuity break happens earlier: the record goes hidden, the cached shell loses recoverable identity, and the recovery path rejects it before a new replacement shell is materialized.
+- compared with earlier split-body/replacement runs, this test points to a harsher failure mode:
+  - the original shell can fall back into ordinary hostile zombie behavior,
+  - while replacement generation does not visibly complete at all.
+- the highest-value next question is now:
+  - why the cached shell fails the recoverable-candidate check after clean return recovery,
+  - and whether identity metadata is being stripped too aggressively during `despawn_radius` retirement before replacement logic gets a usable candidate.
+
+### Code or document changes that followed
+- no runtime code changes yet in this entry.
+- this test result was recorded so the next session does not confuse the current failure with the older split-body-plus-replacement pattern.
+
+### Next thing to verify
+- inspect the exact recoverable-candidate rejection conditions that fire after `despawn_radius` on TEST 04.
+- determine whether `allowDebugDespawnForReturnTest` / clean return mode is discarding identity markers too early for later reclaim.
+- verify whether replacement generation is not being attempted at all, or is being attempted but immediately aborted before any visible embodied shell is created.
