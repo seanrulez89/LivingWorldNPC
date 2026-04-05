@@ -566,6 +566,17 @@ local function debugNpcShouldStayEmbodied(record)
     return true
 end
 
+local function shouldPreserveCarrierHandleOnHidden(record)
+    if not record then return false end
+    if not (record.embodiment and record.embodiment.state == "hidden") then
+        return false
+    end
+    if isAlive(record) ~= true then
+        return false
+    end
+    return record.embodiment.allowDebugDespawnForReturnTest == true
+end
+
 local function autoRearmCooldownHours(record)
     local companion = record.companion or {}
     if companion.recruited or record.debugSpawnOnly then
@@ -716,6 +727,18 @@ function Embody.tryEmbody(record, player)
         source = "tryEmbody",
         detail = string.format("spawning_new_shell because existing handle=%s cachedManaged=%s", tostring(handle and handle.actor or nil), tostring(cachedManagedShell)),
     })
+    record.embodiment.recoveryDebug = record.embodiment.recoveryDebug or {}
+    record.embodiment.recoveryDebug.stage = "tryEmbody.replacement_precheck"
+    record.embodiment.recoveryDebug.detail = string.format(
+        "handleActor=%s cachedManaged=%s origin=%s originPos=%.0f,%.0f,%.0f",
+        tostring(handle and handle.actor or nil),
+        tostring(cachedManagedShell),
+        tostring(originSource),
+        originX,
+        originY,
+        originZ
+    )
+    record.embodiment.recoveryDebug.at = worldAgeHours()
     touchRecordStage(record, "spawning", "tryEmbody.start")
 
     local spawnResult = nil
@@ -1094,12 +1117,28 @@ function Embody.unregisterActor(record, reason)
     if not record then return end
     record = ensureRecordShape(record)
     local actor = Embody._actors[record.id]
+    local preserveCarrierHandle = shouldPreserveCarrierHandleOnHidden(record)
+    local previousHandle = Embody.getCarrierHandle(record)
     traceRegistryState("unregisterActor.start", record, actor, {
         source = "unregisterActor",
         reason = reason,
     }, true)
     Embody._actors[record.id] = nil
-    Embody.unregisterCarrierHandle(record, reason or "unregisterActor")
+    if preserveCarrierHandle then
+        local handle = previousHandle or {
+            kind = record.embodiment and record.embodiment.carrierKind or "isoplayer",
+            actor = actor,
+            status = "hidden_recoverable",
+            spawnedAt = worldAgeHours(),
+        }
+        handle.actor = handle.actor or actor
+        handle.status = "hidden_recoverable"
+        handle.detail = reason or "unregisterActor.hidden_recoverable"
+        handle.lastRetireAt = worldAgeHours()
+        Embody.registerCarrierHandle(record, handle)
+    else
+        Embody.unregisterCarrierHandle(record, reason or "unregisterActor")
+    end
     local preservedPos = updateLastKnownPosition(record, actor)
     if record.embodiment and record.embodiment.state == "hidden" and isAlive(record) == true then
         Store.setEmbodiedMeta(record.id, {
@@ -1120,11 +1159,13 @@ function Embody.unregisterActor(record, reason)
     traceStage("unregisterActor.complete", record, actor, {
         source = "unregisterActor",
         detail = string.format(
-            "recordState=%s actorRef=%s actorWorld=%s reason=%s metaCleared=true",
+            "recordState=%s actorRef=%s actorWorld=%s reason=%s metaCleared=true handlePreserved=%s handleActor=%s",
             tostring(record.embodiment and record.embodiment.state or nil),
             tostring(actor),
             tostring(actor and protectedCall(actor, "isExistInTheWorld") or nil),
-            tostring(reason)
+            tostring(reason),
+            tostring(preserveCarrierHandle),
+            tostring(previousHandle and previousHandle.actor or actor)
         ),
     })
 end

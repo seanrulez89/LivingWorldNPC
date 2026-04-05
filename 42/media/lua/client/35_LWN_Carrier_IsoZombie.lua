@@ -2089,19 +2089,41 @@ local function shallowRetire(record, actor, reason)
 
     local modData = protectedCall(actor, "getModData")
     if modData then
+        modData.LWN_LastNpcId = record and record.id or modData.LWN_LastNpcId
         modData.LWN_NpcId = nil
+        modData.LWN_ShellMarker = modData.LWN_ShellMarker or string.format("isozombie:%s", tostring(record and record.id or modData.LWN_LastNpcId or "unknown"))
+        modData.LWN_ManagedShellContract = true
+        modData.LWN_TestHarnessLabel = record and record.debugHarness and record.debugHarness.label or modData.LWN_TestHarnessLabel
+        modData.LWN_TestHarnessEnabled = record and record.debugHarness and record.debugHarness.enabled == true or modData.LWN_TestHarnessEnabled
+        modData.LWN_TestHarnessQuarantine = record and record.debugHarness and record.debugHarness.quarantine == true or modData.LWN_TestHarnessQuarantine
+        modData.LWN_ReturnRecoveryCandidate = true
+        modData.LWN_ReturnRecoveryReason = tostring(reason or "unknown")
+        modData.LWN_ReturnRecoveryAt = worldAgeHours()
     end
 
+    protectedCall(actor, "StopAllActionQueue")
+    protectedCall(actor, "setTarget", nil)
+    protectedCall(actor, "setLastTargettedBy", nil)
+    protectedCall(actor, "setAttackedBy", nil)
+    protectedCall(actor, "setEatBodyTarget", nil, false)
+    protectedCall(actor, "setPath2", nil)
+    protectedCall(actor, "setMoving", false)
+    protectedCall(actor, "setUseless", true)
+    protectedCall(actor, "setCanWalk", false)
+    protectedCall(actor, "setNoTeeth", true)
     protectedCall(actor, "setInvisible", true)
     protectedCall(actor, "removeFromSquare")
     protectedCall(actor, "removeFromWorld")
     markNoAutoRearm(record)
 
     trace("retire.shallow", record, string.format(
-        "reason=%s world=%s squarePresent=%s",
+        "reason=%s world=%s squarePresent=%s lastNpcId=%s shellMarker=%s returnRecovery=%s",
         tostring(reason),
         tostring(protectedCall(actor, "isExistInTheWorld")),
-        tostring((protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare")) ~= nil)
+        tostring((protectedCall(actor, "getCurrentSquare") or protectedCall(actor, "getSquare")) ~= nil),
+        tostring(modData and modData.LWN_LastNpcId or nil),
+        tostring(modData and modData.LWN_ShellMarker or nil),
+        tostring(modData and modData.LWN_ReturnRecoveryCandidate or nil)
     ))
 
     return {

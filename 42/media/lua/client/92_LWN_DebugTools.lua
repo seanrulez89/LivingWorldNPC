@@ -244,14 +244,19 @@ local function recoverySummaryLine(record, actor)
     local modData
     modData, actor = actorModData(record, actor)
     local state = record and record.embodiment and record.embodiment.state or "unknown"
+    local recoveryDebug = record and record.embodiment and record.embodiment.recoveryDebug or nil
+    local handle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
     return string.format(
-        "RECOVERY SUMMARY npc=%s state=%s lane=%s replacementPrecheck=%s attackLock=%s handleRef=%s",
+        "RECOVERY SUMMARY npc=%s state=%s lane=%s recoveryStage=%s recoveryDetail=%s replacementPrecheck=%s attackLock=%s handleRef=%s handleStatus=%s",
         tostring(record and record.id or "nil"),
         tostring(state),
         tostring(modData and modData.LWN_ShellLaneContract or modData and modData.LWN_ShellMode or "none"),
+        tostring(recoveryDebug and recoveryDebug.stage or "none"),
+        tostring(recoveryDebug and recoveryDebug.detail or "none"),
         "check console for tryEmbody.replacement_precheck + recovery.cached_* + handle_*",
         tostring(record and record.embodiment and record.embodiment.attackQuarantineUntilHour or "none"),
-        tostring(LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) and LWN.EmbodimentManager.getCarrierHandle(record).actor or nil)
+        tostring(handle and handle.actor or nil),
+        tostring(handle and handle.status or nil)
     )
 end
 

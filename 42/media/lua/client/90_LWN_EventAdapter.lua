@@ -40,6 +40,10 @@ local function coordSummary(x, y, z)
     return safeNumber(x) .. "," .. safeNumber(y) .. "," .. safeNumber(z)
 end
 
+local function worldAgeHours()
+    return getGameTime() and getGameTime():getWorldAgeHours() or nil
+end
+
 local getAnchorSquare
 
 local function traceStage(stage, record, actor, extra)
@@ -886,32 +890,120 @@ local function updateTravelledDistance(player)
     end
 end
 
-local function isRecoverableShellCandidate(record, obj)
-    if not record or not obj then return false end
-    if protectedCall(obj, "isDestroyed") == true then return false end
-    if protectedCall(obj, "isExistInTheWorld") == false then return false end
-    if protectedCall(obj, "isZombie") ~= true then return false end
-    if not (protectedCall(obj, "getCurrentSquare") or protectedCall(obj, "getSquare")) then return false end
-    if LWN.ActorFactory and LWN.ActorFactory.hasRuntimeCore and not LWN.ActorFactory.hasRuntimeCore(obj) then
-        return false
-    end
+local function noteRecoveryDebug(record, stage, detail)
+    if not record then return end
+    record.embodiment = record.embodiment or {}
+    local debug = record.embodiment.recoveryDebug or {}
+    record.embodiment.recoveryDebug = debug
+    debug.stage = tostring(stage or "none")
+    debug.detail = tostring(detail or "none")
+    debug.at = worldAgeHours()
+end
 
-    local actorCleanup = getActorCleanupState(obj)
-    if actorCleanup and actorCleanup.pending == true then
-        return false
-    end
-
-    local activeNpcId = getActiveNpcId(obj)
-    local knownNpcId = getKnownNpcId(obj)
-    local modData = protectedCall(obj, "getModData")
-    local harnessMatch = record.debugHarness
+local function recoverableShellCandidateInfo(record, obj)
+    local modData = obj and protectedCall(obj, "getModData") or nil
+    local activeNpcId = obj and getActiveNpcId(obj) or nil
+    local knownNpcId = obj and getKnownNpcId(obj) or nil
+    local lastNpcId = modData and modData.LWN_LastNpcId or nil
+    local harnessLabel = modData and modData.LWN_TestHarnessLabel or nil
+    local harnessMatch = record and record.debugHarness
         and record.debugHarness.label
-        and modData
-        and modData.LWN_TestHarnessLabel == record.debugHarness.label
-    local shellMatch = modData
-        and modData.LWN_ShellMarker == string.format("isozombie:%s", tostring(record.id))
+        and harnessLabel == record.debugHarness.label or false
+    local shellMarker = modData and modData.LWN_ShellMarker or nil
+    local shellMatch = shellMarker == string.format("isozombie:%s", tostring(record and record.id or "nil"))
+    local cleanup = getActorCleanupState(obj)
+    local square = obj and (protectedCall(obj, "getCurrentSquare") or protectedCall(obj, "getSquare")) or nil
+    local inWorld = obj and protectedCall(obj, "isExistInTheWorld") or nil
+    local runtimeCore = obj and (not LWN.ActorFactory or not LWN.ActorFactory.hasRuntimeCore or LWN.ActorFactory.hasRuntimeCore(obj)) or nil
+    local x = obj and (protectedCall(obj, "getX") or protectedCall(square, "getX")) or nil
+    local y = obj and (protectedCall(obj, "getY") or protectedCall(square, "getY")) or nil
+    local z = obj and (protectedCall(obj, "getZ") or protectedCall(square, "getZ")) or nil
+    return {
+        actorRef = objectRef(obj),
+        activeNpcId = activeNpcId,
+        knownNpcId = knownNpcId,
+        lastNpcId = lastNpcId,
+        harnessLabel = harnessLabel,
+        harnessMatch = harnessMatch == true,
+        shellMarker = shellMarker,
+        shellMatch = shellMatch == true,
+        managedContract = modData and modData.LWN_ManagedShellContract == true or false,
+        cleanupPending = cleanup and cleanup.pending == true or false,
+        cleanupStage = cleanup and cleanup.stage or nil,
+        destroyed = obj and protectedCall(obj, "isDestroyed") == true or false,
+        inWorld = inWorld,
+        zombie = obj and protectedCall(obj, "isZombie") == true or false,
+        squarePresent = square ~= nil,
+        runtimeCore = runtimeCore,
+        sceneCulled = obj and protectedCall(obj, "isSceneCulled") or nil,
+        alpha = obj and protectedCall(obj, "getAlpha", 0) or nil,
+        targetAlpha = obj and protectedCall(obj, "getTargetAlpha", 0) or nil,
+        pos = coordSummary(x, y, z),
+    }
+end
 
-    return activeNpcId == record.id or knownNpcId == record.id or harnessMatch or shellMatch
+local function recoverableShellCandidateDiagnosis(record, obj)
+    local info = recoverableShellCandidateInfo(record, obj)
+    if not record then
+        return false, info, "record=nil"
+    end
+    if not obj then
+        return false, info, "actor=nil"
+    end
+    if info.destroyed == true then
+        return false, info, "destroyed"
+    end
+    if info.inWorld == false then
+        return false, info, "not_in_world"
+    end
+    if info.zombie ~= true then
+        return false, info, "not_zombie"
+    end
+    if info.squarePresent ~= true then
+        return false, info, "square_missing"
+    end
+    if info.runtimeCore == false then
+        return false, info, "runtime_core_missing"
+    end
+    if info.cleanupPending == true then
+        return false, info, "cleanup_pending"
+    end
+    if not (info.activeNpcId == record.id or info.knownNpcId == record.id or info.harnessMatch == true or info.shellMatch == true) then
+        return false, info, "identity_mismatch"
+    end
+    return true, info, "accepted"
+end
+
+local function recoverableShellCandidateDetail(info, reason)
+    info = info or {}
+    return string.format(
+        "reason=%s actorRef=%s activeNpcId=%s knownNpcId=%s lastNpcId=%s harnessLabel=%s harnessMatch=%s shellMarker=%s shellMatch=%s managed=%s cleanupPending=%s cleanupStage=%s world=%s zombie=%s square=%s runtimeCore=%s sceneCulled=%s alpha=%s targetAlpha=%s pos=%s",
+        tostring(reason or "none"),
+        tostring(info.actorRef or "nil"),
+        tostring(info.activeNpcId or "nil"),
+        tostring(info.knownNpcId or "nil"),
+        tostring(info.lastNpcId or "nil"),
+        tostring(info.harnessLabel or "nil"),
+        tostring(info.harnessMatch),
+        tostring(info.shellMarker or "nil"),
+        tostring(info.shellMatch),
+        tostring(info.managedContract),
+        tostring(info.cleanupPending),
+        tostring(info.cleanupStage or "nil"),
+        tostring(info.inWorld),
+        tostring(info.zombie),
+        tostring(info.squarePresent),
+        tostring(info.runtimeCore),
+        tostring(info.sceneCulled),
+        safeNumber(info.alpha),
+        safeNumber(info.targetAlpha),
+        tostring(info.pos or "nil")
+    )
+end
+
+local function isRecoverableShellCandidate(record, obj)
+    local ok = recoverableShellCandidateDiagnosis(record, obj)
+    return ok == true
 end
 
 local function findRecoveryCandidateNearSquare(record, square, radius, source)
@@ -927,6 +1019,7 @@ local function findRecoveryCandidateNearSquare(record, square, radius, source)
     local cz = protectedCall(square, "getZ") or 0
     local scanRadius = tonumber(radius) or 2
     local handle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
+    local handleAccepted, handleInfo, handleReason = recoverableShellCandidateDiagnosis(record, handle and handle.actor or nil)
     local best = nil
     local bestScore = -1
     local bestD2 = math.huge
@@ -970,16 +1063,37 @@ local function findRecoveryCandidateNearSquare(record, square, radius, source)
 
     if best then
         restampManagedActor(record, best, source or "findRecoveryCandidateNearSquare")
+        noteRecoveryDebug(record, "candidate_selected", string.format(
+            "source=%s radius=%s seen=%s usable=%s bestScore=%s bestD2=%s actor=%s",
+            tostring(source or "findRecoveryCandidateNearSquare"),
+            tostring(scanRadius),
+            tostring(seenObjects),
+            tostring(usableCandidates),
+            tostring(bestScore),
+            tostring(bestD2),
+            tostring(best)
+        ))
         traceStage("recovery.candidate_selected", record, best, {
             source = source or "findRecoveryCandidateNearSquare",
             square = square,
             detail = string.format("radius=%s seen=%s usable=%s bestScore=%s bestD2=%s", tostring(scanRadius), tostring(seenObjects), tostring(usableCandidates), tostring(bestScore), tostring(bestD2)),
         })
     else
+        local detail = string.format(
+            "radius=%s seen=%s usable=%s handleAccepted=%s handleActor=%s handleReason=%s %s",
+            tostring(scanRadius),
+            tostring(seenObjects),
+            tostring(usableCandidates),
+            tostring(handleAccepted == true),
+            tostring(handle and handle.actor or nil),
+            tostring(handleReason or "none"),
+            recoverableShellCandidateDetail(handleInfo, handleReason)
+        )
+        noteRecoveryDebug(record, "candidate_missing", string.format("source=%s %s", tostring(source or "findRecoveryCandidateNearSquare"), detail))
         traceStage("recovery.candidate_missing", record, nil, {
             source = source or "findRecoveryCandidateNearSquare",
             square = square,
-            detail = string.format("radius=%s seen=%s usable=%s handleActor=%s", tostring(scanRadius), tostring(seenObjects), tostring(usableCandidates), tostring(handle and handle.actor or nil)),
+            detail = detail,
         })
     end
     return best
@@ -990,18 +1104,21 @@ local function findCachedManagedShell(record, source)
         return nil
     end
     local actor = LWN.Carriers.isozombie.getKnownShellByNpcId(record.id)
-    if actor and isRecoverableShellCandidate(record, actor) then
+    local accepted, info, reason = recoverableShellCandidateDiagnosis(record, actor)
+    if actor and accepted == true then
         restampManagedActor(record, actor, source or "findCachedManagedShell")
         reapplyRecoveredDummyShell(record, actor, source or "findCachedManagedShell")
+        noteRecoveryDebug(record, "cached_hit", string.format("source=%s %s", tostring(source or "findCachedManagedShell"), recoverableShellCandidateDetail(info, reason)))
         traceStage("recovery.cached_hit", record, actor, {
             source = source or "findCachedManagedShell",
-            detail = "cached managed shell accepted",
+            detail = recoverableShellCandidateDetail(info, reason),
         })
         return actor
     end
+    noteRecoveryDebug(record, "cached_miss", string.format("source=%s %s", tostring(source or "findCachedManagedShell"), actor and recoverableShellCandidateDetail(info, reason) or "reason=actor=nil actorRef=nil"))
     traceStage("recovery.cached_miss", record, actor, {
         source = source or "findCachedManagedShell",
-        detail = actor and "cached shell rejected by recoverable-candidate check" or "no cached managed shell",
+        detail = actor and recoverableShellCandidateDetail(info, reason) or "reason=actor=nil actorRef=nil",
     })
     return nil
 end
@@ -1243,11 +1360,14 @@ local function resolveEmbodiedActor(record)
     elseif handleActor and tryReclaimHandleActor(record, handleActor, "resolveEmbodiedActor.handle") then
         return handleActor
     elseif handleActor then
+        local _, handleInfo, handleReason = recoverableShellCandidateDiagnosis(record, handleActor)
+        noteRecoveryDebug(record, "handle_rejected", string.format("source=resolveEmbodiedActor %s", recoverableShellCandidateDetail(handleInfo, handleReason)))
         traceStage("resolveEmbodiedActor.handle_rejected", record, handleActor, {
             source = "resolveEmbodiedActor",
-            detail = "carrier handle actor unusable before nearby scan",
+            detail = recoverableShellCandidateDetail(handleInfo, handleReason),
         })
     else
+        noteRecoveryDebug(record, "handle_missing", "source=resolveEmbodiedActor actor=nil")
         traceStage("resolveEmbodiedActor.handle_missing", record, nil, {
             source = "resolveEmbodiedActor",
             detail = "no carrier handle actor before nearby scan",
@@ -1869,6 +1989,7 @@ function Adapter.onTick()
                     record.embodiment.actorId = record.id
                     record.embodiment.missingTicks = 0
                     record.embodiment.noAutoRearm = false
+                    noteRecoveryDebug(record, "hidden_debug_recovered", "source=onTick recovered hidden debug shell near player")
                     if LWN.EmbodimentManager and LWN.EmbodimentManager.registerActor then
                         LWN.EmbodimentManager.registerActor(record, recovered)
                     end
