@@ -1,3 +1,5 @@
 
 # Local reference mod snapshots
 reference_mods/
+.tools/
+dist/

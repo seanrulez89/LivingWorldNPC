@@ -11,7 +11,7 @@ Date: 2026-03-11
 - 코드 변경, 문서/연구 자료 추가, 저장소 정리 작업은 가능하면 별도 커밋으로 분리한다.
 - 큰 실험을 하기 전에 영향을 받는 핵심 파일을 먼저 좁힌다.
 - 커밋 전에는 최소 한 번 `git diff --check`를 돌린다.
-- 기본 운영 규칙: 의미 있는 작업 턴이 끝날 때마다 `validate-wsl` 실행 → `git status` 확인 → 작은 설명형 커밋 생성까지를 한 세트로 본다.
+- 기본 운영 규칙: 의미 있는 작업 턴이 끝날 때마다 `validate-mac` 실행 → `git status` 확인 → 작은 설명형 커밋 생성까지를 한 세트로 본다.
 - 여러 가설 실험은 한 커밋에 섞지 않고, 되도록 가설/패치 단위로 나눈다.
 - 인게임 테스트 전에는 가능한 한 롤백 가능한 스냅샷 커밋이 남아 있어야 한다.
 
@@ -23,26 +23,26 @@ Date: 2026-03-11
 
 이 원칙은 절대적인 규칙은 아니지만, 히스토리를 읽기 쉽게 만드는 기준선으로 사용한다.
 
-## 3. WSL 기본 검증 루틴
-이 저장소에서는 PowerShell 검증을 기본 경로로 보지 않는다. WSL에서는 아래 순서를 기본으로 사용한다.
+## 3. macOS 기본 검증 루틴
+이 저장소에서는 macOS 검증을 기본 경로로 사용한다.
 
-1. `git diff --check`
-2. `git diff --stat`
-3. `git diff --name-only`
-4. 변경된 Lua 파일만 문법 검사
-   - 기본은 `luac -p`
-   - 필요 시 `luac5.4 -p`
-   - 둘 다 없을 때만 정적 점검만 수행하고 문법 검사는 미실행으로 보고
-5. 동적 검증은 게임 실행 + `console.txt` 확인으로 분리
+1. 필수 Build 42 모드 구조 확인
+2. `git diff --check`
+3. `git diff --stat`
+4. `git diff --name-only`
+5. 전체 runtime Lua 파일 문법 검사
+   - 기본은 로컬 `.tools/lua-5.1.5/src/luac -p`
+   - 없으면 `bash scripts/bootstrap-lua-mac.sh`로 로컬 checker를 준비
+6. 동적 검증은 게임 실행 + `console.txt` 확인으로 분리
 
 ## 4. 기본 명령
 ```bash
-./scripts/validate-wsl.sh
+bash scripts/validate-mac.sh
 ```
 
 작업 턴 마감 기본 루틴:
 ```bash
-./scripts/validate-wsl.sh
+bash scripts/validate-mac.sh
 git status --short
 git add <관련 파일들>
 git commit -m "<작업 내용을 설명하는 작은 커밋 메시지>"
@@ -52,5 +52,5 @@ git commit -m "<작업 내용을 설명하는 작은 커밋 메시지>"
 - 인게임 재테스트 + `EmbodimentTrace` 로그 수집
 - Stage 3 최소 패치의 가설 판정
 - 그 결과에 따라 다음 최소 패치 방향 결정
-- `lua5.4`/`luac5.4` 설치 후 Lua 문법 검사 활성화
+- 로컬 Lua checker가 없으면 `bash scripts/bootstrap-lua-mac.sh`로 `.tools/`에 준비
 - 장시간 보조 도구/에이전트 작업 시 15분 중간 보고 루틴을 실제 운영 습관으로 고정

@@ -4,38 +4,39 @@
 이 문서는 Steam 창작마당에 올리기 전에 **로컬 환경에서 Build 42 싱글플레이 모드**를 반복 테스트하기 위한 절차와, 인게임에서 주요 기능을 검증하기 위한 디버그 루틴을 정리한다.
 
 ## 2. 로컬 설치 형태
-Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를 읽는다. 이 폴더를 `Zomboid/mods` 아래에 로컬 모드로 배치해서 테스트한다.
+Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를 읽는다. 이제 이 저장소는 macOS의 로컬 Workshop 개발 경로에 직접 놓고 테스트한다.
 
 권장 구조:
 
 ```text
-%USERPROFILE%\Zomboid\mods\LivingWorldNPCSP\
-  common\
-  42\
+/Users/sean/Zomboid/Workshop/LivingWorldNPC/Contents/mods/LivingWorldNPC/
+  common/
+  42/
     mod.info
-    media\lua\shared\...
-    media\lua\client\...
+    media/lua/shared/...
+    media/lua/client/...
 ```
 
-## 3. 빠른 테스트 절차 (Windows)
+## 3. 빠른 테스트 절차 (macOS)
 1. Steam을 종료한다.
-2. `C:\Users\<사용자명>\Zomboid\mods\` 아래에 `LivingWorldNPCSP` 폴더를 복사한다.
-3. Steam 실행 → Project Zomboid 실행.
-4. 메인 메뉴의 **Mods** 또는 Build 42의 공식 모드 매니저에서 `LivingWorldNPCSP`를 활성화한다.
-5. 새 샌드박스 저장을 만든다. (기존 저장과 분리)
+2. 이 저장소가 `/Users/sean/Zomboid/Workshop/LivingWorldNPC/Contents/mods/LivingWorldNPC`에 있는지 확인한다.
+3. `bash scripts/validate-mac.sh`를 실행해 구조와 Lua 문법을 확인한다.
+4. Steam 실행 → Project Zomboid 실행.
+5. 메인 메뉴의 **Mods** 또는 Build 42의 공식 모드 매니저에서 `LivingWorldNPCSP`를 활성화한다.
+6. 새 샌드박스 저장을 만든다. (기존 저장과 분리)
 
 ## 4. 권장 시작 옵션
 로컬 개발 때는 Steam Launch Options에 아래 둘 중 하나를 사용한다.
 
 - `-debug`
-- `-debug -cachedir=C:\ZomboidDev\LWN_SP`
+- `-debug -cachedir=/Users/sean/ZomboidDev/LWN_SP`
 
 두 번째 옵션은 개발용 캐시/세이브/로그를 일반 플레이 데이터와 분리할 때 유용하다.
 
 ## 5. 로그 확인 위치
-- 일반 런타임 오류: `C:\Users\<사용자명>\Zomboid\console.txt`
-- 압축 로그 묶음: `C:\Users\<사용자명>\Zomboid\logs.zip`
-- JVM 크래시: `Steam\steamapps\common\ProjectZomboid\hs_err_pid*.log`
+- 일반 런타임 오류: `/Users/sean/Zomboid/console.txt`
+- 세션별 디버그 로그: `/Users/sean/Zomboid/Logs/*_DebugLog.txt`
+- JVM 크래시: `/Users/sean/Library/Application Support/Steam/steamapps/common/ProjectZomboid/hs_err_pid*.log`
 
 ### 5.1 투명 NPC 추적 로그
 - 개발/디버그 모드에서는 `console.txt`에서 `[LWN][EmbodimentTrace]`를 검색한다.
@@ -119,18 +120,15 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
 - 랜덤 조우를 기다리지 않고 첫 조우 흐름 검증 가능
 
 ### 6.1.1 현재 구현된 우클릭 디버그 메뉴
-- `LWN Settings`에서 디버그를 켠 뒤 월드 우클릭
-- `Debug: Spawn NPC Near Player`
-- `Debug: Delete Nearest NPC`
-- `Debug: Dump Last Actor Failure`
-- `Debug: Dump Nearest NPC Summary`
-- `Debug: Wipe Data + Reseed`
-- `Debug: Boost Nearest NPC Trust`
-- `Debug: Shared Food Beat (Nearest)`
-- `Debug: Force Legacy Candidate (Nearest)`
+- 월드 우클릭 → `LWN Tests`
+- `TEST RESET - Clear State`
+- `TEST 01 - Spawn Baseline (IsoZombie)`
+- `TEST 02 - Command Walk`
+- `TEST 03 - Capture Move`
+- `TEST 04 - Return/Recovery Check`
+- `TEST STATUS - Dump Current`
 
-이 메뉴는 실체화된 NPC의 생성/삭제/최근 실패 원인 확인을 인게임에서 바로 수행하기 위한 개발용 도구다.
-`Debug: Spawn NPC Near Player`는 `MaxEmbodied` 한도에 걸리면 가장 멀리 있는 기존 디버그 NPC를 정리해 새 스폰 슬롯을 확보한다.
+현재 브랜치의 최우선 검증은 `TEST RESET` → `TEST 01` → 즉시 눈으로 확인 → `TEST STATUS`다. 이동/복귀 검증은 사람처럼 보이는 첫 스폰이 확보된 뒤로 미룬다.
 
 ### 6.2 최근접 NPC 덤프
 - F5 또는 `Debug: Dump Nearest NPC Summary`
@@ -185,7 +183,8 @@ Project Zomboid Build 42는 버전 디렉터리(`42/`)를 기준으로 모드를
 ### C. 첫 조우
 - [ ] 랜덤 또는 강제 인카운터로 NPC가 등장하는가
 - [ ] 실체화 위치가 플레이어 시야에 자연스러운가
-- [ ] 실제 월드에 보이는 인간형 actor(`IsoPlayer` 기반)가 생성되는가
+- [ ] 실제 월드에 보이는 관리형 `IsoZombie` shell이 생성되는가
+- [ ] 스폰 직후 사람처럼 읽히는가, 아니면 여전히 좀비처럼 읽히는가
 - [ ] `actor visuals` 로그에 `skin`, `itemVisuals`, `wornItems`가 합리적으로 채워지는가
 - [ ] `descriptor_bound -> materialized -> applyLoadout.materialized -> presentation_settled` 순서가 같은 `npcId`로 이어지는가
 - [ ] `refreshEmbodiedPresentation.item_visual_bridge`에서 `wornItems`와 `itemVisualsBefore/After` 변화가 가설과 맞는가

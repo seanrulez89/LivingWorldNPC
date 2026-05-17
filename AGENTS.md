@@ -31,12 +31,12 @@
 - Before proposing a large rewrite, summarize the affected modules.
 
 ## Commands
-- Validate mod structure (Windows/PowerShell path): `pwsh -File ./scripts/validate-mod-structure.ps1`
-- Validate current WSL working tree: `./scripts/validate-wsl.sh`
-- Open latest Project Zomboid console log: `pwsh -File ./scripts/read-console.ps1`
-- Wipe this mod's test data from the current cache dir: `pwsh -File ./scripts/wipe-lwn-data.ps1`
-- Create a local zip artifact: `pwsh -File ./scripts/zip-local-release.ps1`
+- Bootstrap local Lua syntax checker on macOS: `bash scripts/bootstrap-lua-mac.sh`
+- Validate current macOS working tree: `bash scripts/validate-mac.sh`
+- Open latest Project Zomboid console log: `bash scripts/read-console-mac.sh`
+- Create a local zip artifact: `bash scripts/zip-local-release.sh`
 
-## WSL validation preference
-- When working inside WSL, prefer `./scripts/validate-wsl.sh` before falling back to PowerShell tooling.
-- Use PowerShell validation scripts as secondary helpers, not the default validation path.
+## macOS validation preference
+- This checkout is maintained for macOS local testing.
+- Use `bash scripts/validate-mac.sh` as the default validation path.
+- The validator expects `luac`; if it is missing, run `bash scripts/bootstrap-lua-mac.sh` to build a local Lua 5.1.5 checker under `.tools/`.

@@ -1,27 +1,27 @@
-# Codex app local environment actions (Windows)
+# Codex app local environment actions (macOS)
 
 Enter these in **Codex app > Project settings > Local environments**.
 
-## Setup script (Windows)
-```powershell
-pwsh -File ./scripts/validate-mod-structure.ps1
+## Setup script
+```bash
+bash scripts/bootstrap-lua-mac.sh
 ```
 
 ## Suggested project actions
 
-### Validate structure
-```powershell
-pwsh -File ./scripts/validate-mod-structure.ps1
+### Validate repo and Lua syntax
+```bash
+bash scripts/validate-mac.sh
 ```
 
 ### Read latest PZ console log
-```powershell
-pwsh -File ./scripts/read-console.ps1
+```bash
+bash scripts/read-console-mac.sh
 ```
 
 ### Zip local release
-```powershell
-pwsh -File ./scripts/zip-local-release.ps1
+```bash
+bash scripts/zip-local-release.sh
 ```
 
 ## Optional manual action

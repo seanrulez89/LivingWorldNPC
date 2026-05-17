@@ -9,9 +9,9 @@ This project is currently in active R&D.
 - Canonical NPC state lives in `ModData`
 - On-screen NPCs are embodied dynamically when needed
 - The current embodiment path is still under active investigation
-- Highest current blocker: alive embodied NPCs still do not render visibly in-game even when runtime/debug state looks healthy
-- Current strongest unverified hypothesis: Build 42 alive presentation is failing at the `IsoPlayer` carrier / actor-class boundary rather than at simple alpha, ghost, or world-registration flags
-- Recommended next manual investigation order: (1) carrier A/B test away from `IsoPlayer`, (2) move the first full presentation build to the post-create hook only, (3) force an explicit alive-state animator/state reset after refresh
+- Highest current blocker: the active `IsoZombie` shell still reads as zombie-owned presentation instead of a human-looking NPC on first spawn
+- Current active hypothesis: Bandits-style visual/build ordering changes real appearance inputs, but final Build 42 presentation ownership still remains on the zombie side
+- Recommended next manual investigation order: `TEST RESET`, `TEST 01 - Spawn Baseline (IsoZombie)`, immediate visual observation, then `TEST STATUS`
 - The repository contains both runtime code and research/debug documentation
 
 In short: this is a working development repository, **not a finished stable release**.
@@ -29,8 +29,10 @@ The project currently experiments with:
 
 - `ModData` as canonical NPC state
 - dynamic embodiment near the player
+- `IsoZombie` as the current practical world carrier
+- gradual Bandits-style visual/build borrowing for spawn-time appearance probes
 - runtime tracing for presentation, cleanup, death/corpse/reanimation, and UI targeting
-- Build 42-specific validation and debugging workflow inside WSL
+- Build 42-specific validation and debugging workflow on macOS
 
 ## Repository layout
 
@@ -41,20 +43,27 @@ The project currently experiments with:
 
 ## Development workflow
 
-This repository uses a WSL-first local workflow.
+This repository now uses a macOS-first local workflow. The game-facing checkout is intended to live under the local Project Zomboid Workshop development folder.
 
 Primary validation command:
 
 ```bash
-./scripts/validate-wsl.sh
+bash scripts/validate-mac.sh
 ```
 
 That script currently checks:
 
+- required Build 42 mod structure
 - `git diff --check`
 - `git diff --stat`
 - `git diff --name-only`
-- Lua syntax for changed `.lua` files via `luac -p` when available
+- Lua syntax for all tracked runtime `.lua` files via `luac -p`
+
+If `luac` is not available on the Mac yet, run:
+
+```bash
+bash scripts/bootstrap-lua-mac.sh
+```
 
 ## Important notes
 

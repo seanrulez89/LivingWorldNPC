@@ -5,6 +5,3 @@ sandbox_mode = "workspace-write"
 web_search = "live"
 model_reasoning_effort = "high"
 personality = "friendly"
-
-[windows]
-sandbox = "elevated"
