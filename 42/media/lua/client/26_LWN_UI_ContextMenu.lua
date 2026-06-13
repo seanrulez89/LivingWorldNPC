@@ -429,17 +429,18 @@ local function addNpcInteractionSubmenu(context, player, actor, clickedSquare)
     local sub = context:getNew(context)
     context:addSubMenu(option, sub)
 
-    sub:addOption(LWN.Loc.textOrDefault("LWN_UI_Context_Talk", "Talk"), actor, function(target)
-        LWN.UIDialogueWindow.show(target)
-    end)
-
-    sub:addOption(LWN.Loc.textOrDefault("LWN_UI_Context_Quick", "Quick Command"), actor, function(target)
-        LWN.UIRadialMenu.showFor(target)
-    end)
-
-    sub:addOption(LWN.Loc.textOrDefault("LWN_UI_Context_Panel", "Open Panel"), actor, function(target)
-        LWN.UICommandPanel.show(target)
-    end)
+    if LWN.NPCInteraction and LWN.NPCInteraction.list then
+        local actions = LWN.NPCInteraction.list(actor, { source = "world_context" })
+        for i = 1, #actions do
+            local action = actions[i]
+            sub:addOption(LWN.NPCInteraction.label(action), {
+                actionId = action.id,
+                actor = actor,
+            }, function(args)
+                LWN.NPCInteraction.invoke(args.actionId, args.actor, { source = "world_context" })
+            end)
+        end
+    end
 
     addCommandOptions(sub, record, actor, clickedSquare)
 end

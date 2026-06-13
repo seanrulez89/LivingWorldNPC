@@ -85,7 +85,9 @@ end
 
 function CommandPanelWindow:new(x, y, width, height)
     local o = ISCollapsableWindow.new(self, x, y, width, height)
-    o.title = "LWN Command Panel"
+    o.title = LWN.Loc and LWN.Loc.textOrDefault
+        and LWN.Loc.textOrDefault("LWN_UI_CommandPanel_Title", "NPC Status")
+        or "NPC Status"
     o.resizable = true
     o.pin = true
     return o
@@ -124,28 +126,43 @@ function Panel.renderTarget(actor)
     local cooldownLeft = math.max(0, (record.embodiment.cooldownUntilHour or 0) - nowHour)
     local command = record.companion and record.companion.command or {}
     local destination = command.destination or {}
-    local modData = actor.getModData and actor:getModData() or nil
+    local snapshot = LWN.NPCStatus and LWN.NPCStatus.snapshot and LWN.NPCStatus.snapshot(record, actor) or nil
+    local identity = snapshot and snapshot.identity or {}
+    local condition = snapshot and snapshot.condition or {}
+    local relationship = snapshot and snapshot.relationship or {}
+    local activity = snapshot and snapshot.activity or {}
+    local inventory = snapshot and snapshot.inventory or {}
+    local embodiment = snapshot and snapshot.embodiment or {}
+    destination = activity.commandDestination or destination
 
     local lines = {}
-    lines[#lines + 1] = tostring(protectedCall(actor, "getFullName") or npcId)
+    lines[#lines + 1] = tostring(identity.name or protectedCall(actor, "getFullName") or npcId)
     lines[#lines + 1] = "Actor: " .. tostring(protectedCall(actor, "getObjectName"))
-    lines[#lines + 1] = "Profession: " .. tostring(record.identity and record.identity.profession or "unknown")
+    lines[#lines + 1] = "Profession: " .. tostring(identity.profession or "unknown")
     lines[#lines + 1] = string.format(
         "Trust %.2f / Fear %.2f / Resentment %.2f",
-        tonumber(record.relationshipToPlayer and record.relationshipToPlayer.trust or 0) or 0,
-        tonumber(record.relationshipToPlayer and record.relationshipToPlayer.fear or 0) or 0,
-        tonumber(record.relationshipToPlayer and record.relationshipToPlayer.resentment or 0) or 0
+        tonumber(relationship.trust or 0) or 0,
+        tonumber(relationship.fear or 0) or 0,
+        tonumber(relationship.resentment or 0) or 0
     )
     lines[#lines + 1] = string.format(
-        "Hunger %.2f / Fatigue %.2f / Panic %.2f",
-        tonumber(record.stats and record.stats.hunger or 0) or 0,
-        tonumber(record.stats and record.stats.fatigue or 0) or 0,
-        tonumber(record.stats and record.stats.panic or 0) or 0
+        "Health %.1f / Endurance %.2f / Pain %.2f",
+        tonumber(condition.health or 0) or 0,
+        tonumber(condition.endurance or 0) or 0,
+        tonumber(condition.pain or 0) or 0
     )
-    lines[#lines + 1] = "Goal: " .. tostring(record.goals and record.goals.longTerm and record.goals.longTerm.kind or "idle")
-    lines[#lines + 1] = "Intent: " .. tostring(record.goals and record.goals.currentIntent or "none")
-    lines[#lines + 1] = "Shell: " .. tostring(modData and modData.LWN_ShellMode or modData and modData.LWN_CarrierCombatMode or "unknown")
-    lines[#lines + 1] = "Command: " .. tostring(command.kind or "none") .. " / " .. tostring(command.status or "idle")
+    lines[#lines + 1] = string.format(
+        "Hunger %.2f / Thirst %.2f / Fatigue %.2f / Panic %.2f",
+        tonumber(condition.hunger or 0) or 0,
+        tonumber(condition.thirst or 0) or 0,
+        tonumber(condition.fatigue or 0) or 0,
+        tonumber(condition.panic or 0) or 0
+    )
+    lines[#lines + 1] = "Goal: " .. tostring(activity.goal or "idle")
+    lines[#lines + 1] = "Intent: " .. tostring(activity.intent or "none")
+    lines[#lines + 1] = "Carrier: " .. tostring(embodiment.carrierKind or "unknown")
+    lines[#lines + 1] = "Shell: " .. tostring(embodiment.shellMode or "unknown")
+    lines[#lines + 1] = "Command: " .. tostring(activity.commandKind or "none") .. " / " .. tostring(activity.commandStatus or "idle")
     lines[#lines + 1] = string.format(
         "Destination: %s,%s,%s %s",
         tostring(destination.x or "-"),
@@ -153,7 +170,14 @@ function Panel.renderTarget(actor)
         tostring(destination.z or "-"),
         tostring(destination.label or "")
     )
-    lines[#lines + 1] = "Squad Role: " .. tostring(record.companion and record.companion.squadRole or "none")
+    lines[#lines + 1] = "Squad Role: " .. tostring(activity.squadRole or "none")
+    lines[#lines + 1] = string.format(
+        "Supplies: food %.1fd / water %.1f / meds %d / ammo %d",
+        tonumber(inventory.foodDays or 0) or 0,
+        tonumber(inventory.waterUnits or 0) or 0,
+        tonumber(inventory.meds or 0) or 0,
+        tonumber(inventory.ammo or 0) or 0
+    )
     lines[#lines + 1] = "Arc: " .. tostring(record.storyArc and record.storyArc.type or "none")
     lines[#lines + 1] = "Clues: " .. tostring(record.storyArc and record.storyArc.clueCount or 0)
     lines[#lines + 1] = "Memories: " .. tostring(#(record.memories or {}))
@@ -175,9 +199,18 @@ function Panel.show(actor)
 
     Panel._ensure()
     Panel.targetNpcId = getNpcId(actor)
+    local record = Panel.targetNpcId and LWN.PopulationStore.getNPC(Panel.targetNpcId) or nil
+    local snapshot = LWN.NPCStatus and LWN.NPCStatus.snapshot and LWN.NPCStatus.snapshot(record, actor) or nil
+    if Panel.window and snapshot and snapshot.identity then
+        local title = LWN.Loc and LWN.Loc.textOrDefault
+            and LWN.Loc.textOrDefault("LWN_UI_CommandPanel_Title", "NPC Status")
+            or "NPC Status"
+        Panel.window.title = string.format("%s - %s", title, tostring(snapshot.identity.name))
+    end
     Panel.window:setVisible(true)
     Panel.window:bringToTop()
     Panel:refresh()
+    return true
 end
 
 function Panel.hide()

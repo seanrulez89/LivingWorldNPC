@@ -11,7 +11,7 @@ This iteration makes the Bandits-backed actor the default LWN test carrier and a
 - a unique first and last name stored in the canonical LWN record
 - right-click movement to a player-selected world square
 - persistent follow mode with a trailing offset
-- follow locomotion that switches between walk, run, and crouched walk
+- follow locomotion that switches between walk, run, crouched walk, and crouched run
 - a wait command that cancels the active Bandits task and pathfinder
 - mitigation for the vanilla player panic and surprise sound emitted when the actor first becomes visible
 
@@ -38,11 +38,18 @@ Follow mode remains active until replaced or cancelled. It does not complete whe
 - Player walking: NPC uses `Walk`.
 - Player running or sprinting: NPC uses `Run`.
 - Player sneaking: NPC uses `SneakWalk`.
+- Player running or sprinting while sneaking: NPC uses `SneakRun`.
 - Separation over 10 tiles: NPC uses `Run` to recover.
 - Target point movement of 1.25 tiles or a locomotion style change rebuilds the move task.
 - No movement progress for 5 seconds clears the current task and requests a new path.
 
 The target is recomputed from the player's current position and facing direction, so the actor normally remains behind the player instead of occupying the same tile.
+
+## Interaction Foundation
+
+Right-click interaction actions are registered through `LWN.NPCInteraction` instead of being hard-wired directly into the context menu. The initial registry exposes status, talk, and quick-command actions. Future inventory, health, skills, equipment, and relationship views can register additional actions without changing actor detection or the root menu.
+
+`LWN.NPCStatus.snapshot` builds a versioned, structured view of canonical NPC identity, condition, relationship, inventory summary, activity, and embodiment state. The current read-only status window renders that snapshot. A later player-style tabbed character window can therefore replace the renderer without changing the record contract or interaction entry point.
 
 ## Spawn Surprise Mitigation
 

@@ -569,16 +569,20 @@ local function followTarget(player)
 end
 
 local function followWalkType(player, distanceToPlayer)
-    if protectedCall(player, "isSneaking") == true then
-        return "SneakWalk", -0.01
-    end
-    if protectedCall(player, "isSprinting") == true
+    local sneaking = protectedCall(player, "isSneaking") == true
+    local running = protectedCall(player, "isSprinting") == true
         or protectedCall(player, "isRunning") == true
-        or distanceToPlayer > 10
-    then
-        return "Run", -0.03
+
+    if sneaking and running then
+        return "SneakRun", -0.03, sneaking, running
     end
-    return "Walk", 0
+    if sneaking then
+        return "SneakWalk", -0.01, sneaking, running
+    end
+    if running or distanceToPlayer > 10 then
+        return "Run", -0.03, sneaking, running
+    end
+    return "Walk", 0, sneaking, running
 end
 
 local function tickFollowPlayer(record, handle, intent)
@@ -619,7 +623,7 @@ local function tickFollowPlayer(record, handle, intent)
     local targetDistance = math.sqrt(targetDx * targetDx + targetDy * targetDy)
     local playerDx, playerDy = ax - px, ay - py
     local playerDistance = math.sqrt(playerDx * playerDx + playerDy * playerDy)
-    local walkType, endurance = followWalkType(player, playerDistance)
+    local walkType, endurance, playerSneaking, playerRunning = followWalkType(player, playerDistance)
     local now = nowMs()
 
     if targetDistance > FOLLOW_ARRIVAL_DISTANCE then
@@ -664,6 +668,8 @@ local function tickFollowPlayer(record, handle, intent)
         follow.loggedWalkType = walkType
     end
     follow.walkType = walkType
+    follow.playerSneaking = playerSneaking
+    follow.playerRunning = playerRunning
     follow.playerDistance = playerDistance
     follow.targetDistance = targetDistance
 
@@ -802,6 +808,8 @@ function Carrier.getDebugState(record, handle)
         moveDistance = lastMove and lastMove.distance or nil,
         followActive = follow ~= nil,
         followWalkType = follow and follow.walkType or nil,
+        followPlayerSneaking = follow and follow.playerSneaking or false,
+        followPlayerRunning = follow and follow.playerRunning or false,
         followTaskCycles = follow and follow.taskCycles or nil,
         followRepaths = follow and follow.repaths or nil,
         followPlayerDistance = follow and follow.playerDistance or nil,

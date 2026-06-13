@@ -228,7 +228,9 @@ function UIRadial.onCommand(command)
             commandReason = "player_follow_command",
         }), "Following you.")
     elseif command == "panel" then
-        if LWN.UICommandPanel and LWN.UICommandPanel.show then
+        if LWN.NPCInteraction and LWN.NPCInteraction.invoke then
+            LWN.NPCInteraction.invoke("status", actor, { source = "ui_radial" })
+        elseif LWN.UICommandPanel and LWN.UICommandPanel.show then
             LWN.UICommandPanel.show(actor)
         end
     end
@@ -251,6 +253,7 @@ function UIRadial.showFor(actor)
 
     menu:setVisible(true)
     menu:addToUIManager()
+    return true
 end
 
 function UIRadial.refresh()

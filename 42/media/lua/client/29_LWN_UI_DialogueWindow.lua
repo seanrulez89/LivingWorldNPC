@@ -128,6 +128,7 @@ function W.show(actor)
     W.window:setVisible(true)
     W.window:bringToTop()
     W:refresh()
+    return true
 end
 
 function W.hide()
