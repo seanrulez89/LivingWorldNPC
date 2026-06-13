@@ -41,6 +41,8 @@ local function enforceSafety(bandit, brain)
         end
     end
     if bandit.setNoTeeth then bandit:setNoTeeth(true) end
+    if bandit.setGodMod then bandit:setGodMod(true) end
+    if bandit.setInvulnerable then bandit:setInvulnerable(true) end
 end
 
 Integration.enforceSafety = enforceSafety
@@ -68,8 +70,27 @@ local function registerProgram()
     end
 end
 
+local function installFriendlyFirePatch()
+    if Integration._friendlyFirePatchInstalled == true then return true end
+    if not (BanditPlayer and type(BanditPlayer.CheckFriendlyFire) == "function") then return false end
+
+    Integration._originalCheckFriendlyFire = BanditPlayer.CheckFriendlyFire
+    BanditPlayer.CheckFriendlyFire = function(bandit, attacker)
+        local brain = BanditBrain and BanditBrain.Get and BanditBrain.Get(bandit) or nil
+        if isControlledBrain(brain) then
+            enforceSafety(bandit, brain)
+            return
+        end
+        return Integration._originalCheckFriendlyFire(bandit, attacker)
+    end
+    Integration._friendlyFirePatchInstalled = true
+    print("[LWN][Bandits] controlled NPC friendly-fire patch installed")
+    return true
+end
+
 function Integration.install()
     registerProgram()
+    installFriendlyFirePatch()
     if Integration._patchInstalled == true then return true end
     if not (BanditUtils and BanditBrain and Bandit) then return false end
     if type(BanditUtils.AreEnemies) ~= "function"

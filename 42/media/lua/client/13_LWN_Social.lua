@@ -67,8 +67,8 @@ function Social.minimalDummyPolicy(record)
     local harness = record and record.debugHarness or nil
     if harness and harness.quarantine == true then
         return {
-            state = "neutral",
-            allowPlayerAttack = true,
+            state = "friendly",
+            allowPlayerAttack = false,
             allowCarrierAttackPlayer = false,
             shouldNeutralizeCarrier = true,
             allowMovement = false,
@@ -79,8 +79,8 @@ function Social.minimalDummyPolicy(record)
     end
     local moving = Social.isMinimalDummyMoveActive(record)
     return {
-        state = "neutral",
-        allowPlayerAttack = true,
+        state = "friendly",
+        allowPlayerAttack = false,
         allowCarrierAttackPlayer = false,
         shouldNeutralizeCarrier = true,
         allowMovement = moving == true,

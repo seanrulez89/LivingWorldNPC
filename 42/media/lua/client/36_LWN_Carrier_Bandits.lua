@@ -18,6 +18,18 @@ local FOLLOW_OFFSET = 2.25
 local FOLLOW_ARRIVAL_DISTANCE = 1.0
 local FOLLOW_RETARGET_DISTANCE = 1.25
 local FOLLOW_RETARGET_MS = 350
+local DEFAULT_WALK_SPEED = 1.04
+local DEFAULT_RUN_SPEED = 0.72
+
+-- Bandits paths reliably with these three walk types; speed multipliers provide
+-- distinct sprint and crouch-run states without reintroducing unsupported SneakRun.
+local FOLLOW_LOCOMOTION = {
+    walk = { walkType = "Walk", endurance = 0, walkMultiplier = 1.0, runMultiplier = 1.0 },
+    run = { walkType = "Run", endurance = -0.03, walkMultiplier = 1.0, runMultiplier = 1.0 },
+    sprint = { walkType = "Run", endurance = -0.06, walkMultiplier = 1.0, runMultiplier = 1.35 },
+    crouch_walk = { walkType = "SneakWalk", endurance = -0.01, walkMultiplier = 1.0, runMultiplier = 1.0 },
+    crouch_run = { walkType = "SneakWalk", endurance = -0.03, walkMultiplier = 1.35, runMultiplier = 1.0 },
+}
 
 Carrier.RetiredKeys = Carrier.RetiredKeys or {}
 
@@ -37,6 +49,38 @@ local function protectedCall(obj, methodName, ...)
     local ok, result = pcall(fn, obj, ...)
     if ok then return result end
     return nil
+end
+
+local function movementBaseSpeeds(actor)
+    local modData = protectedCall(actor, "getModData")
+    if not modData then return DEFAULT_WALK_SPEED, DEFAULT_RUN_SPEED end
+    if tonumber(modData.LWN_BaseWalkSpeed) == nil then
+        modData.LWN_BaseWalkSpeed = tonumber(protectedCall(actor, "getVariableFloat", "WalkSpeed", DEFAULT_WALK_SPEED))
+            or DEFAULT_WALK_SPEED
+    end
+    if tonumber(modData.LWN_BaseRunSpeed) == nil then
+        modData.LWN_BaseRunSpeed = tonumber(protectedCall(actor, "getVariableFloat", "RunSpeed", DEFAULT_RUN_SPEED))
+            or DEFAULT_RUN_SPEED
+    end
+    return tonumber(modData.LWN_BaseWalkSpeed) or DEFAULT_WALK_SPEED,
+        tonumber(modData.LWN_BaseRunSpeed) or DEFAULT_RUN_SPEED
+end
+
+local function applyMovementProfile(actor, profile)
+    if not actor or not profile then return end
+    local baseWalkSpeed, baseRunSpeed = movementBaseSpeeds(actor)
+    protectedCall(actor, "setVariable", "WalkSpeed", baseWalkSpeed * (profile.walkMultiplier or 1))
+    protectedCall(actor, "setVariable", "RunSpeed", baseRunSpeed * (profile.runMultiplier or 1))
+    protectedCall(actor, "setVariable", "BanditWalkType", profile.walkType)
+    protectedCall(actor, "setWalkType", profile.walkType)
+end
+
+local function resetMovementProfile(actor)
+    local baseWalkSpeed, baseRunSpeed = movementBaseSpeeds(actor)
+    protectedCall(actor, "setVariable", "WalkSpeed", baseWalkSpeed)
+    protectedCall(actor, "setVariable", "RunSpeed", baseRunSpeed)
+    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    protectedCall(actor, "setWalkType", "Walk")
 end
 
 local function displayName(record)
@@ -173,6 +217,7 @@ local function stopActor(actor)
     protectedCall(pathfinder, "reset")
     protectedCall(actor, "setMoving", false)
     protectedCall(actor, "setTarget", nil)
+    resetMovementProfile(actor)
     local emitter = protectedCall(actor, "getEmitter")
     protectedCall(emitter, "stopAll")
 end
@@ -230,13 +275,54 @@ local function enforceSafety(actor, brain)
     brain.eatBody = false
     brain.lwnNonCombat = true
     protectedCall(actor, "setTarget", nil)
+    protectedCall(actor, "setLastTargettedBy", nil)
+    protectedCall(actor, "setAttackedBy", nil)
     protectedCall(actor, "setEatBodyTarget", nil, false)
     protectedCall(actor, "setNoTeeth", true)
+    protectedCall(actor, "setGodMod", true)
+    protectedCall(actor, "setInvulnerable", true)
     protectedCall(actor, "setVariable", "NoLungeTarget", true)
     if Bandit and Bandit.SurpressZombieSounds then
         Bandit.SurpressZombieSounds(actor)
     end
     stopBanditBreathing(actor)
+end
+
+local function friendlyRecordForActor(actor)
+    local modData = protectedCall(actor, "getModData")
+    local npcId = modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or nil
+    local record = npcId and LWN.PopulationStore and LWN.PopulationStore.getNPC
+        and LWN.PopulationStore.getNPC(npcId) or nil
+    if not record then return nil end
+    local policy = LWN.Social and LWN.Social.relationshipCombatPolicy
+        and LWN.Social.relationshipCombatPolicy(record) or nil
+    if not policy or policy.allowPlayerAttack == true then return nil end
+    return record
+end
+
+function Carrier.onHitZombie(actor, attacker)
+    local brain = brainFor(actor)
+    if not isControlledBrain(brain) then return end
+    local record = friendlyRecordForActor(actor)
+    if not record then return end
+
+    local canonicalHealth = tonumber(record.stats and record.stats.health)
+    if canonicalHealth and canonicalHealth > 0 then
+        protectedCall(actor, "setHealth", canonicalHealth)
+    end
+    protectedCall(actor, "setKnockedDown", false)
+    protectedCall(actor, "setOnFloor", false)
+    protectedCall(actor, "setFallOnFront", false)
+    protectedCall(actor, "setAlwaysKnockedDown", false)
+    enforceSafety(actor, brain)
+    if Bandit and Bandit.ForceStationary then
+        Bandit.ForceStationary(actor, brain.lwnMoveActive ~= true)
+    end
+    print(string.format(
+        "[LWN][Bandits] friendly hit suppressed npcId=%s banditId=%s attacker=%s health=%.2f",
+        tostring(record.id), tostring(brain.id), tostring(attacker),
+        tonumber(protectedCall(actor, "getHealth") or canonicalHealth or 0) or 0
+    ))
 end
 
 local function stampActor(record, handle, actor, brain)
@@ -248,6 +334,7 @@ local function stampActor(record, handle, actor, brain)
     handle.lwnNpcId = record.id
     local modData = protectedCall(actor, "getModData")
     if modData then
+        movementBaseSpeeds(actor)
         modData.LWN_NpcId = record.id
         modData.LWN_LastNpcId = record.id
         modData.LWN_CarrierKind = "bandits"
@@ -257,6 +344,7 @@ local function stampActor(record, handle, actor, brain)
         modData.LWN_BanditsCorrelationKey = handle.correlationKey
         modData.LWN_BanditsSessionId = handle.sessionId
         modData.LWN_DisplayName = brain.fullname
+        modData.LWN_AllowPlayerAttack = false
     end
     local descriptor = protectedCall(actor, "getDescriptor")
     protectedCall(descriptor, "setForename", record.identity and record.identity.firstName or nil)
@@ -466,6 +554,7 @@ local function tickMoveTo(record, handle, intent)
     end
 
     enforceSafety(actor, brain)
+    applyMovementProfile(actor, FOLLOW_LOCOMOTION.walk)
     local data = intent.data or {}
     local tx, ty, tz = tonumber(data.x), tonumber(data.y), tonumber(data.z)
     if not tx or not ty or not tz then
@@ -568,21 +657,24 @@ local function followTarget(player)
     return px - fx * FOLLOW_OFFSET, py - fy * FOLLOW_OFFSET, pz
 end
 
-local function followWalkType(player, distanceToPlayer)
+local function followLocomotion(player)
     local sneaking = protectedCall(player, "isSneaking") == true
-    local running = protectedCall(player, "isSprinting") == true
-        or protectedCall(player, "isRunning") == true
+    local sprinting = protectedCall(player, "isSprinting") == true
+    local running = protectedCall(player, "isRunning") == true
 
-    if sneaking and running then
-        return "SneakRun", -0.03, sneaking, running
+    if sneaking and (running or sprinting) then
+        return "crouch_run", FOLLOW_LOCOMOTION.crouch_run, sneaking, running, sprinting
     end
     if sneaking then
-        return "SneakWalk", -0.01, sneaking, running
+        return "crouch_walk", FOLLOW_LOCOMOTION.crouch_walk, sneaking, running, sprinting
     end
-    if running or distanceToPlayer > 10 then
-        return "Run", -0.03, sneaking, running
+    if sprinting then
+        return "sprint", FOLLOW_LOCOMOTION.sprint, sneaking, running, sprinting
     end
-    return "Walk", 0, sneaking, running
+    if running then
+        return "run", FOLLOW_LOCOMOTION.run, sneaking, running, sprinting
+    end
+    return "walk", FOLLOW_LOCOMOTION.walk, sneaking, running, sprinting
 end
 
 local function tickFollowPlayer(record, handle, intent)
@@ -623,7 +715,8 @@ local function tickFollowPlayer(record, handle, intent)
     local targetDistance = math.sqrt(targetDx * targetDx + targetDy * targetDy)
     local playerDx, playerDy = ax - px, ay - py
     local playerDistance = math.sqrt(playerDx * playerDx + playerDy * playerDy)
-    local walkType, endurance, playerSneaking, playerRunning = followWalkType(player, playerDistance)
+    local movementMode, profile, playerSneaking, playerRunning, playerSprinting = followLocomotion(player)
+    local walkType = profile.walkType
     local now = nowMs()
 
     if targetDistance > FOLLOW_ARRIVAL_DISTANCE then
@@ -651,25 +744,28 @@ local function tickFollowPlayer(record, handle, intent)
 
     local currentTask = Bandit and Bandit.GetTask and Bandit.GetTask(actor) or nil
     local targetShift = follow.targetX and math.sqrt((tx - follow.targetX) ^ 2 + (ty - follow.targetY) ^ 2) or math.huge
-    local styleChanged = follow.walkType ~= nil and follow.walkType ~= walkType
+    local styleChanged = follow.movementMode ~= nil and follow.movementMode ~= movementMode
     local canRetarget = follow.lastTaskAtMs == nil or now - follow.lastTaskAtMs >= FOLLOW_RETARGET_MS
     if currentTask and canRetarget and (styleChanged or targetShift >= FOLLOW_RETARGET_DISTANCE) then
         stopActor(actor)
         currentTask = nil
     end
 
-    protectedCall(actor, "setVariable", "BanditWalkType", walkType)
-    protectedCall(actor, "setWalkType", walkType)
-    if follow.loggedWalkType ~= walkType then
+    applyMovementProfile(actor, profile)
+    if follow.loggedMovementMode ~= movementMode then
+        local baseWalkSpeed, baseRunSpeed = movementBaseSpeeds(actor)
         print(string.format(
-            "[LWN][Bandits] follow style npcId=%s key=%s style=%s playerDistance=%.2f",
-            tostring(record.id), tostring(handle.correlationKey), tostring(walkType), playerDistance
+            "[LWN][Bandits] follow style npcId=%s key=%s mode=%s walkType=%s walkSpeed=%.2f runSpeed=%.2f playerDistance=%.2f",
+            tostring(record.id), tostring(handle.correlationKey), tostring(movementMode), tostring(walkType),
+            baseWalkSpeed * (profile.walkMultiplier or 1), baseRunSpeed * (profile.runMultiplier or 1), playerDistance
         ))
-        follow.loggedWalkType = walkType
+        follow.loggedMovementMode = movementMode
     end
+    follow.movementMode = movementMode
     follow.walkType = walkType
     follow.playerSneaking = playerSneaking
     follow.playerRunning = playerRunning
+    follow.playerSprinting = playerSprinting
     follow.playerDistance = playerDistance
     follow.targetDistance = targetDistance
 
@@ -698,9 +794,10 @@ local function tickFollowPlayer(record, handle, intent)
         brain.lwnMoveActive = true
         brain.lwnFollowActive = true
         if Bandit and Bandit.ForceStationary then Bandit.ForceStationary(actor, false) end
-        local task = BanditUtils.GetMoveTask(endurance, tx, ty, tz, walkType, targetDistance, true)
+        local task = BanditUtils.GetMoveTask(profile.endurance, tx, ty, tz, walkType, targetDistance, true)
         task.lwnFollow = true
         task.lwnCycle = follow.taskCycles
+        task.lwnMovementMode = movementMode
         task.lwnWalkType = walkType
         Bandit.AddTask(actor, task)
     end
@@ -807,9 +904,11 @@ function Carrier.getDebugState(record, handle)
         moveReason = lastMove and lastMove.reason or nil,
         moveDistance = lastMove and lastMove.distance or nil,
         followActive = follow ~= nil,
+        followMovementMode = follow and follow.movementMode or nil,
         followWalkType = follow and follow.walkType or nil,
         followPlayerSneaking = follow and follow.playerSneaking or false,
         followPlayerRunning = follow and follow.playerRunning or false,
+        followPlayerSprinting = follow and follow.playerSprinting or false,
         followTaskCycles = follow and follow.taskCycles or nil,
         followRepaths = follow and follow.repaths or nil,
         followPlayerDistance = follow and follow.playerDistance or nil,
@@ -819,4 +918,15 @@ function Carrier.getDebugState(record, handle)
         audioActive = #playingSounds > 0,
         audio = #playingSounds > 0 and table.concat(playingSounds, ",") or "none",
     }
+end
+
+
+if Events and Events.OnHitZombie then
+    if Carrier._onHitZombieHandler then
+        Events.OnHitZombie.Remove(Carrier._onHitZombieHandler)
+    end
+    Carrier._onHitZombieHandler = function(actor, attacker)
+        Carrier.onHitZombie(actor, attacker)
+    end
+    Events.OnHitZombie.Add(Carrier._onHitZombieHandler)
 end
