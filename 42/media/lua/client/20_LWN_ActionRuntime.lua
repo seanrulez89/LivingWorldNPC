@@ -27,8 +27,21 @@ local function isMinimalDummyRecord(record)
     return LWN.Social and LWN.Social.isMinimalDummyRecord and LWN.Social.isMinimalDummyRecord(record)
 end
 
+local function carrierHandleFor(record)
+    return record
+        and LWN.EmbodimentManager
+        and LWN.EmbodimentManager.getCarrierHandle
+        and LWN.EmbodimentManager.getCarrierHandle(record)
+        or nil
+end
+
+local function carrierKindFor(record)
+    local handle = carrierHandleFor(record)
+    return handle and handle.kind or record and record.embodiment and record.embodiment.carrierKind or nil
+end
+
 local function isAllowedDummyIntent(intent)
-    return intent and intent.kind == "move_to"
+    return intent and (intent.kind == "move_to" or intent.kind == "follow_player")
 end
 
 local function isDummyMoveAuthorityActive(record)
@@ -39,7 +52,11 @@ local function isMoveCommandActive(command)
     if type(command) ~= "table" or command.active ~= true then
         return false
     end
-    return command.intentKind == "move_to" or command.kind == "move_to" or command.kind == "designated_location"
+    return command.intentKind == "move_to"
+        or command.intentKind == "follow_player"
+        or command.kind == "move_to"
+        or command.kind == "designated_location"
+        or command.kind == "follow_player"
 end
 
 local function isDummyMotorMoveActive(record)
@@ -81,7 +98,12 @@ local function settleDummyIdleIfStopped(record, actor, source)
     end
 
     clearDummyCommandMirror(record)
-    if actor and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
+    if actor
+        and carrierKindFor(record) == "isozombie"
+        and LWN.Carriers
+        and LWN.Carriers.isozombie
+        and LWN.Carriers.isozombie.enforceHardDummyShell
+    then
         LWN.Carriers.isozombie.enforceHardDummyShell(
             record,
             actor,
@@ -96,11 +118,11 @@ local function syncDummyMirror(record, queue)
     if not isMinimalDummyRecord(record) then return end
     record.dummy = record.dummy or {}
     local current = queue and queue[1] or nil
-    if current and current.kind == "move_to" then
-        record.dummy.state = "move_to"
+    if current and (current.kind == "move_to" or current.kind == "follow_player") then
+        record.dummy.state = current.kind
         record.dummy.command = {
-            kind = "move_to",
-            destination = current.data and {
+            kind = current.kind,
+            destination = current.kind == "move_to" and current.data and {
                 x = current.data.x,
                 y = current.data.y,
                 z = current.data.z,
@@ -283,7 +305,7 @@ local function updateMoveCommand(record, intent, status, reason, actor)
     local command = ensureCommandState(record)
     if not command then return end
 
-    command.kind = intent.data and (intent.data.commandKind or "move_to") or "move_to"
+    command.kind = intent.data and (intent.data.commandKind or intent.kind) or intent.kind
     command.source = intent.data and (intent.data.commandSource or intent.data.source) or command.source
     command.intentKind = intent.kind
     setCommandDestination(command, intent.data)
@@ -295,7 +317,7 @@ local function updateMoveCommand(record, intent, status, reason, actor)
     if command.issuedAt == nil then
         command.issuedAt = now
     end
-    if status == "pathing" and command.startedAt == nil then
+    if (status == "pathing" or status == "following") and command.startedAt == nil then
         command.startedAt = now
     end
     if actor then
@@ -349,8 +371,8 @@ local function noteIssuedIntent(record, intent)
         return
     end
 
-    if intent.kind == "move_to" then
-        command.kind = intent.data and (intent.data.commandKind or "move_to") or "move_to"
+    if intent.kind == "move_to" or intent.kind == "follow_player" then
+        command.kind = intent.data and (intent.data.commandKind or intent.kind) or intent.kind
         command.source = intent.data and (intent.data.commandSource or intent.data.source) or command.source
         command.intentKind = intent.kind
         command.status = "queued"
@@ -362,7 +384,7 @@ local function noteIssuedIntent(record, intent)
         command.lastReason = intent.data and intent.data.commandReason or nil
         command.lastDistance = nil
         command.movementTelemetry = {}
-        setCommandDestination(command, intent.data)
+        setCommandDestination(command, intent.kind == "move_to" and intent.data or nil)
         return
     end
 
@@ -478,13 +500,17 @@ local function resolveAttackTarget(actor, intent)
 end
 
 function Runtime.clear(record, actor)
+    local current = record and Runtime.peek(record) or nil
+    if record and LWN.CarrierAdapter and LWN.CarrierAdapter.cancelIntent then
+        LWN.CarrierAdapter.cancelIntent(record, carrierHandleFor(record), current, "runtime_clear")
+    end
     clearActiveCommand(record, "runtime_clear")
     Runtime.Queues[record.id] = {}
     syncPlanMirror(record)
     if actor and actor.StopAllActionQueue then
         actor:StopAllActionQueue()
     end
-    if actor and isMinimalDummyRecord(record) and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
+    if actor and carrierKindFor(record) == "isozombie" and isMinimalDummyRecord(record) and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
         LWN.Carriers.isozombie.enforceHardDummyShell(record, actor, "idle", "ActionRuntime.clear")
     end
 end
@@ -1088,13 +1114,36 @@ function Runtime.tick(record, actor)
         return
     end
 
-    if isMinimalDummyRecord(record) and current.kind ~= "move_to" then
+    if isMinimalDummyRecord(record) and current.kind ~= "move_to" and current.kind ~= "follow_player" then
         current.failed = true
         Runtime.pop(record)
         return
     end
 
-    if current.kind == "move_to" or current.kind == "follow_player" or current.kind == "guard_player" or current.kind == "retreat" or current.kind == "wander_short" then
+    local delegated = nil
+    if LWN.CarrierAdapter and LWN.CarrierAdapter.tickIntent then
+        delegated = LWN.CarrierAdapter.tickIntent(record, carrierHandleFor(record), current)
+    end
+    local delegatedHandled = delegated and delegated.handled == true
+    if delegatedHandled then
+        current.started = true
+        current.pathMethod = "carrier:" .. tostring(carrierKindFor(record) or "unknown")
+        if delegated.done == true then
+            current.done = true
+            updateMoveCommand(record, current, delegated.status or "arrived", delegated.reason or "carrier_arrived", actor)
+        elseif delegated.failed == true then
+            current.failed = true
+            updateMoveCommand(record, current, delegated.status or "failed", delegated.reason or "carrier_failed", actor)
+        elseif current.kind == "move_to" or current.kind == "follow_player" then
+            updateMoveCommand(
+                record,
+                current,
+                delegated.status or (current.kind == "follow_player" and "following" or "pathing"),
+                delegated.reason or "carrier_pathing",
+                actor
+            )
+        end
+    elseif current.kind == "move_to" or current.kind == "follow_player" or current.kind == "guard_player" or current.kind == "retreat" or current.kind == "wander_short" then
         if not current.started then
             if current.kind == "guard_player" then
                 local player = getPlayer()

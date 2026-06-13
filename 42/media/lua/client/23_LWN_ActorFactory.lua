@@ -322,7 +322,7 @@ local function isManagedActor(obj)
 
     local modData = protectedCall(obj, "getModData")
     local carrierKind = modData and modData.LWN_CarrierKind or nil
-    if carrierKind == "isozombie" then
+    if carrierKind == "isozombie" or carrierKind == "bandits" then
         return protectedCall(obj, "isZombie") == true
             and (protectedCall(obj, "getCurrentSquare") or protectedCall(obj, "getSquare")) ~= nil
             and protectedCall(obj, "getStats") ~= nil
@@ -337,7 +337,7 @@ local function isIsoZombieCarrierActor(actor)
     if not actor then return false end
 
     local modData = protectedCall(actor, "getModData")
-    if modData and modData.LWN_CarrierKind == "isozombie" then
+    if modData and (modData.LWN_CarrierKind == "isozombie" or modData.LWN_CarrierKind == "bandits") then
         return true
     end
 

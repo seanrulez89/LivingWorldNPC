@@ -292,15 +292,14 @@ local function getNpcId(actor)
     return modData and modData.LWN_NpcId or nil
 end
 
-local function randomizeIdentity(record)
-    local female = ZombRand(0, 2) == 0
-    record.identity.female = female
-
-    if SurvivorFactory and SurvivorFactory.getRandomForename then
-        record.identity.firstName = SurvivorFactory.getRandomForename(female) or record.identity.firstName
+local function randomizeIdentity(record, forcedFemale)
+    local female = forcedFemale
+    if female == nil then
+        female = ZombRand(0, 2) == 0
     end
-    if SurvivorFactory and SurvivorFactory.getRandomSurname then
-        record.identity.lastName = SurvivorFactory.getRandomSurname() or record.identity.lastName
+    record.identity.female = female
+    if LWN.PopulationSeeder and LWN.PopulationSeeder.assignUniqueIdentity then
+        LWN.PopulationSeeder.assignUniqueIdentity(record)
     end
 end
 
@@ -426,8 +425,6 @@ local function applyDebugHarnessDefaults(record, carrierKind)
     record.debugHarness.allowForcedHostile = false
     record.debugHarness.carrierKind = carrierKind or "isoplayer"
     record.debugHarness.mode = "minimal_dummy"
-    record.identity.firstName = tostring(record.debugHarness.label)
-    record.identity.lastName = carrierKind == "isozombie" and "Dummy" or "Debug"
     record.relationshipToPlayer.trust = 0.0
     record.relationshipToPlayer.respect = 0.0
     record.relationshipToPlayer.resentment = 0.0
@@ -440,9 +437,6 @@ local function applyDebugHarnessOverrides(record, overrides)
     record.debugHarness = record.debugHarness or {}
     for key, value in pairs(overrides) do
         record.debugHarness[key] = value
-    end
-    if record.debugHarness.label then
-        record.identity.firstName = tostring(record.debugHarness.label)
     end
 end
 
@@ -1027,8 +1021,8 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind, options)
     local seed = ZombRand(1, 2147483646)
     local record = LWN.Schema.newNPCRecord(id, seed)
 
-    randomizeIdentity(record)
     applyDebugHarnessDefaults(record, carrierKind)
+    randomizeIdentity(record, carrierKind == "bandits" and false or nil)
     applyDebugHarnessOverrides(record, options and options.harness or nil)
     ensureMinimalDummyState(record)
     record.identity.profession = "unemployed"
@@ -1077,7 +1071,9 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind, options)
         local handle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
         local handleDetail = handle and handle.detail or nil
         local failure = LWN.ActorFactory and LWN.ActorFactory.getLastFailure and LWN.ActorFactory.getLastFailure() or nil
-        if handleDetail then
+        if handle and (handle.pending == true or handle.status == "pending") then
+            sayInfo(player, string.format("Spawn requested for %s via %s; awaiting actor binding", record.id, tostring(carrierKind)))
+        elseif handleDetail then
             sayInfo(player, string.format("Spawn failed for %s via %s: %s", record.id, tostring(carrierKind), tostring(handleDetail)))
         elseif failure and failure.npcId == record.id then
             sayInfo(player, string.format("Spawn failed for %s; see console for ActorFactory failure details", record.id))
@@ -1160,7 +1156,14 @@ local function purgeRogueDebugHarnessShells(player, radius)
         if not obj or seen[obj] then return end
         seen[obj] = true
         if not hasHarnessMarker(obj) then return end
-        if LWN.ActorFactory and LWN.ActorFactory.cleanupActor and LWN.ActorFactory.hasRuntimeCore and LWN.ActorFactory.hasRuntimeCore(obj) then
+        local modData = obj.getModData and obj:getModData() or nil
+        if modData and modData.LWN_CarrierKind == "bandits"
+            and LWN.Carriers
+            and LWN.Carriers.bandits
+            and LWN.Carriers.bandits.removeActor
+        then
+            LWN.Carriers.bandits.removeActor(obj, "debug_test_clean_slate_orphan")
+        elseif LWN.ActorFactory and LWN.ActorFactory.cleanupActor and LWN.ActorFactory.hasRuntimeCore and LWN.ActorFactory.hasRuntimeCore(obj) then
             LWN.ActorFactory.cleanupActor(obj, "debug_test_clean_slate")
         else
             protectedCall(obj, "removeFromSquare")
@@ -1482,18 +1485,31 @@ local function runMovementAutomationTest01WithCarrier(player, carrierKind)
         sayInfo(player, string.format("TEST 01 failed: spawn failed (%s)", lane))
         return false
     end
+    if not actor and (not record.embodiment or record.embodiment.state ~= "spawning") then
+        sayInfo(player, string.format(
+            "TEST 01 failed: %s (%s)",
+            tostring(record.embodiment and record.embodiment.lastFailureReason or "carrier spawn failed"),
+            tostring(record.embodiment and record.embodiment.lastFailureDetail or lane)
+        ))
+        return false
+    end
 
     local state = automationState()
     state.active = true
     state.scenario = string.format("minimal_dummy_move_return_%s_v1", lane)
     state.carrierKind = lane
-    state.phase = "test_02_ready"
+    state.phase = actor and "test_02_ready" or "test_01_spawning"
     state.npcId = record.id
     state.destination = nil
     state.startedAt = worldAgeHours()
     state.updatedAt = state.startedAt
     state.step = 1
-    logTestAction("TEST_01_READY", state, record, string.format("carrier=%s spawnedActor=%s", tostring(lane), tostring((actor or findActorForRecord(record)) ~= nil)))
+    logTestAction(actor and "TEST_01_READY" or "TEST_01_SPAWNING", state, record, string.format("carrier=%s spawnedActor=%s", tostring(lane), tostring((actor or findActorForRecord(record)) ~= nil)))
+
+    if not actor then
+        sayInfo(player, string.format("TEST 01 [%s] spawning; wait for binding before TEST 02", lane))
+        return true
+    end
 
     dumpRecordSummary(record, actor or findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
@@ -1513,7 +1529,7 @@ local function runMovementAutomationTest01WithCarrier(player, carrierKind)
 end
 
 local function runMovementAutomationTest01(player)
-    return runMovementAutomationTest01WithCarrier(player, "isozombie")
+    return runMovementAutomationTest01WithCarrier(player, "bandits")
 end
 
 local function runIsoPlayerViabilityProbe(player)
@@ -1574,6 +1590,7 @@ local function isSupportedAutomationScenario(state)
     return scenario == "minimal_dummy_move_return_v1"
         or scenario == "minimal_dummy_move_return_isozombie_v1"
         or scenario == "minimal_dummy_move_return_isosurvivor_v1"
+        or scenario == "minimal_dummy_move_return_bandits_v1"
 end
 
 local function isIsoPlayerProbeScenario(state)
@@ -1651,11 +1668,58 @@ local function runMovementAutomationTest03(player)
         return false
     end
 
+    local command = record.companion and record.companion.command or nil
+    if command and command.active == true then
+        sayInfo(player, string.format(
+            "TEST 03 unavailable: move command is still %s",
+            tostring(command.status or "running")
+        ))
+        return false
+    end
+
     local lane = tostring(state.carrierKind or record.embodiment and record.embodiment.carrierKind or "unknown")
     dumpRecordSummary(record, findActorForRecord(record), player)
     dumpMovementAudioForRecord(record, player)
     dumpAutomationOneLineSummary(record, findActorForRecord(record), player, string.format("TEST 03 SUMMARY [%s]", lane))
     DebugTools.dumpLastActorFailure(player)
+    if lane == "bandits" then
+        local handle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
+        local carrierDebug = LWN.CarrierAdapter and LWN.CarrierAdapter.getDebugState and LWN.CarrierAdapter.getDebugState(record, handle) or nil
+        print(string.format(
+            "[LWN][Bandits] TEST 03 npcId=%s key=%s banditId=%s pending=%s hostile=%s hostileP=%s nonCombat=%s target=%s task=%s combatTask=%s audioActive=%s audio=%s attempt=%s cycle=%s move=%s/%s distance=%s command=%s/%s",
+            tostring(record.id),
+            tostring(carrierDebug and carrierDebug.correlationKey or nil),
+            tostring(carrierDebug and carrierDebug.banditId or nil),
+            tostring(carrierDebug and carrierDebug.pending or false),
+            tostring(carrierDebug and carrierDebug.hostile),
+            tostring(carrierDebug and carrierDebug.hostileP),
+            tostring(carrierDebug and carrierDebug.nonCombat),
+            tostring(carrierDebug and carrierDebug.target or false),
+            tostring(carrierDebug and carrierDebug.task or nil),
+            tostring(carrierDebug and carrierDebug.combatTask or nil),
+            tostring(carrierDebug and carrierDebug.audioActive or false),
+            tostring(carrierDebug and carrierDebug.audio or "none"),
+            tostring(carrierDebug and carrierDebug.moveAttempt or nil),
+            tostring(carrierDebug and carrierDebug.moveCycle or nil),
+            tostring(carrierDebug and carrierDebug.moveStatus or nil),
+            tostring(carrierDebug and carrierDebug.moveReason or nil),
+            tostring(carrierDebug and carrierDebug.moveDistance or nil),
+            tostring(record.companion and record.companion.command and record.companion.command.kind or nil),
+            tostring(record.companion and record.companion.command and record.companion.command.status or nil)
+        ))
+        state.phase = "complete"
+        state.updatedAt = worldAgeHours()
+        state.step = 3
+        logTestAction("TEST_03_COMPLETE", state, record, "bandits_initial_dummy_complete")
+        sayChecklist(player, "TEST 03 COMPLETE [bandits]", {
+            "Confirm: NPC stopped within 0.75 tiles of the destination.",
+            "Listen: no zombie audio or Bandit speech leaked.",
+            "Watch: no targeting, attack, shove, bite, weapon search, or escape behavior occurred.",
+            "Check console: hostile=false, hostileP=false, nonCombat=true, and no combat task.",
+            "Run TEST RESET to remove the actor and clustered brain.",
+        })
+        return true
+    end
     setAutomationReturnRecoveryMode(record, true, "TEST_03_READY")
     state.phase = "test_04_ready"
     state.updatedAt = worldAgeHours()
@@ -1917,6 +1981,46 @@ end
 
 function DebugTools.runAutomatedIsoZombieTest01(player)
     return runMovementAutomationTest01(player)
+end
+
+function DebugTools.onCarrierEmbodied(record, actor)
+    local state = automationState()
+    if not record or state.active ~= true or state.npcId ~= record.id or state.phase ~= "test_01_spawning" then
+        return false
+    end
+    state.phase = "test_02_ready"
+    state.updatedAt = worldAgeHours()
+    state.step = 1
+    logTestAction("TEST_01_READY", state, record, string.format("carrier=%s asyncBound=true", tostring(state.carrierKind)))
+    dumpRecordSummary(record, actor, getSpecificPlayer and getSpecificPlayer(0) or nil)
+    dumpMovementAudioForRecord(record, getSpecificPlayer and getSpecificPlayer(0) or nil)
+    dumpAutomationOneLineSummary(record, actor, getSpecificPlayer and getSpecificPlayer(0) or nil, "TEST 01 SUMMARY [bandits]")
+    sayChecklist(getSpecificPlayer and getSpecificPlayer(0) or nil, "TEST 01 READY [bandits]", {
+        "Look: exactly one human-presenting dummy exists.",
+        "Wait and listen: zombie audio and Bandit speech must remain silent.",
+        "Watch: the dummy must not target or attack the player, zombies, or other Bandits.",
+        "Then click TEST 02 - Command Walk.",
+    })
+    return true
+end
+
+function DebugTools.onCarrierEmbodimentFailed(record, reason, detail)
+    local state = automationState()
+    if not record or state.active ~= true or state.npcId ~= record.id or state.phase ~= "test_01_spawning" then
+        return false
+    end
+    state.phase = "failed"
+    state.updatedAt = worldAgeHours()
+    state.step = 1
+    logTestAction("TEST_01_FAILED", state, record, string.format(
+        "reason=%s detail=%s",
+        tostring(reason), tostring(detail)
+    ))
+    sayInfo(
+        getSpecificPlayer and getSpecificPlayer(0) or nil,
+        string.format("TEST 01 failed: %s (%s)", tostring(reason), tostring(detail))
+    )
+    return true
 end
 
 function DebugTools.runAutomatedIsoPlayerProbe(player)

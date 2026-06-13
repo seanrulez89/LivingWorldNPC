@@ -44,14 +44,19 @@ function Social.isMinimalDummyMoveActive(record)
     local motor = dummy and dummy.motor or nil
     local command = record and record.companion and record.companion.command or nil
 
-    if dummy and dummy.state == "move_to" then
+    if dummy and (dummy.state == "move_to" or dummy.state == "follow_player") then
         return true
     end
     if motor and (motor.state == "started" or motor.state == "stepping") then
         return true
     end
     if command and command.active == true then
-        if command.intentKind == "move_to" or command.kind == "move_to" or command.kind == "designated_location" then
+        if command.intentKind == "move_to"
+            or command.intentKind == "follow_player"
+            or command.kind == "move_to"
+            or command.kind == "designated_location"
+            or command.kind == "follow_player"
+        then
             return true
         end
     end

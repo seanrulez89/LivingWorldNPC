@@ -21,8 +21,8 @@ function Intents.moveTo(record, x, y, z, options)
     }, options))
 end
 
-function Intents.followPlayer(record)
-    return LWN.Schema.newIntent("follow_player", {})
+function Intents.followPlayer(record, options)
+    return LWN.Schema.newIntent("follow_player", mergeData({}, options))
 end
 
 function Intents.guardPlayer(record)

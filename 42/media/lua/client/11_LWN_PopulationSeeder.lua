@@ -25,6 +25,47 @@ local function randomName(desc)
     return desc:getForename(), desc:getSurname()
 end
 
+local function identityKey(firstName, lastName)
+    return string.lower(string.format("%s %s", tostring(firstName or ""), tostring(lastName or "")))
+end
+
+local function identityInUse(firstName, lastName, exceptId)
+    local wanted = identityKey(firstName, lastName)
+    local inUse = false
+    Store.eachNPC(function(existing)
+        if not inUse and existing.id ~= exceptId and identityKey(
+            existing.identity and existing.identity.firstName,
+            existing.identity and existing.identity.lastName
+        ) == wanted then
+            inUse = true
+        end
+    end)
+    return inUse
+end
+
+function Seeder.assignUniqueIdentity(record)
+    if not record then return false end
+    record.identity = record.identity or {}
+
+    local desc = SurvivorFactory and SurvivorFactory.CreateSurvivor and SurvivorFactory.CreateSurvivor() or nil
+    if desc then
+        desc:setFemale(record.identity.female == true)
+        for _ = 1, 64 do
+            local firstName, lastName = randomName(desc)
+            if firstName and lastName and not identityInUse(firstName, lastName, record.id) then
+                record.identity.firstName = firstName
+                record.identity.lastName = lastName
+                return true
+            end
+        end
+    end
+
+    local suffix = tostring(record.id or "NPC"):match("(%d+)$") or tostring(ZombRand(100, 1000))
+    record.identity.firstName = record.identity.firstName ~= "Unknown" and record.identity.firstName or "Morgan"
+    record.identity.lastName = string.format("%s %s", record.identity.lastName ~= "Unknown" and record.identity.lastName or "Reed", suffix)
+    return true
+end
+
 function Seeder.seedNewWorld(player, square)
     local root = Store.root()
     if root.seeded then return end
@@ -37,12 +78,8 @@ function Seeder.seedNewWorld(player, square)
         local seed = ZombRand(1, 2147483646)
         local record = LWN.Schema.newNPCRecord(id, seed)
 
-        local desc = SurvivorFactory.CreateSurvivor()
-        desc:setFemale(ZombRand(0, 2) == 0)
-        local firstName, lastName = randomName(desc)
-        record.identity.firstName = firstName or record.identity.firstName
-        record.identity.lastName = lastName or record.identity.lastName
-        record.identity.female = desc:isFemale()
+        record.identity.female = ZombRand(0, 2) == 0
+        Seeder.assignUniqueIdentity(record)
         record.identity.profession = pick(professions)
 
         local px, py = math.floor(player:getX()), math.floor(player:getY())

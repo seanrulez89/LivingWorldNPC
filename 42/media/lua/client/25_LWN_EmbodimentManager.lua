@@ -762,6 +762,19 @@ function Embody.tryEmbody(record, player)
 
     local actor = spawnResult and spawnResult.actor or nil
     local handle = spawnResult and spawnResult.handle or nil
+    if spawnResult and spawnResult.ok ~= false and spawnResult.pending == true and handle then
+        record.embodiment.state = "spawning"
+        record.embodiment.actorId = nil
+        record.embodiment.missingTicks = 0
+        record.embodiment.lastFailureReason = nil
+        record.embodiment.lastFailureDetail = nil
+        touchRecordStage(record, "spawning", "tryEmbody.pending")
+        traceStage("tryEmbody.pending", record, nil, {
+            source = "tryEmbody",
+            detail = string.format("carrierKind=%s handleStatus=%s", tostring(handle.kind), tostring(handle.status)),
+        })
+        return nil
+    end
     if actor then
         traceStage("tryEmbody.actor_created", record, actor, {
             source = "tryEmbody",
@@ -876,6 +889,108 @@ function Embody.tryEmbody(record, player)
     return nil
 end
 
+function Embody.pollPending(record, player)
+    record = ensureRecordShape(record)
+    if not record or record.embodiment.state ~= "spawning" then return nil end
+    local handle = Embody.getCarrierHandle(record)
+    if not handle or not (LWN.CarrierAdapter and LWN.CarrierAdapter.poll) then
+        record.embodiment.state = "hidden"
+        record.embodiment.cooldownUntilHour = worldAgeHours() + autoRearmCooldownHours(record)
+        touchRecordStage(record, "inactive", "pollPending.handle_missing")
+        setLastFailure(record, "pending_handle_missing", "carrier handle unavailable")
+        if LWN.DebugTools and LWN.DebugTools.onCarrierEmbodimentFailed then
+            LWN.DebugTools.onCarrierEmbodimentFailed(record, "pending_handle_missing", "carrier handle unavailable")
+        end
+        return nil
+    end
+
+    local ok, result = pcall(LWN.CarrierAdapter.poll, record, handle, { player = player })
+    if not ok then
+        result = { ok = false, pending = false, detail = result }
+    end
+    if result and result.pending == true then return nil end
+    if not result or result.ok == false or not result.actor then
+        if LWN.CarrierAdapter and LWN.CarrierAdapter.retire then
+            LWN.CarrierAdapter.retire(record, handle, { reason = result and result.detail or "pending_spawn_failed" })
+        end
+        record.embodiment.state = "hidden"
+        record.embodiment.actorId = nil
+        record.embodiment.cooldownUntilHour = worldAgeHours() + autoRearmCooldownHours(record)
+        touchRecordStage(record, "inactive", "pollPending.failed")
+        setLastFailure(record, "pending_spawn_failed", result and result.detail or "unknown")
+        traceStage("pollPending.failed", record, nil, {
+            source = "pollPending",
+            detail = result and result.detail or "unknown",
+        })
+        if LWN.DebugTools and LWN.DebugTools.onCarrierEmbodimentFailed then
+            LWN.DebugTools.onCarrierEmbodimentFailed(
+                record,
+                "pending_spawn_failed",
+                result and result.detail or "unknown"
+            )
+        end
+        return nil
+    end
+
+    local actor = result.actor
+    handle = result.handle or handle
+    local syncOk, syncResult = pcall(LWN.CarrierAdapter.sync, record, handle, {
+        mode = "full",
+        source = "pollPending.initial_sync",
+    })
+    if not syncOk or (type(syncResult) == "table" and syncResult.ok == false) then
+        LWN.CarrierAdapter.retire(record, handle, { reason = "pollPending.initial_sync_failed" })
+        record.embodiment.state = "hidden"
+        record.embodiment.actorId = nil
+        record.embodiment.cooldownUntilHour = worldAgeHours() + autoRearmCooldownHours(record)
+        touchRecordStage(record, "inactive", "pollPending.initial_sync_failed")
+        local syncDetail = syncResult
+        if syncOk and type(syncResult) == "table" then
+            syncDetail = syncResult.detail
+        end
+        setLastFailure(record, "initial_sync_failed", syncDetail)
+        if LWN.DebugTools and LWN.DebugTools.onCarrierEmbodimentFailed then
+            LWN.DebugTools.onCarrierEmbodimentFailed(record, "initial_sync_failed", syncDetail)
+        end
+        return nil
+    end
+
+    record.embodiment.state = "embodied"
+    record.embodiment.actorId = record.id
+    record.embodiment.lastSeenHour = worldAgeHours()
+    record.embodiment.missingTicks = 0
+    record.embodiment.lastFailureReason = nil
+    record.embodiment.lastFailureDetail = nil
+    record.embodiment.noAutoRearm = false
+    touchRecordStage(record, "active", "pollPending.bound")
+    Embody.touchGrace(record)
+    if Embody.registerActor(record, actor) == false then
+        LWN.CarrierAdapter.retire(record, handle, { reason = "pollPending.register_rejected" })
+        record.embodiment.state = "hidden"
+        record.embodiment.actorId = nil
+        setLastFailure(record, "register_rejected", "pending actor registration rejected")
+        if LWN.DebugTools and LWN.DebugTools.onCarrierEmbodimentFailed then
+            LWN.DebugTools.onCarrierEmbodimentFailed(
+                record,
+                "register_rejected",
+                "pending actor registration rejected"
+            )
+        end
+        return nil
+    end
+    if LWN.EncounterDirector and LWN.EncounterDirector.notifyEmbodied then
+        LWN.EncounterDirector.notifyEmbodied(record)
+    end
+    if LWN.DebugTools and LWN.DebugTools.onCarrierEmbodied then
+        LWN.DebugTools.onCarrierEmbodied(record, actor)
+    end
+    print(string.format(
+        "[LWN][Embodiment] pending actor bound npcId=%s carrier=%s",
+        tostring(record.id), tostring(handle.kind)
+    ))
+    return actor
+end
+
 function Embody.tryDespawn(record, actor, player)
     record = ensureRecordShape(record)
     if record.embodiment.state ~= "embodied" or not actor then return false end
@@ -986,16 +1101,18 @@ function Embody.registerActor(record, actor)
         return false
     end
     Embody._actors[record.id] = actor
-    Embody.registerCarrierHandle(record, {
+    local handle = Embody.getCarrierHandle(record) or {
         kind = record.embodiment and record.embodiment.carrierKind or "isoplayer",
-        actor = actor,
-        status = "active",
         spawnedAt = worldAgeHours(),
         detail = "legacy_registerActor_bridge",
-        runtime = {
-            source = "Embody.registerActor",
-        },
-    })
+        runtime = {},
+    }
+    handle.actor = actor
+    handle.status = "active"
+    handle.pending = false
+    handle.runtime = handle.runtime or {}
+    handle.runtime.source = handle.runtime.source or "Embody.registerActor"
+    Embody.registerCarrierHandle(record, handle)
     local lastKnown = updateLastKnownPosition(record, actor)
     Store.setEmbodiedMeta(record.id, {
         state = record.embodiment.state,
@@ -1483,13 +1600,25 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
             })
         end
     else
-        updateCleanupState(npcId, "actor.cleanup.skipped", reason, record, actor, {
-            removeRecord = removeRecord,
-        })
-        traceCleanup("actor.cleanup.skipped", npcId, record, actor, {
-            reason = reason,
-            detail = "actor=nil",
-        })
+        local pendingHandle = record and Embody.getCarrierHandle(record) or nil
+        if pendingHandle and LWN.CarrierAdapter and LWN.CarrierAdapter.retire then
+            LWN.CarrierAdapter.retire(record, pendingHandle, { reason = reason })
+            updateCleanupState(npcId, "actor.cleanup.pending_handle", reason, record, actor, {
+                removeRecord = removeRecord,
+            })
+            traceCleanup("actor.cleanup.pending_handle", npcId, record, actor, {
+                reason = reason,
+                detail = "actor=nil pending handle retired",
+            })
+        else
+            updateCleanupState(npcId, "actor.cleanup.skipped", reason, record, actor, {
+                removeRecord = removeRecord,
+            })
+            traceCleanup("actor.cleanup.skipped", npcId, record, actor, {
+                reason = reason,
+                detail = "actor=nil",
+            })
+        end
     end
 
     local leftovers = collectCleanupObjects(record, npcId, actor)

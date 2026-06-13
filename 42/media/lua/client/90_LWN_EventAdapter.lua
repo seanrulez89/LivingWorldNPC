@@ -1220,10 +1220,16 @@ local function missingActorThreshold(record)
         return tonumber(LWN.Config.Debug.DebugActorLostRecoveryTicks) or 120
     end
     local carrierKind = getCarrierKind(record)
-    if carrierKind == "isozombie" then
+    if carrierKind == "isozombie" or carrierKind == "bandits" then
         return 40
     end
     return 10
+end
+
+local function actorRecoverySquare(record, actor)
+    return protectedCall(actor, "getSquare")
+        or protectedCall(actor, "getCurrentSquare")
+        or getAnchorSquare(record)
 end
 
 local function tryReclaimHandleActor(record, actor, source)
@@ -1247,7 +1253,7 @@ local function tryReclaimHandleActor(record, actor, source)
     restampManagedActor(record, actor, source or "tryReclaimHandleActor")
     reapplyRecoveredDummyShell(record, actor, source or "tryReclaimHandleActor")
     if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
-        LWN.ActorFactory.ensureActorInWorld(actor, getAnchorSquare(record))
+        LWN.ActorFactory.ensureActorInWorld(actor, actorRecoverySquare(record, actor))
     end
     protectedCall(actor, "setInvisible", false)
     protectedCall(actor, "setTarget", nil)
@@ -1331,17 +1337,14 @@ local function resolveEmbodiedActor(record)
                 square = anchorSquare,
                 detail = string.format("hadWorld=%s hadSquare=%s", tostring(hadWorld), tostring(hadSquare ~= nil)),
             })
-        else
-            LWN.ActorFactory.ensureActorInWorld(actor, anchorSquare)
+        elseif hadWorld ~= true or not hadSquare then
+            LWN.ActorFactory.ensureActorInWorld(actor, hadSquare or anchorSquare)
             local hasWorld = protectedCall(actor, "isExistInTheWorld")
-            local hasSquare = protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")
-            if hadWorld ~= true or not hadSquare then
-                traceStage("resolveEmbodiedActor.repaired_cached", record, actor, {
-                    source = "resolveEmbodiedActor",
-                    square = anchorSquare,
-                    detail = string.format("hadWorld=%s hasWorld=%s", tostring(hadWorld), tostring(hasWorld)),
-                })
-            end
+            traceStage("resolveEmbodiedActor.repaired_cached", record, actor, {
+                source = "resolveEmbodiedActor",
+                square = anchorSquare,
+                detail = string.format("hadWorld=%s hasWorld=%s", tostring(hadWorld), tostring(hasWorld)),
+            })
         end
     end
     if actor and isCarrierActorUsable(record, actor) then
@@ -1494,9 +1497,13 @@ local function tickEmbodiedRecord(record, actor, player)
     traceStage("tickEmbodiedRecord.start", record, actor, {
         source = "tickEmbodiedRecord",
     })
+    local carrierKind = getCarrierKind(record)
     traceDeathState(record, actor, "tickEmbodiedRecord.start")
     traceEmbodiedDeathLike(record, actor, "tickEmbodiedRecord.start")
-    if (LWN.ActorFactory and LWN.ActorFactory.isDeathLikeActor and LWN.ActorFactory.isDeathLikeActor(actor))
+    local actorDeathLike = carrierKind == "bandits"
+        and (protectedCall(actor, "isAlive") == false or (tonumber(protectedCall(actor, "getHealth")) or 1) <= 0)
+        or (carrierKind ~= "bandits" and LWN.ActorFactory and LWN.ActorFactory.isDeathLikeActor and LWN.ActorFactory.isDeathLikeActor(actor))
+    if actorDeathLike
         or isAliveRecord(record) == false
     then
         if isAliveRecord(record) ~= false and LWN.EmbodimentManager and LWN.EmbodimentManager.noteDeath then
@@ -1509,6 +1516,12 @@ local function tickEmbodiedRecord(record, actor, player)
     end
     if harnessQuarantine(record) then
         hardReNeutralize(record, actor, "tickEmbodiedRecord.pre_sync")
+    end
+    if carrierKind == "bandits" and LWN.CarrierAdapter and LWN.CarrierAdapter.sync then
+        LWN.CarrierAdapter.sync(record, getCarrierHandle(record), {
+            mode = "maintenance",
+            source = "tickEmbodiedRecord.bandits_maintenance",
+        })
     end
     if LWN.ActorSync and LWN.ActorSync.ensureEmbodiedActorState then
         LWN.ActorSync.ensureEmbodiedActorState(record, actor)
@@ -1535,7 +1548,7 @@ local function tickEmbodiedRecord(record, actor, player)
         }
     end
     local dummyMode = isMinimalDummyRecord(record)
-    if dummyMode and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
+    if carrierKind == "isozombie" and dummyMode and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
         LWN.Carriers.isozombie.enforceHardDummyShell(
             record,
             actor,
@@ -1552,7 +1565,11 @@ local function tickEmbodiedRecord(record, actor, player)
     local allowAutonomousMovement = relationPolicy and relationPolicy.allowAutonomousMovement == true
     local suppressForNeutralized = relationPolicy and relationPolicy.shouldNeutralizeCarrier == true and allowMovement ~= true
 
-    if dummyMode and queueBefore and queueBefore.kind ~= "move_to" then
+    if dummyMode
+        and queueBefore
+        and queueBefore.kind ~= "move_to"
+        and queueBefore.kind ~= "follow_player"
+    then
         LWN.ActionRuntime.clear(record, actor)
         stampEmbodiedDecision(record, {
             source = "dummy_invalid_queue_cleared",
@@ -1676,7 +1693,7 @@ local function tickEmbodiedRecord(record, actor, player)
             "EventAdapter.tickEmbodiedRecord.post_runtime.settle"
         )
     end
-    if dummyMode and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
+    if carrierKind == "isozombie" and dummyMode and LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.enforceHardDummyShell then
         local scrubMode = isDummyMoveAuthorityActive(record) and "move" or "idle"
         LWN.Carriers.isozombie.enforceHardDummyShell(
             record,
@@ -1979,6 +1996,9 @@ function Adapter.onTick()
     if LWN.EmbodimentManager and LWN.EmbodimentManager.tickDeferredCleanup then
         LWN.EmbodimentManager.tickDeferredCleanup()
     end
+    if LWN.CarrierAdapter and LWN.CarrierAdapter.tick then
+        LWN.CarrierAdapter.tick()
+    end
 
     LWN.PopulationStore.eachNPC(function(record)
         if isAliveRecord(record) and record.embodiment.state == "hidden" then
@@ -2022,6 +2042,12 @@ function Adapter.onTick()
     LWN.PopulationStore.eachNPC(function(record)
         if isAliveRecord(record) and record.embodiment.state == "eligible" then
             LWN.EmbodimentManager.tryEmbody(record, player)
+        end
+    end)
+
+    LWN.PopulationStore.eachNPC(function(record)
+        if isAliveRecord(record) and record.embodiment.state == "spawning" then
+            LWN.EmbodimentManager.pollPending(record, player)
         end
     end)
 
@@ -2078,7 +2104,7 @@ function Adapter.onTick()
                         and carrierActor:getModData().LWN_TestHarnessLabel == record.debugHarness.label
                     if carrierActor and (carrierKnownNpcId == record.id or carrierHarnessMatch or carrierHandle and carrierHandle.actor == carrierActor) then
                         if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
-                            LWN.ActorFactory.ensureActorInWorld(carrierActor, getAnchorSquare(record))
+                            LWN.ActorFactory.ensureActorInWorld(carrierActor, actorRecoverySquare(record, carrierActor))
                         end
                         hardReNeutralize(record, carrierActor, "onTick.actor_missing_recovery")
                         if LWN.EmbodimentManager and LWN.EmbodimentManager.registerActor then

@@ -156,7 +156,7 @@ local function isManagedZombieCarrier(actor)
     if not npcId then return false end
 
     local modData = getModData(actor)
-    return modData ~= nil and modData.LWN_CarrierKind == "isozombie"
+    return modData ~= nil and (modData.LWN_CarrierKind == "isozombie" or modData.LWN_CarrierKind == "bandits")
 end
 
 local function isTargetableNpcActor(actor)
@@ -303,11 +303,127 @@ function UIContext.findNpcActorInWorldObjects(worldObjects)
     return bestActor
 end
 
-local function addNpcInteractionSubmenu(context, actor)
+local function clickedSquareFromWorldObjects(worldObjects)
+    if BanditCompatibility and BanditCompatibility.GetClickedSquare then
+        local ok, square = pcall(BanditCompatibility.GetClickedSquare)
+        if ok and square then return square end
+    end
+    if not worldObjects then return nil end
+    for i = 1, #worldObjects do
+        local square = protectedCall(worldObjects[i], "getSquare") or protectedCall(worldObjects[i], "getCurrentSquare")
+        if square then return square end
+    end
+    return nil
+end
+
+local function recordForActor(actor)
+    local npcId = getNpcId(actor)
+    return npcId and Store and Store.getNPC and Store.getNPC(npcId) or nil
+end
+
+local function displayNameFor(record, actor)
     local modData = getModData(actor)
-    local displayName = protectedCall(actor, "getFullName")
-        or modData and modData.LWN_DisplayName
-        or tostring(getNpcId(actor) or "Unknown")
+    if modData and modData.LWN_DisplayName then
+        return tostring(modData.LWN_DisplayName)
+    end
+    local identity = record and record.identity or {}
+    local fullName = string.format("%s %s", tostring(identity.firstName or ""), tostring(identity.lastName or ""))
+    if fullName:gsub("%s", "") ~= "" then return fullName end
+    return tostring(record and record.id or getNpcId(actor) or "Unknown")
+end
+
+local function queueCommand(record, actor, intent, squadRole)
+    if not record or not actor or not intent then return false end
+    record.companion = record.companion or {}
+    record.companion.squadRole = squadRole
+    if LWN.ActionRuntime and LWN.ActionRuntime.replaceWithIntent then
+        return LWN.ActionRuntime.replaceWithIntent(record, actor, intent) == true
+    end
+    return false
+end
+
+local function commandMoveToSquare(record, actor, square)
+    if not square or not LWN.ActionIntents then return false end
+    local x = protectedCall(square, "getX")
+    local y = protectedCall(square, "getY")
+    local z = protectedCall(square, "getZ")
+    if x == nil or y == nil or z == nil then return false end
+    local label = string.format("PLAYER MARK %d,%d,%d", x, y, z)
+    local intent = LWN.ActionIntents.moveTo(record, x, y, z, {
+        commandKind = "designated_location",
+        commandSource = "world_context",
+        commandReason = "player_right_click_move",
+        destinationLabel = label,
+    })
+    local queued = queueCommand(record, actor, intent, "move")
+    print(string.format(
+        "[LWN][Command] move npcId=%s name=%s dest=%s queued=%s",
+        tostring(record.id), displayNameFor(record, actor), label, tostring(queued)
+    ))
+    return queued
+end
+
+local function commandFollowPlayer(record, actor)
+    if not LWN.ActionIntents then return false end
+    local intent = LWN.ActionIntents.followPlayer(record, {
+        commandKind = "follow_player",
+        commandSource = "world_context",
+        commandReason = "player_follow_command",
+    })
+    local queued = queueCommand(record, actor, intent, "follow")
+    print(string.format(
+        "[LWN][Command] follow npcId=%s name=%s queued=%s",
+        tostring(record.id), displayNameFor(record, actor), tostring(queued)
+    ))
+    return queued
+end
+
+local function commandWait(record, actor)
+    if not record or not actor or not LWN.ActionRuntime then return false end
+    record.companion = record.companion or {}
+    record.companion.squadRole = "wait"
+    LWN.ActionRuntime.clear(record, actor)
+    print(string.format(
+        "[LWN][Command] wait npcId=%s name=%s",
+        tostring(record.id), displayNameFor(record, actor)
+    ))
+    return true
+end
+
+local function addCommandOptions(sub, record, actor, clickedSquare)
+    if clickedSquare then
+        sub:addOption("Move to this location", { record = record, actor = actor, square = clickedSquare }, function(args)
+            commandMoveToSquare(args.record, args.actor, args.square)
+        end)
+    end
+    sub:addOption("Follow me", { record = record, actor = actor }, function(args)
+        commandFollowPlayer(args.record, args.actor)
+    end)
+    sub:addOption("Wait here", { record = record, actor = actor }, function(args)
+        commandWait(args.record, args.actor)
+    end)
+end
+
+local function embodiedCommandTargets()
+    local targets = {}
+    if not (Store and Store.eachNPC) then return targets end
+    Store.eachNPC(function(record)
+        if record.embodiment and record.embodiment.state == "embodied" then
+            local actor = getRegisteredActor(record)
+            if isTargetableNpcActor(actor) then
+                targets[#targets + 1] = { record = record, actor = actor }
+            end
+        end
+    end)
+    table.sort(targets, function(a, b)
+        return displayNameFor(a.record, a.actor) < displayNameFor(b.record, b.actor)
+    end)
+    return targets
+end
+
+local function addNpcInteractionSubmenu(context, player, actor, clickedSquare)
+    local record = recordForActor(actor)
+    local displayName = displayNameFor(record, actor)
     local rootText = LWN.Loc.textOrDefault("LWN_UI_Context_Root", "Living NPC") .. ": " .. tostring(displayName)
     local option = context:addOption(rootText, nil, nil)
     local sub = context:getNew(context)
@@ -324,6 +440,25 @@ local function addNpcInteractionSubmenu(context, actor)
     sub:addOption(LWN.Loc.textOrDefault("LWN_UI_Context_Panel", "Open Panel"), actor, function(target)
         LWN.UICommandPanel.show(target)
     end)
+
+    addCommandOptions(sub, record, actor, clickedSquare)
+end
+
+local function addGroundCommandSubmenu(context, player, clickedSquare)
+    if not clickedSquare then return end
+    local targets = embodiedCommandTargets()
+    if #targets == 0 then return end
+
+    local rootOption = context:addOption("Living NPC Commands", nil, nil)
+    local rootSub = context:getNew(context)
+    context:addSubMenu(rootOption, rootSub)
+    for i = 1, #targets do
+        local target = targets[i]
+        local npcOption = rootSub:addOption(displayNameFor(target.record, target.actor), nil, nil)
+        local npcSub = rootSub:getNew(rootSub)
+        rootSub:addSubMenu(npcOption, npcSub)
+        addCommandOptions(npcSub, target.record, target.actor, clickedSquare)
+    end
 end
 
 local function addDebugSubmenu(context, player, actor)
@@ -338,7 +473,7 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
-    settingsSub:addOption("TEST 01 - Spawn Baseline (IsoZombie)", player, function(p)
+    settingsSub:addOption("TEST 01 - Spawn Baseline (Bandits)", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest01 then
             LWN.DebugTools.runAutomatedIsoZombieTest01(p)
         end
@@ -356,12 +491,6 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
-    settingsSub:addOption("TEST 04 - Return/Recovery Check", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest04 then
-            LWN.DebugTools.runAutomatedIsoZombieTest04(p)
-        end
-    end)
-
     settingsSub:addOption("TEST STATUS - Dump Current", player, function(p)
         if LWN.DebugTools and LWN.DebugTools.dumpAutomatedIsoZombieTestStatus then
             LWN.DebugTools.dumpAutomatedIsoZombieTestStatus(p)
@@ -374,9 +503,12 @@ function UIContext.onFillWorldObjectContextMenu(playerNum, context, worldObjects
 
     local player = getPlayerByNum(playerNum)
     local actor = UIContext.findNpcActorInWorldObjects(worldObjects)
+    local clickedSquare = clickedSquareFromWorldObjects(worldObjects)
 
     if actor then
-        addNpcInteractionSubmenu(context, actor)
+        addNpcInteractionSubmenu(context, player, actor, clickedSquare)
+    else
+        addGroundCommandSubmenu(context, player, clickedSquare)
     end
 
     addDebugSubmenu(context, player, actor)

@@ -157,6 +157,10 @@ local function getCarrierKind(record, actor)
     return modData and modData.LWN_CarrierKind or record and record.embodiment and record.embodiment.carrierKind or nil
 end
 
+local function isZombieShellCarrier(kind)
+    return kind == "isozombie" or kind == "bandits"
+end
+
 traceStage = function(stage, record, actor, extra)
     if LWN.ActorFactory and LWN.ActorFactory.debugStage then
         LWN.ActorFactory.debugStage("ActorSync", stage, record, actor, protectedCall(actor, "getDescriptor"), extra)
@@ -174,7 +178,7 @@ local function enforceEmbodiedFlags(record, actor)
     local carrierKind = getCarrierKind(record, actor)
     local female = record and record.identity and record.identity.female == true
 
-    if carrierKind ~= "isozombie" then
+    if not isZombieShellCarrier(carrierKind) then
         protectedCall(actor, "setFemale", female)
         if protectedCall(actor, "isFemale") ~= female then
             protectedCall(actor, "setFemaleEtc", female)
@@ -187,7 +191,7 @@ local function enforceEmbodiedFlags(record, actor)
 
     protectedCall(actor, "setVisibleToNPCs", true)
 
-    if carrierKind ~= "isozombie" then
+    if not isZombieShellCarrier(carrierKind) then
         if LWN.ActorFactory and LWN.ActorFactory.restoreEmbodiedPresentationFlags then
             LWN.ActorFactory.restoreEmbodiedPresentationFlags(actor, "ActorSync.enforceEmbodiedFlags")
         else

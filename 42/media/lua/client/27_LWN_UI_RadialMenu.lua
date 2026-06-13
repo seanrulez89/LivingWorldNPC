@@ -65,7 +65,8 @@ local function resolveTarget()
 end
 
 local function say(actor, text)
-    if actor and actor.Say then
+    local modData = protectedCall(actor, "getModData")
+    if actor and actor.Say and not (modData and modData.LWN_CarrierKind == "bandits") then
         actor:Say(text)
     end
     print("[LWN][UIRadial] " .. tostring(text))
@@ -216,6 +217,16 @@ function UIRadial.onCommand(command)
             LWN.EmbodimentManager.touchGrace(record)
         end
         say(actor, "Holding here.")
+    elseif command == "follow" then
+        record.companion.squadRole = "follow"
+        if record.dummy then
+            record.dummy.state = "follow_player"
+        end
+        queueIntent(record, actor, LWN.ActionIntents.followPlayer(record, {
+            commandKind = "follow_player",
+            commandSource = "ui_radial",
+            commandReason = "player_follow_command",
+        }), "Following you.")
     elseif command == "panel" then
         if LWN.UICommandPanel and LWN.UICommandPanel.show then
             LWN.UICommandPanel.show(actor)
@@ -234,6 +245,7 @@ function UIRadial.showFor(actor)
     menu:setY((UIManager.getLastMouseY and UIManager.getLastMouseY() or 300) - LWN.Config.UI.QuickMenuOuterRadius)
 
     menu:addSlice("Move", nil, UIRadial.onCommand, "move")
+    menu:addSlice("Follow", nil, UIRadial.onCommand, "follow")
     menu:addSlice("Wait", nil, UIRadial.onCommand, "wait")
     menu:addSlice("Panel", nil, UIRadial.onCommand, "panel")
 

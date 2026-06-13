@@ -139,6 +139,42 @@ function Adapter.isUsable(handle)
     return handle.actor ~= nil
 end
 
+function Adapter.poll(record, handle, options)
+    record = ensureRecordShape(record)
+    handle = handle or Adapter.getHandle(record)
+    if not record or not handle then
+        return { ok = false, pending = false, detail = "record_or_handle_missing" }
+    end
+
+    local impl = Adapter.getImplementation(handle.kind)
+    if not impl or not impl.poll then
+        return { ok = false, pending = false, handle = handle, detail = "carrier_poll_missing" }
+    end
+
+    local previousStatus = handle.status
+    local previousDetail = handle.detail
+    local result = impl.poll(record, handle, options or {}) or {}
+    result.handle = result.handle or handle
+    if result.actor then
+        result.handle.actor = result.actor
+    end
+    result.handle.pending = result.pending == true
+    result.handle.status = result.status
+        or (result.pending == true and "pending")
+        or (result.ok == false and "failed")
+        or (result.actor and "active")
+        or result.handle.status
+    result.handle.detail = result.detail or result.handle.detail
+    Adapter.registerHandle(record, result.handle)
+    if result.pending ~= true
+        or previousStatus ~= result.handle.status
+        or previousDetail ~= result.handle.detail
+    then
+        trace("poll", record, result.handle, result.detail)
+    end
+    return result
+end
+
 function Adapter.spawn(record, options)
     record = ensureRecordShape(record)
     if not record then
@@ -167,10 +203,11 @@ function Adapter.spawn(record, options)
     local result = impl.spawn(record, options or {}) or {}
     local handle = Adapter.buildHandle(record, kind, result.handle or {
         actor = result.actor,
-        status = result.ok == false and "failed" or "active",
+        status = result.ok == false and "failed" or (result.pending == true and "pending" or "active"),
         detail = result.detail,
         spawnedAt = worldAgeHours(),
     })
+    handle.pending = result.pending == true or handle.pending == true
 
     if result.ok ~= false then
         handle.spawnedAt = handle.spawnedAt or worldAgeHours()
@@ -185,6 +222,44 @@ function Adapter.spawn(record, options)
         result.ok = result.actor ~= nil or kind == "none"
     end
     return result
+end
+
+
+function Adapter.cancelIntent(record, handle, intent, reason)
+    record = ensureRecordShape(record)
+    handle = handle or Adapter.getHandle(record)
+    if not record or not handle then
+        return { ok = true, handled = false, detail = "record_or_handle_missing" }
+    end
+    local impl = Adapter.getImplementation(handle.kind)
+    if not impl or not impl.cancelIntent then
+        return { ok = true, handled = false, detail = "carrier_cancel_intent_missing" }
+    end
+    local result = impl.cancelIntent(record, handle, intent, reason) or {}
+    result.handled = true
+    if result.ok == nil then result.ok = true end
+    return result
+end
+
+function Adapter.tickIntent(record, handle, intent)
+    record = ensureRecordShape(record)
+    handle = handle or Adapter.getHandle(record)
+    if not record or not handle then
+        return { handled = false, detail = "record_or_handle_missing" }
+    end
+    local impl = Adapter.getImplementation(handle.kind)
+    if not impl or not impl.tickIntent then
+        return { handled = false, detail = "carrier_tick_intent_missing" }
+    end
+    return impl.tickIntent(record, handle, intent) or { handled = false }
+end
+
+function Adapter.tick()
+    for _, impl in pairs(Carriers) do
+        if impl and impl.tick then
+            impl.tick()
+        end
+    end
 end
 
 function Adapter.sync(record, handle, options)
@@ -211,7 +286,9 @@ function Adapter.sync(record, handle, options)
     handle.status = result.ok == false and (handle.status or "active") or (result.status or handle.status or "active")
     handle.detail = result.detail or handle.detail
     Adapter.registerHandle(record, handle)
-    trace("sync", record, handle, result.detail)
+    if not (options and options.mode == "maintenance" and result.ok ~= false) then
+        trace("sync", record, handle, result.detail)
+    end
     result.handle = handle
     if result.ok == nil then result.ok = true end
     return result
@@ -265,7 +342,7 @@ end
 function Adapter.getDebugState(record, handle)
     record = ensureRecordShape(record)
     handle = handle or Adapter.getHandle(record)
-    return {
+    local state = {
         npcId = record and record.id or nil,
         carrierKind = handle and handle.kind or record and record.embodiment and record.embodiment.carrierKind or nil,
         handleStatus = handle and handle.status or nil,
@@ -275,4 +352,10 @@ function Adapter.getDebugState(record, handle)
         lastRetireAt = handle and handle.lastRetireAt or nil,
         detail = handle and handle.detail or nil,
     }
+    local impl = handle and Adapter.getImplementation(handle.kind) or nil
+    local extra = impl and impl.getDebugState and impl.getDebugState(record, handle) or nil
+    for key, value in pairs(extra or {}) do
+        state[key] = value
+    end
+    return state
 end
