@@ -43,6 +43,8 @@ local function enforceSafety(bandit, brain)
     if bandit.setNoTeeth then bandit:setNoTeeth(true) end
     if bandit.setGodMod then bandit:setGodMod(true) end
     if bandit.setInvulnerable then bandit:setInvulnerable(true) end
+    if bandit.setAvoidDamage then bandit:setAvoidDamage(true) end
+    if bandit.setShootable then bandit:setShootable(false) end
 end
 
 Integration.enforceSafety = enforceSafety

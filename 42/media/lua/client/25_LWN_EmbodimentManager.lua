@@ -276,6 +276,32 @@ local function updateCleanupState(npcId, stage, reason, record, actor, extra)
     return state
 end
 
+local function actorDeathLike(actor)
+    if not actor then return false end
+    if protectedCall(actor, "isDead") == true then return true end
+    if protectedCall(actor, "isAlive") == false then return true end
+    local health = tonumber(protectedCall(actor, "getHealth"))
+    if health ~= nil and health <= 0 then return true end
+    if LWN.ActorFactory and LWN.ActorFactory.isDeathLikeActor then
+        local ok, deathLike = pcall(LWN.ActorFactory.isDeathLikeActor, actor)
+        if ok and deathLike == true then return true end
+    end
+    return false
+end
+
+local function retireWorldObjectIdentity(modData, npcId)
+    if not modData then return end
+    modData.LWN_LastNpcId = npcId or modData.LWN_NpcId or modData.LWN_LastNpcId
+    modData.LWN_FormerCarrierKind = modData.LWN_CarrierKind or modData.LWN_FormerCarrierKind
+    modData.LWN_FormerTestHarnessLabel = modData.LWN_TestHarnessLabel or modData.LWN_FormerTestHarnessLabel
+    modData.LWN_NpcId = nil
+    modData.LWN_CarrierKind = nil
+    modData.LWN_ShellMarker = nil
+    modData.LWN_TestHarnessLabel = nil
+    modData.LWN_ManagedShellContract = nil
+    modData.LWN_AllowPlayerAttack = nil
+end
+
 local function getLifecycleBlock(record, actor)
     if not record then
         return "record_missing", "record=nil"
@@ -292,6 +318,14 @@ local function getLifecycleBlock(record, actor)
     end
     if record.embodiment and record.embodiment.state == "removed" then
         return "record_removed", "recordState=removed"
+    end
+    if actorDeathLike(actor) then
+        return "actor_death_like", string.format(
+            "actorDead=%s actorAlive=%s actorHealth=%s",
+            tostring(protectedCall(actor, "isDead")),
+            tostring(protectedCall(actor, "isAlive")),
+            tostring(protectedCall(actor, "getHealth"))
+        )
     end
 
     local actorCleanup = getActorCleanupState(actor)
@@ -464,10 +498,7 @@ local function detachWorldObject(obj, npcId, reason, options)
     })
 
     if preserveWorldObject then
-        if modData then
-            modData.LWN_LastNpcId = npcId or modData.LWN_LastNpcId
-            modData.LWN_NpcId = nil
-        end
+        retireWorldObjectIdentity(modData, npcId)
         traceCleanup("leftover.cleanup.preserved", npcId, nil, obj, {
             reason = reason,
             detail = string.format("kind=%s", tostring(worldObjectKind(obj))),
@@ -1356,6 +1387,18 @@ function Embody.noteDeath(record, actor, source, detail)
         Store.setEmbodiedMeta(record.id, meta)
     end
 
+    local modData = protectedCall(actor, "getModData")
+    retireWorldObjectIdentity(modData, record.id)
+    local handle = Embody.getCarrierHandle(record)
+    if handle then
+        handle.actor = nil
+        handle.pending = false
+        handle.status = "dead"
+        handle.detail = detail or source or "death_latched"
+        handle.lastRetireAt = worldAgeHours()
+        Embody.registerCarrierHandle(record, handle)
+    end
+
     traceCleanup("death.latched", record.id, record, actor, {
         reason = source,
         detail = detail,
@@ -1557,10 +1600,7 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
         })
         if preserveActorWorldObject then
             local modData = protectedCall(actor, "getModData")
-            if modData then
-                modData.LWN_LastNpcId = npcId or modData.LWN_LastNpcId
-                modData.LWN_NpcId = nil
-            end
+            retireWorldObjectIdentity(modData, npcId)
         elseif LWN.CarrierAdapter and LWN.CarrierAdapter.retire then
             local handle = Embody.getCarrierHandle(record) or {
                 kind = record and record.embodiment and record.embodiment.carrierKind or "isoplayer",

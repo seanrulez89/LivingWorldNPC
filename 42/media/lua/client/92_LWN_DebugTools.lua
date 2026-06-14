@@ -1119,8 +1119,7 @@ end
 local function collectDebugHarnessRecords()
     local records = {}
     Store.eachNPC(function(record)
-        if Store.isAlive(record) == true
-            and record.debugSpawnOnly == true
+        if record.debugSpawnOnly == true
             and record.debugHarness
             and record.debugHarness.enabled == true
         then
@@ -1144,7 +1143,7 @@ local function purgeRogueDebugHarnessShells(player, radius)
     local seen = {}
 
     local function hasHarnessMarker(obj)
-        local modData = obj and obj.getModData and obj:getModData() or nil
+        local modData = protectedCall(obj, "getModData")
         if not modData then return false end
         return modData.LWN_TestHarnessLabel ~= nil
             or (type(modData.LWN_ShellMarker) == "string"
@@ -1156,18 +1155,27 @@ local function purgeRogueDebugHarnessShells(player, radius)
         if not obj or seen[obj] then return end
         seen[obj] = true
         if not hasHarnessMarker(obj) then return end
-        local modData = obj.getModData and obj:getModData() or nil
-        if modData and modData.LWN_CarrierKind == "bandits"
-            and LWN.Carriers
-            and LWN.Carriers.bandits
-            and LWN.Carriers.bandits.removeActor
-        then
-            LWN.Carriers.bandits.removeActor(obj, "debug_test_clean_slate_orphan")
-        elseif LWN.ActorFactory and LWN.ActorFactory.cleanupActor and LWN.ActorFactory.hasRuntimeCore and LWN.ActorFactory.hasRuntimeCore(obj) then
-            LWN.ActorFactory.cleanupActor(obj, "debug_test_clean_slate")
-        else
-            protectedCall(obj, "removeFromSquare")
-            protectedCall(obj, "removeFromWorld")
+        local ok, err = pcall(function()
+            local modData = protectedCall(obj, "getModData")
+            if modData and modData.LWN_CarrierKind == "bandits"
+                and LWN.Carriers
+                and LWN.Carriers.bandits
+                and LWN.Carriers.bandits.removeActor
+            then
+                LWN.Carriers.bandits.removeActor(obj, "debug_test_clean_slate_orphan")
+            elseif LWN.ActorFactory and LWN.ActorFactory.cleanupActor and LWN.ActorFactory.hasRuntimeCore and LWN.ActorFactory.hasRuntimeCore(obj) then
+                LWN.ActorFactory.cleanupActor(obj, "debug_test_clean_slate")
+            else
+                protectedCall(obj, "removeFromSquare")
+                protectedCall(obj, "removeFromWorld")
+            end
+        end)
+        if not ok then
+            print(string.format(
+                "[LWN][Debug] clean slate orphan removal failed actor=%s error=%s",
+                tostring(obj), tostring(err)
+            ))
+            return
         end
         removed = removed + 1
     end

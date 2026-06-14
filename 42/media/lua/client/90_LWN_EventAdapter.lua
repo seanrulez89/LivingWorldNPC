@@ -914,6 +914,14 @@ local function recoverableShellCandidateInfo(record, obj)
     local cleanup = getActorCleanupState(obj)
     local square = obj and (protectedCall(obj, "getCurrentSquare") or protectedCall(obj, "getSquare")) or nil
     local inWorld = obj and protectedCall(obj, "isExistInTheWorld") or nil
+    local presentation = obj and getPresentationState(obj) or nil
+    local health = presentation and presentation.health or (obj and protectedCall(obj, "getHealth") or nil)
+    local dead = presentation and presentation.dead or (obj and protectedCall(obj, "isDead") or nil)
+    local alive = obj and protectedCall(obj, "isAlive") or nil
+    local deathLike = presentation and presentation.deathLike == true
+        or dead == true
+        or alive == false
+        or (type(health) == "number" and health <= 0)
     local runtimeCore = obj and (not LWN.ActorFactory or not LWN.ActorFactory.hasRuntimeCore or LWN.ActorFactory.hasRuntimeCore(obj)) or nil
     local x = obj and (protectedCall(obj, "getX") or protectedCall(square, "getX")) or nil
     local y = obj and (protectedCall(obj, "getY") or protectedCall(square, "getY")) or nil
@@ -931,6 +939,10 @@ local function recoverableShellCandidateInfo(record, obj)
         cleanupPending = cleanup and cleanup.pending == true or false,
         cleanupStage = cleanup and cleanup.stage or nil,
         destroyed = obj and protectedCall(obj, "isDestroyed") == true or false,
+        dead = dead,
+        alive = alive,
+        health = health,
+        deathLike = deathLike == true,
         inWorld = inWorld,
         zombie = obj and protectedCall(obj, "isZombie") == true or false,
         squarePresent = square ~= nil,
@@ -952,6 +964,9 @@ local function recoverableShellCandidateDiagnosis(record, obj)
     end
     if info.destroyed == true then
         return false, info, "destroyed"
+    end
+    if info.deathLike == true then
+        return false, info, "death_like"
     end
     if info.inWorld == false then
         return false, info, "not_in_world"
@@ -977,7 +992,7 @@ end
 local function recoverableShellCandidateDetail(info, reason)
     info = info or {}
     return string.format(
-        "reason=%s actorRef=%s activeNpcId=%s knownNpcId=%s lastNpcId=%s harnessLabel=%s harnessMatch=%s shellMarker=%s shellMatch=%s managed=%s cleanupPending=%s cleanupStage=%s world=%s zombie=%s square=%s runtimeCore=%s sceneCulled=%s alpha=%s targetAlpha=%s pos=%s",
+        "reason=%s actorRef=%s activeNpcId=%s knownNpcId=%s lastNpcId=%s harnessLabel=%s harnessMatch=%s shellMarker=%s shellMatch=%s managed=%s cleanupPending=%s cleanupStage=%s dead=%s alive=%s health=%s deathLike=%s world=%s zombie=%s square=%s runtimeCore=%s sceneCulled=%s alpha=%s targetAlpha=%s pos=%s",
         tostring(reason or "none"),
         tostring(info.actorRef or "nil"),
         tostring(info.activeNpcId or "nil"),
@@ -990,6 +1005,10 @@ local function recoverableShellCandidateDetail(info, reason)
         tostring(info.managedContract),
         tostring(info.cleanupPending),
         tostring(info.cleanupStage or "nil"),
+        tostring(info.dead),
+        tostring(info.alive),
+        safeNumber(info.health),
+        tostring(info.deathLike),
         tostring(info.inWorld),
         tostring(info.zombie),
         tostring(info.squarePresent),
@@ -1319,6 +1338,11 @@ local function resolveEmbodiedActor(record)
             detail = string.format("reason=actor_cleanup_pending %s", actorCleanupDetail(actor)),
         })
         actor = nil
+    end
+    local cachedPresentation = actor and getPresentationState(actor) or nil
+    if actor and cachedPresentation and cachedPresentation.deathLike == true then
+        traceEmbodiedDeathLike(record, actor, "resolveEmbodiedActor.cached_death_like")
+        return actor
     end
     if actor and harnessQuarantine(record) then
         hardReNeutralize(record, actor, "resolveEmbodiedActor.cached")
@@ -2061,6 +2085,12 @@ function Adapter.onTick()
                     hideEmbodiedRecord(record, actor, "embodied_tick_error", err)
                 end
             else
+                if isAliveRecord(record) == false then
+                    if LWN.EmbodimentManager and LWN.EmbodimentManager.tickDeathLifecycle then
+                        LWN.EmbodimentManager.tickDeathLifecycle(record, nil, "onTick.dead_actor_missing")
+                    end
+                    return
+                end
                 local recovered = findActorNearPlayerForHarness(record, player)
                 if recovered then
                     if LWN.EmbodimentManager and LWN.EmbodimentManager.registerActor then
@@ -2096,13 +2126,17 @@ function Adapter.onTick()
                     end
                     local carrierHandle = getCarrierHandle(record)
                     local carrierActor = carrierHandle and carrierHandle.actor or nil
+                    local carrierAccepted, carrierInfo, carrierReason = recoverableShellCandidateDiagnosis(record, carrierActor)
                     local carrierKnownNpcId = getKnownNpcId(carrierActor)
+                    local carrierModData = protectedCall(carrierActor, "getModData")
                     local carrierHarnessMatch = carrierActor
                         and record.debugHarness
                         and record.debugHarness.label
-                        and protectedCall(carrierActor, "getModData")
-                        and carrierActor:getModData().LWN_TestHarnessLabel == record.debugHarness.label
-                    if carrierActor and (carrierKnownNpcId == record.id or carrierHarnessMatch or carrierHandle and carrierHandle.actor == carrierActor) then
+                        and carrierModData
+                        and carrierModData.LWN_TestHarnessLabel == record.debugHarness.label
+                    if carrierActor and carrierAccepted == true
+                        and (carrierKnownNpcId == record.id or carrierHarnessMatch or carrierHandle and carrierHandle.actor == carrierActor)
+                    then
                         if LWN.ActorFactory and LWN.ActorFactory.ensureActorInWorld then
                             LWN.ActorFactory.ensureActorInWorld(carrierActor, actorRecoverySquare(record, carrierActor))
                         end
@@ -2124,6 +2158,16 @@ function Adapter.onTick()
                         traceStage("onTick.actor_missing_recovered_from_handle", record, carrierActor, {
                             source = "onTick",
                             detail = string.format("carrierKind=%s", tostring(getCarrierKind(record))),
+                        })
+                    elseif carrierActor then
+                        carrierHandle.actor = nil
+                        noteRecoveryDebug(record, "missing_handle_rejected", string.format(
+                            "source=onTick.actor_missing_recovery %s",
+                            recoverableShellCandidateDetail(carrierInfo, carrierReason)
+                        ))
+                        traceStage("onTick.actor_missing_handle_rejected", record, carrierActor, {
+                            source = "onTick",
+                            detail = recoverableShellCandidateDetail(carrierInfo, carrierReason),
                         })
                     elseif record.embodiment.missingTicks >= threshold then
                         traceStage("onTick.actor_missing_threshold", record, nil, {

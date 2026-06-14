@@ -32,6 +32,7 @@ local FOLLOW_LOCOMOTION = {
 }
 
 Carrier.RetiredKeys = Carrier.RetiredKeys or {}
+Carrier.PendingHitRepairs = Carrier.PendingHitRepairs or {}
 
 local function nowMs()
     if getTimestampMs then return getTimestampMs() end
@@ -146,7 +147,10 @@ local function applySpawnCalm(handle)
 end
 
 local function brainFor(actor)
-    return actor and BanditBrain and BanditBrain.Get and BanditBrain.Get(actor) or nil
+    if not (actor and BanditBrain and BanditBrain.Get) then return nil end
+    local ok, brain = pcall(BanditBrain.Get, actor)
+    if ok then return brain end
+    return nil
 end
 
 local function isControlledBrain(brain)
@@ -203,6 +207,32 @@ local function clearBanditCaches(id)
     end
 end
 
+local function actorDeathLike(actor)
+    if not actor then return true end
+    local objectName = tostring(protectedCall(actor, "getObjectName") or "")
+    if objectName == "Corpse" or objectName == "IsoDeadBody" then return true end
+    if protectedCall(actor, "isDead") == true then return true end
+    if protectedCall(actor, "isAlive") == false then return true end
+    local health = tonumber(protectedCall(actor, "getHealth"))
+    return health ~= nil and health <= 0
+end
+
+local function safeBanditId(actor, hint)
+    if hint ~= nil then return hint end
+    local brain = brainFor(actor)
+    if brain and brain.id ~= nil then return brain.id end
+    local modData = protectedCall(actor, "getModData")
+    if modData and modData.LWN_BanditId ~= nil then
+        return modData.LWN_BanditId
+    end
+    if actorDeathLike(actor) then return nil end
+    if BanditUtils and BanditUtils.GetZombieID then
+        local ok, id = pcall(BanditUtils.GetZombieID, actor)
+        if ok then return id end
+    end
+    return nil
+end
+
 local function stopActor(actor)
     if not actor then return end
     if Bandit and Bandit.ClearTasks then Bandit.ClearTasks(actor) end
@@ -241,19 +271,41 @@ local function rememberMoveResult(handle, move, status, reason, distance)
     }
 end
 
-local function removeActor(actor, reason)
+local function removeActor(actor, reason, idHint)
     if not actor then return end
-    local brain = brainFor(actor)
-    local id = brain and brain.id or (BanditUtils and BanditUtils.GetZombieID and BanditUtils.GetZombieID(actor)) or nil
-    stopActor(actor)
+    local id = safeBanditId(actor, idHint)
+    local dead = actorDeathLike(actor)
+    if not dead then
+        stopActor(actor)
+    else
+        local emitter = protectedCall(actor, "getEmitter")
+        protectedCall(emitter, "stopAll")
+    end
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_LastNpcId = modData.LWN_NpcId or modData.LWN_LastNpcId
+        modData.LWN_NpcId = nil
+        modData.LWN_CarrierKind = nil
+        modData.LWN_ShellMarker = nil
+        modData.LWN_TestHarnessLabel = nil
+        modData.LWN_ManagedShellContract = nil
+        modData.LWN_BanditsCorrelationKey = nil
+        modData.LWN_BanditsSessionId = nil
+        modData.LWN_AllowPlayerAttack = nil
+    end
     local player = getSpecificPlayer and getSpecificPlayer(0) or nil
-    if id and player and sendClientCommand then
+    local commandSent = false
+    if id and not dead and player and sendClientCommand then
         sendClientCommand(player, "Commands", "BanditRemove", { id = id })
+        commandSent = true
     end
     protectedCall(actor, "removeFromSquare")
     protectedCall(actor, "removeFromWorld")
     clearBanditCaches(id)
-    print(string.format("[LWN][Bandits] removed banditId=%s reason=%s", tostring(id), tostring(reason)))
+    print(string.format(
+        "[LWN][Bandits] removed banditId=%s reason=%s dead=%s commandSent=%s",
+        tostring(id), tostring(reason), tostring(dead), tostring(commandSent)
+    ))
 end
 
 Carrier.removeActor = removeActor
@@ -281,6 +333,8 @@ local function enforceSafety(actor, brain)
     protectedCall(actor, "setNoTeeth", true)
     protectedCall(actor, "setGodMod", true)
     protectedCall(actor, "setInvulnerable", true)
+    protectedCall(actor, "setAvoidDamage", true)
+    protectedCall(actor, "setShootable", false)
     protectedCall(actor, "setVariable", "NoLungeTarget", true)
     if Bandit and Bandit.SurpressZombieSounds then
         Bandit.SurpressZombieSounds(actor)
@@ -294,6 +348,7 @@ local function friendlyRecordForActor(actor)
     local record = npcId and LWN.PopulationStore and LWN.PopulationStore.getNPC
         and LWN.PopulationStore.getNPC(npcId) or nil
     if not record then return nil end
+    if LWN.PopulationStore.isAlive and LWN.PopulationStore.isAlive(record) ~= true then return nil end
     local policy = LWN.Social and LWN.Social.relationshipCombatPolicy
         and LWN.Social.relationshipCombatPolicy(record) or nil
     if not policy or policy.allowPlayerAttack == true then return nil end
@@ -306,23 +361,79 @@ function Carrier.onHitZombie(actor, attacker)
     local record = friendlyRecordForActor(actor)
     if not record then return end
 
-    local canonicalHealth = tonumber(record.stats and record.stats.health)
-    if canonicalHealth and canonicalHealth > 0 then
-        protectedCall(actor, "setHealth", canonicalHealth)
+    local actorHealth = tonumber(protectedCall(actor, "getHealth")) or 0
+    local canonicalHealth = tonumber(record.stats and record.stats.health) or 0
+    local restoreHealth = math.max(actorHealth, canonicalHealth)
+    if restoreHealth > 0 then
+        protectedCall(actor, "setHealth", restoreHealth)
     end
     protectedCall(actor, "setKnockedDown", false)
     protectedCall(actor, "setOnFloor", false)
     protectedCall(actor, "setFallOnFront", false)
     protectedCall(actor, "setAlwaysKnockedDown", false)
     enforceSafety(actor, brain)
+    Carrier.PendingHitRepairs[record.id] = {
+        actor = actor,
+        health = restoreHealth,
+        remainingTicks = 3,
+        queuedAtMs = nowMs(),
+    }
     if Bandit and Bandit.ForceStationary then
         Bandit.ForceStationary(actor, brain.lwnMoveActive ~= true)
     end
     print(string.format(
-        "[LWN][Bandits] friendly hit suppressed npcId=%s banditId=%s attacker=%s health=%.2f",
+        "[LWN][Bandits] friendly hit suppressed npcId=%s banditId=%s attacker=%s health=%.2f deferred=true",
         tostring(record.id), tostring(brain.id), tostring(attacker),
-        tonumber(protectedCall(actor, "getHealth") or canonicalHealth or 0) or 0
+        tonumber(protectedCall(actor, "getHealth") or restoreHealth or 0) or 0
     ))
+end
+
+function Carrier.onWeaponHitCharacter(attacker, actor)
+    local brain = brainFor(actor)
+    if not isControlledBrain(brain) or not friendlyRecordForActor(actor) then return end
+    protectedCall(actor, "setAvoidDamage", true)
+    enforceSafety(actor, brain)
+    return false
+end
+
+local function tickPendingHitRepairs()
+    for npcId, repair in pairs(Carrier.PendingHitRepairs) do
+        local actor = repair and repair.actor or nil
+        local record = LWN.PopulationStore and LWN.PopulationStore.getNPC
+            and LWN.PopulationStore.getNPC(npcId) or nil
+        local brain = brainFor(actor)
+        if not record
+            or (LWN.PopulationStore.isAlive and LWN.PopulationStore.isAlive(record) ~= true)
+            or actorDeathLike(actor)
+            or not isControlledBrain(brain)
+        then
+            Carrier.PendingHitRepairs[npcId] = nil
+            print(string.format(
+                "[LWN][Bandits] friendly hit repair abandoned npcId=%s actorDead=%s recordAlive=%s",
+                tostring(npcId), tostring(actorDeathLike(actor)),
+                tostring(record and LWN.PopulationStore.isAlive and LWN.PopulationStore.isAlive(record) or false)
+            ))
+        else
+            local restoreHealth = tonumber(repair.health) or tonumber(record.stats and record.stats.health) or 1
+            if restoreHealth > 0 then
+                protectedCall(actor, "setHealth", restoreHealth)
+            end
+            protectedCall(actor, "setKnockedDown", false)
+            protectedCall(actor, "setOnFloor", false)
+            protectedCall(actor, "setFallOnFront", false)
+            protectedCall(actor, "setAlwaysKnockedDown", false)
+            enforceSafety(actor, brain)
+            repair.remainingTicks = (tonumber(repair.remainingTicks) or 1) - 1
+            if repair.remainingTicks <= 0 then
+                Carrier.PendingHitRepairs[npcId] = nil
+                print(string.format(
+                    "[LWN][Bandits] friendly hit repair complete npcId=%s banditId=%s health=%.2f",
+                    tostring(npcId), tostring(brain.id),
+                    tonumber(protectedCall(actor, "getHealth") or restoreHealth) or 0
+                ))
+            end
+        end
+    end
 end
 
 local function stampActor(record, handle, actor, brain)
@@ -343,6 +454,7 @@ local function stampActor(record, handle, actor, brain)
         modData.LWN_TestHarnessLabel = record.debugHarness and record.debugHarness.label or nil
         modData.LWN_BanditsCorrelationKey = handle.correlationKey
         modData.LWN_BanditsSessionId = handle.sessionId
+        modData.LWN_BanditId = brain.id or handle.banditId
         modData.LWN_DisplayName = brain.fullname
         modData.LWN_AllowPlayerAttack = false
     end
@@ -483,7 +595,7 @@ function Carrier.poll(record, handle, options)
         end)
         local selected = matches[1]
         for i = 2, #matches do
-            removeActor(matches[i].actor, "duplicate_correlation_key")
+            removeActor(matches[i].actor, "duplicate_correlation_key", matches[i].id)
         end
         handle.actor = selected.actor
         handle.banditId = selected.id
@@ -529,7 +641,7 @@ end
 function Carrier.isUsable(handle)
     local actor = handle and handle.actor or nil
     if not actor then return false end
-    if protectedCall(actor, "isAlive") == false then return false end
+    if actorDeathLike(actor) then return false end
     if protectedCall(actor, "isExistInTheWorld") == false then return false end
     return isControlledBrain(brainFor(actor))
 end
@@ -827,7 +939,7 @@ function Carrier.retire(record, handle, options)
     if not handle then return { ok = true, status = "retired", detail = "handle missing" } end
     Carrier.RetiredKeys[handle.correlationKey] = nowMs() + ORPHAN_SWEEP_MS
     if handle.actor then
-        removeActor(handle.actor, options and options.reason or "carrier_retire")
+        removeActor(handle.actor, options and options.reason or "carrier_retire", handle.banditId)
     end
     handle.actor = nil
     handle.pending = false
@@ -837,10 +949,11 @@ end
 
 function Carrier.tick()
     local now = nowMs()
+    tickPendingHitRepairs()
     for key, expiresAt in pairs(Carrier.RetiredKeys) do
         local matches = matchingActors(key)
         for i = 1, #matches do
-            removeActor(matches[i].actor, "late_orphan")
+            removeActor(matches[i].actor, "late_orphan", matches[i].id)
         end
         if now >= expiresAt then
             Carrier.RetiredKeys[key] = nil
@@ -929,4 +1042,15 @@ if Events and Events.OnHitZombie then
         Carrier.onHitZombie(actor, attacker)
     end
     Events.OnHitZombie.Add(Carrier._onHitZombieHandler)
+end
+
+
+if Events and Events.OnWeaponHitCharacter then
+    if Carrier._onWeaponHitCharacterHandler then
+        Events.OnWeaponHitCharacter.Remove(Carrier._onWeaponHitCharacterHandler)
+    end
+    Carrier._onWeaponHitCharacterHandler = function(attacker, actor)
+        return Carrier.onWeaponHitCharacter(attacker, actor)
+    end
+    Events.OnWeaponHitCharacter.Add(Carrier._onWeaponHitCharacterHandler)
 end
