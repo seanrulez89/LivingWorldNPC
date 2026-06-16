@@ -132,10 +132,64 @@ local function installApplyVisualsPatch()
     return true
 end
 
+local function shouldBlockTaskForControlledBrain(brain, task)
+    if not isControlledBrain(brain) or type(task) ~= "table" then return false end
+    return task.action == "Bandage"
+end
+
+local function installTaskGatePatch()
+    if Integration._taskGatePatchInstalled == true then return true end
+    if not (Bandit and type(Bandit.AddTask) == "function" and type(Bandit.AddTaskFirst) == "function") then
+        return false
+    end
+
+    Integration._originalAddTask = Bandit.AddTask
+    Integration._originalAddTaskFirst = Bandit.AddTaskFirst
+
+    Bandit.AddTask = function(bandit, task)
+        local brain = BanditBrain and BanditBrain.Get and BanditBrain.Get(bandit) or nil
+        if shouldBlockTaskForControlledBrain(brain, task) then
+            if LWN and LWN.Log and LWN.Log.warn then
+                LWN.Log.warn("Combat", "bandits_task_gate", {
+                    npcId = brain and brain.lwnNpcId,
+                    source = "bandits",
+                    task = task and task.action,
+                    reason = "auto_medical_disabled",
+                    detail = "Bandit.AddTask",
+                }, { rateKey = tostring(brain and brain.lwnNpcId or "unknown") .. ":Bandage", rateMs = 1500 })
+            end
+            return
+        end
+        return Integration._originalAddTask(bandit, task)
+    end
+
+    Bandit.AddTaskFirst = function(bandit, task)
+        local brain = BanditBrain and BanditBrain.Get and BanditBrain.Get(bandit) or nil
+        if shouldBlockTaskForControlledBrain(brain, task) then
+            if LWN and LWN.Log and LWN.Log.warn then
+                LWN.Log.warn("Combat", "bandits_task_gate", {
+                    npcId = brain and brain.lwnNpcId,
+                    source = "bandits",
+                    task = task and task.action,
+                    reason = "auto_medical_disabled",
+                    detail = "Bandit.AddTaskFirst",
+                }, { rateKey = tostring(brain and brain.lwnNpcId or "unknown") .. ":BandageFirst", rateMs = 1500 })
+            end
+            return
+        end
+        return Integration._originalAddTaskFirst(bandit, task)
+    end
+
+    Integration._taskGatePatchInstalled = true
+    print("[LWN][Bandits] controlled NPC task gate patch installed")
+    return true
+end
+
 function Integration.install()
     registerProgram()
     installFriendlyFirePatch()
     installApplyVisualsPatch()
+    installTaskGatePatch()
     if Integration._patchInstalled == true then return true end
     if not (BanditUtils and BanditBrain and Bandit) then return false end
     if type(BanditUtils.AreEnemies) ~= "function"

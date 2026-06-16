@@ -92,12 +92,13 @@ Covered now:
 - Bandits spawn request, async bind, timeout, retire, actor removal, death detect
 - command issue, queue replacement, command state changes, and cancellation
 - right-click move/follow/wait, stance changes, behavior guideline changes
-- item transfer from player/world to NPC, existing item equip, debug squad weapon
-  sync, and explicit debug-created equipment
+- item-context transfer/equip requests from inventory or world items, existing
+  item equip, declared equipment sync, and missing-real-item cleanup
 - combat engagement changes, team defense signals, friendly hit suppression,
-  zombie damage acceptance, friendly-hit repair, and health sync
-- follow locomotion/mode changes, move task creation, retries, arrival, and
-  failure
+  zombie damage acceptance, friendly-hit repair, health sync, unexpected
+  auto-heal blocking, and Bandits auto-medical task blocking
+- follow locomotion/mode changes, combat pause/resume, stale Bandits task
+  cleanup, move task creation, retries, arrival, and failure
 - relationship stage and team pressure changes
 
 Not covered yet:

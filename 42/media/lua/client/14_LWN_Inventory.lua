@@ -65,6 +65,11 @@ local function findActorItem(actor, fullType)
     return nil
 end
 
+local function findWornItem(actor, wearLocation)
+    if not actor or not wearLocation then return nil end
+    return protectedCall(actor, "getWornItem", wearLocation)
+end
+
 local function ensureActorItem(actor, fullType, allowCreate)
     if not actor or not fullType then return nil, false end
     local existing = findActorItem(actor, fullType)
@@ -190,6 +195,10 @@ function Inventory.actorCount(actor, itemId)
     return tonumber(counts and counts[itemId] or 0) or 0
 end
 
+function Inventory.itemFullType(item)
+    return itemFullType(item)
+end
+
 function Inventory.grant(record, itemId, count, reason)
     if not record or not itemId then return false, "record_or_item_missing" end
     local inv = ensure(record)
@@ -269,6 +278,7 @@ end
 function Inventory.setEquipment(record, slot, itemId, reason)
     if not record or not slot then return false, "record_or_slot_missing" end
     local inv = ensure(record)
+    if inv.equipment[slot] == itemId then return true end
     inv.equipment[slot] = itemId
     setChanged(inv, reason or "equipment_changed")
     return true
@@ -278,9 +288,41 @@ function Inventory.setClothing(record, wearLocation, itemId, reason)
     if not record or not wearLocation then return false, "record_or_location_missing" end
     local inv = ensure(record)
     inv.equipment.clothing = inv.equipment.clothing or {}
+    if inv.equipment.clothing[wearLocation] == itemId then return true end
     inv.equipment.clothing[wearLocation] = itemId
     setChanged(inv, reason or "clothing_changed")
     return true
+end
+
+function Inventory.removeVirtualTestItems(record, itemId, reason)
+    if not record or not itemId then return 0 end
+    local inv = ensure(record)
+    local removed = 0
+    for i = #inv.items, 1, -1 do
+        local entry = inv.items[i]
+        local fullType = entry and (entry.fullType or entry.itemId)
+        local isVirtual = entry
+            and (entry.source == "virtual_or_test"
+                or entry.reason == "squad_weapon"
+                or entry.reason == "debug_squad_weapon")
+        if fullType == itemId and isVirtual then
+            removed = removed + (tonumber(entry.count or 1) or 1)
+            table.remove(inv.items, i)
+        end
+    end
+    if removed > 0 then
+        setChanged(inv, reason or "remove_virtual_test_item")
+        if LWN.Log and LWN.Log.info then
+            LWN.Log.info("Inventory", "remove_virtual_test_item", {
+                npcId = record.id,
+                item = itemId,
+                count = removed,
+                source = "virtual_or_test",
+                reason = reason or "remove_virtual_test_item",
+            })
+        end
+    end
+    return removed
 end
 
 function Inventory.equipExistingActorItem(record, actor, item, slot, reason)
@@ -294,21 +336,21 @@ function Inventory.equipExistingActorItem(record, actor, item, slot, reason)
         slot = isWearLocation(wearLocation) and wearLocation or "primaryWeapon"
     end
     if slot == "primaryWeapon" or slot == "primary" then
-        if itemFullType(protectedCall(actor, "getPrimaryHandItem")) ~= itemId then
+        if protectedCall(actor, "getPrimaryHandItem") ~= item then
             protectedCall(actor, "setPrimaryHandItem", item)
             changed = true
         end
         if protectedCall(item, "isRequiresEquippedBothHands") == true
             or protectedCall(item, "isTwoHandWeapon") == true
         then
-            if itemFullType(protectedCall(actor, "getSecondaryHandItem")) ~= itemId then
+            if protectedCall(actor, "getSecondaryHandItem") ~= item then
                 protectedCall(actor, "setSecondaryHandItem", item)
                 changed = true
             end
         end
         Inventory.setEquipment(record, "primaryWeapon", itemId, reason or "equip_existing_item")
     elseif slot == "secondaryWeapon" or slot == "secondary" then
-        if itemFullType(protectedCall(actor, "getSecondaryHandItem")) ~= itemId then
+        if protectedCall(actor, "getSecondaryHandItem") ~= item then
             protectedCall(actor, "setSecondaryHandItem", item)
             changed = true
         end
@@ -321,7 +363,7 @@ function Inventory.equipExistingActorItem(record, actor, item, slot, reason)
         else
             Inventory.setClothing(record, wearLocation, itemId, reason or "equip_existing_item")
         end
-        if wearLocation then
+        if wearLocation and findWornItem(actor, wearLocation) ~= item then
             protectedCall(actor, "setWornItem", wearLocation, item)
             refreshActorVisuals(actor, reason or "equip_existing_worn_item")
             changed = true
@@ -380,7 +422,7 @@ function Inventory.equipActorItem(record, actor, itemId, slot, reason, options)
         if slot == "bag" then
             wearLocation = resolveWearLocation(item) or "Back"
         end
-        if wearLocation then
+        if wearLocation and itemFullType(findWornItem(actor, wearLocation)) ~= itemId then
             protectedCall(actor, "setWornItem", wearLocation, item)
             refreshActorVisuals(actor, reason or "equip_worn_item")
             changed = true

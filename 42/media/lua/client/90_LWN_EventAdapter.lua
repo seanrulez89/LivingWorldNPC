@@ -2235,6 +2235,9 @@ function Adapter.bind()
     end
     Events.OnPlayerDeath.Add(Adapter.onPlayerDeath)
     Events.OnFillWorldObjectContextMenu.Add(LWN.UIContextMenu.onFillWorldObjectContextMenu)
+    if Events.OnFillInventoryObjectContextMenu and LWN.UIContextMenu.onFillInventoryObjectContextMenu then
+        Events.OnFillInventoryObjectContextMenu.Add(LWN.UIContextMenu.onFillInventoryObjectContextMenu)
+    end
     Events.OnCustomUIKeyPressed.Add(LWN.UIRadialMenu.onCustomUIKeyPressed)
     if LWN.DebugTools and LWN.DebugTools.onKeyPressed then
         Events.OnKeyPressed.Add(LWN.DebugTools.onKeyPressed)

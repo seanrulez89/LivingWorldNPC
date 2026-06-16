@@ -14,28 +14,23 @@ local MOVE_ARRIVAL_DISTANCE = 0.75
 local MOVE_MAX_ATTEMPTS = 3
 local MOVE_PROGRESS_EPSILON = 0.05
 local SPAWN_CALM_MS = 1000
-local FOLLOW_OFFSET = 2.25
-local FOLLOW_ARRIVAL_DISTANCE = 1.0
-local FOLLOW_RETARGET_DISTANCE = 1.25
-local FOLLOW_RETARGET_MS = 350
+local FOLLOW_OFFSET = 1.45
+local FOLLOW_ARRIVAL_DISTANCE = 0.70
+local FOLLOW_RETARGET_DISTANCE = 0.85
+local FOLLOW_RETARGET_MS = 250
 local FOLLOW_HEADING_EPSILON = 0.08
-local FOLLOW_CATCHUP_ENTER_DISTANCE = 8.0
-local FOLLOW_CATCHUP_EXIT_DISTANCE = 5.5
-local FOLLOW_HARD_CATCHUP_DISTANCE = 14.0
-local FOLLOW_CATCHUP_OFFSET = 1.25
+local FOLLOW_CATCHUP_ENTER_DISTANCE = 4.5
+local FOLLOW_CATCHUP_EXIT_DISTANCE = 2.8
+local FOLLOW_HARD_CATCHUP_DISTANCE = 8.0
+local FOLLOW_CATCHUP_OFFSET = 0.80
 local SQUAD_TELEMETRY_MS = 3000
 local SQUAD_TELEMETRY_TRANSITION_MS = 750
 local DEFAULT_WALK_SPEED = 1.04
 local DEFAULT_RUN_SPEED = 0.72
 local FOLLOW_FORMATION = {
-    [1] = { back = 2.25, side = 0.00 },
-    [2] = { back = 3.10, side = -1.25 },
-    [3] = { back = 3.10, side = 1.25 },
-}
-local SQUAD_WEAPONS = {
-    [1] = "Base.BaseballBat",
-    [2] = "Base.Hammer",
-    [3] = "Base.Crowbar",
+    [1] = { back = 1.45, side = 0.00 },
+    [2] = { back = 1.95, side = -0.90 },
+    [3] = { back = 1.95, side = 0.90 },
 }
 
 -- Bandits paths reliably with these three walk types; speed multipliers provide
@@ -391,6 +386,29 @@ local function syncHealth(record, actor, brain, source)
     else
         record.combat.maxHealth = math.max(tonumber(record.combat.maxHealth) or 0, health)
     end
+
+    local allowHealthIncrease = source == "friendly_fire_repair_complete"
+        or brain.lwnFriendlyFireProtected == true
+        or source == "player_granted_treatment"
+    if previous ~= nil
+        and health > previous + 0.001
+        and not allowHealthIncrease
+    then
+        protectedCall(actor, "setHealth", previous)
+        health = previous
+        if LWN.Log and LWN.Log.warn then
+            LWN.Log.warn("Combat", "health_restore_blocked", {
+                npcId = record.id,
+                actor = tostring(actor),
+                health = string.format("%.2f", health),
+                source = source,
+                previous = string.format("%.2f", previous),
+                reason = "unexpected_actor_health_increase",
+                detail = "auto_healing_disabled",
+            }, { rateKey = tostring(record.id) .. ":health_restore_blocked", rateMs = 1500 })
+        end
+    end
+
     record.stats.health = health
     brain.health = health
     brain.lwnLastHealthSyncSource = source
@@ -439,6 +457,80 @@ end
 local function objectId(obj)
     if not obj then return "nil" end
     return tostring(protectedCall(obj, "getOnlineID") or protectedCall(obj, "getID") or obj)
+end
+
+local BLOCKED_AUTONOMOUS_TASKS = {
+    Bandage = true,
+}
+
+local function taskAction(task)
+    return task and task.action or nil
+end
+
+local function taskIsMovement(task)
+    if not task then return false end
+    return task.lwnMove == true or task.lwnFollow == true
+end
+
+local function taskIsCombat(task)
+    local action = taskAction(task)
+    return action == "Smack"
+        or action == "Push"
+        or action == "Stomp"
+        or action == "Shoot"
+        or action == "Aim"
+        or action == "Rack"
+        or action == "Load"
+        or action == "Unload"
+end
+
+local function clearBlockedAutonomousTasks(record, actor, brain, source)
+    if not brain or type(brain.tasks) ~= "table" then return false end
+    local removed = {}
+    for i = #brain.tasks, 1, -1 do
+        local task = brain.tasks[i]
+        local action = taskAction(task)
+        if BLOCKED_AUTONOMOUS_TASKS[action] then
+            removed[#removed + 1] = action
+            table.remove(brain.tasks, i)
+        end
+    end
+    if #removed == 0 then return false end
+    if LWN.Log and LWN.Log.warn then
+        LWN.Log.warn("Combat", "autonomous_task_blocked", {
+            npcId = record and record.id,
+            source = "bandits",
+            task = table.concat(removed, ","),
+            reason = source or "blocked_autonomous_task",
+            detail = "medical_ai_disabled_until_lwn_health_system",
+        }, { rateKey = tostring(record and record.id or "unknown") .. ":medical", rateMs = 1500 })
+    end
+    return true
+end
+
+local function clearNonMovementTaskForCommand(record, actor, brain, expected, source)
+    if not (actor and brain and Bandit and Bandit.GetTask and Bandit.ClearTasks) then return false end
+    local task = Bandit.GetTask(actor)
+    if not task then return false end
+    if expected == "move" and task.lwnMove == true then return false end
+    if expected == "follow" and task.lwnFollow == true then return false end
+    if brain.lwnCombatEngaged == true and taskIsCombat(task) then return false end
+    if taskIsMovement(task) then return false end
+    Bandit.ClearTasks(actor)
+    local pathfinder = protectedCall(actor, "getPathFindBehavior2")
+    protectedCall(pathfinder, "cancel")
+    protectedCall(pathfinder, "reset")
+    brain.lwnMoveActive = false
+    if LWN.Log and LWN.Log.warn then
+        LWN.Log.warn("Movement", "stale_task_cleared", {
+            npcId = record and record.id,
+            source = "bandits",
+            task = taskAction(task) or "unknown",
+            reason = source or "command_reclaim",
+            detail = tostring(expected),
+        }, { rateKey = tostring(record and record.id or "unknown") .. ":" .. tostring(expected), rateMs = 1000 })
+    end
+    return true
 end
 
 local function logSquadTelemetry(record, handle, actor, brain)
@@ -525,62 +617,150 @@ local function beginFriendlyFireProtection(record, actor, brain, source)
     return restoreHealth
 end
 
-local function assignSquadWeapon(record, actor, brain)
-    local slot = tonumber(record and record.companion and record.companion.squadSlot)
-    local weapon = SQUAD_WEAPONS[slot]
-    if not weapon then return end
-    local alreadyAssigned = brain.lwnSquadWeaponAssigned == weapon
+local function declaredPrimaryWeapon(record)
+    return record
+        and record.inventory
+        and record.inventory.equipment
+        and record.inventory.equipment.primaryWeapon
+        or nil
+end
+
+local function actorHasItemOrHolding(actor, fullType)
+    if not actor or not fullType then return false end
+    if inventoryItemCount(actor, fullType) > 0 then return true end
+    return itemFullType(protectedCall(actor, "getPrimaryHandItem")) == fullType
+        or itemFullType(protectedCall(actor, "getSecondaryHandItem")) == fullType
+end
+
+local function removeActorItemsByFullType(actor, fullType)
+    if not actor or not fullType then return 0 end
+    local inventory = protectedCall(actor, "getInventory")
+    local items = protectedCall(inventory, "getItems")
+    local size = tonumber(protectedCall(items, "size")) or 0
+    local removed = 0
+    for i = size - 1, 0, -1 do
+        local item = protectedCall(items, "get", i)
+        if itemFullType(item) == fullType then
+            if protectedCall(actor, "getPrimaryHandItem") == item then
+                protectedCall(actor, "setPrimaryHandItem", nil)
+            end
+            if protectedCall(actor, "getSecondaryHandItem") == item then
+                protectedCall(actor, "setSecondaryHandItem", nil)
+            end
+            protectedCall(inventory, "DoRemoveItem", item)
+            protectedCall(inventory, "Remove", item)
+            protectedCall(inventory, "RemoveItem", item)
+            removed = removed + 1
+        end
+    end
+    return removed
+end
+
+local function syncDeclaredEquipment(record, actor, brain)
+    if not (record and actor and brain) then return end
+    local desiredWeapon = declaredPrimaryWeapon(record)
     brain.weapons = brain.weapons or {}
     brain.weapons.primary = brain.weapons.primary or { bulletsLeft = 0, ammoCount = 0, magCount = 0 }
     brain.weapons.secondary = brain.weapons.secondary or { bulletsLeft = 0, ammoCount = 0, magCount = 0 }
-    brain.weapons.melee = weapon
-    brain.lwnSquadWeaponAssigned = weapon
-    if LWN.Inventory then
-        if LWN.Inventory.recordCount and LWN.Inventory.recordCount(record, weapon) <= 0 then
-            LWN.Inventory.grant(record, weapon, 1, "squad_weapon")
+
+    if desiredWeapon and LWN.Inventory and LWN.Inventory.removeVirtualTestItems then
+        local removedVirtual = LWN.Inventory.removeVirtualTestItems(
+            record,
+            desiredWeapon,
+            "legacy_squad_weapon_cleanup"
+        )
+        if removedVirtual > 0
+            and LWN.Inventory.recordCount
+            and LWN.Inventory.recordCount(record, desiredWeapon) <= 0
+        then
+            local removedActorItems = removeActorItemsByFullType(actor, desiredWeapon)
+            if LWN.Inventory.setEquipment then
+                LWN.Inventory.setEquipment(record, "primaryWeapon", nil, "legacy_squad_weapon_cleanup")
+            elseif record.inventory and record.inventory.equipment then
+                record.inventory.equipment.primaryWeapon = nil
+            end
+            if LWN.Log and LWN.Log.warn then
+                LWN.Log.warn("Inventory", "legacy_squad_weapon_cleanup", {
+                    npcId = record.id,
+                    item = desiredWeapon,
+                    source = "virtual_or_test",
+                    count = removedActorItems,
+                    reason = "no_item_creation_policy",
+                    detail = "cleared_virtual_record_and_actor_item",
+                })
+            end
+            desiredWeapon = nil
         end
-        if LWN.Inventory.setEquipment then
-            LWN.Inventory.setEquipment(record, "primaryWeapon", weapon, "squad_weapon")
-        end
-    else
-        record.inventory = record.inventory or {}
-        record.inventory.equipment = record.inventory.equipment or {}
-        record.inventory.equipment.primaryWeapon = weapon
     end
-    if Bandit and Bandit.SetWeapons then Bandit.SetWeapons(actor, brain.weapons) end
+
+    if desiredWeapon and not actorHasItemOrHolding(actor, desiredWeapon) then
+        if LWN.Inventory and LWN.Inventory.removeVirtualTestItems then
+            LWN.Inventory.removeVirtualTestItems(record, desiredWeapon, "missing_declared_equipment")
+        end
+        if LWN.Inventory and LWN.Inventory.setEquipment then
+            LWN.Inventory.setEquipment(record, "primaryWeapon", nil, "missing_declared_equipment")
+        elseif record.inventory and record.inventory.equipment then
+            record.inventory.equipment.primaryWeapon = nil
+        end
+        if brain.weapons.melee == desiredWeapon then
+            brain.weapons.melee = nil
+        end
+        brain.lwnSquadWeaponAssigned = nil
+        if LWN.Log and LWN.Log.warn then
+            LWN.Log.warn("Inventory", "declared_equipment_missing", {
+                npcId = record.id,
+                item = desiredWeapon,
+                source = "bandits",
+                ok = false,
+                reason = "actor_missing_real_item",
+                detail = "equipment_cleared_no_item_creation",
+            }, { rateKey = tostring(record.id) .. ":" .. tostring(desiredWeapon), rateMs = 5000 })
+        end
+        desiredWeapon = nil
+    end
+
     local syncResult = LWN.Inventory and LWN.Inventory.syncActorEquipment
         and LWN.Inventory.syncActorEquipment(record, actor, {
             apply = true,
-            allowCreate = true,
-            reason = "squad_weapon",
+            allowCreate = false,
+            reason = "declared_equipment_sync",
         })
         or nil
-    if Bandit and Bandit.SetHands then Bandit.SetHands(actor, weapon) end
-    if LWN.Inventory and LWN.Inventory.syncActorEquipment then
-        syncResult = LWN.Inventory.syncActorEquipment(record, actor, {
-            apply = true,
-            allowCreate = true,
-            reason = "squad_weapon_post_bandit_hands",
-        }) or syncResult
+
+    local actualWeapon = itemFullType(protectedCall(actor, "getPrimaryHandItem"))
+    local combatWeapon = desiredWeapon or "Base.BareHands"
+    if brain.weapons.melee ~= combatWeapon then
+        brain.weapons.melee = combatWeapon
+        brain.lwnSquadWeaponAssigned = desiredWeapon
+        if Bandit and Bandit.SetWeapons then Bandit.SetWeapons(actor, brain.weapons) end
     end
-    if alreadyAssigned and syncResult and syncResult.changed ~= true then return end
+
+    local signature = table.concat({
+        tostring(combatWeapon),
+        tostring(actualWeapon or "none"),
+        tostring(syncResult and syncResult.primaryMatches),
+    }, "|")
+    if syncResult and syncResult.changed ~= true and brain.lwnLastEquipmentSignature == signature then
+        return
+    end
+    brain.lwnLastEquipmentSignature = signature
     print(string.format(
-        "[LWN][Bandits] squad weapon npcId=%s slot=%s weapon=%s actual=%s primaryMatch=%s changed=%s",
-        tostring(record.id), tostring(slot), tostring(weapon),
-        tostring(syncResult and syncResult.snapshot and syncResult.snapshot.actor and syncResult.snapshot.actor.primaryHand or "unknown"),
+        "[LWN][Bandits] equipment sync npcId=%s desired=%s combatWeapon=%s actual=%s primaryMatch=%s changed=%s created=false",
+        tostring(record.id), tostring(desiredWeapon or "none"), tostring(combatWeapon), tostring(actualWeapon or "none"),
         tostring(syncResult and syncResult.primaryMatches),
         tostring(syncResult and syncResult.changed)
     ))
     if LWN.Log and LWN.Log.info then
-        LWN.Log.info("Inventory", "squad_weapon_sync", {
+        LWN.Log.info("Inventory", "equipment_sync", {
             npcId = record.id,
-            slot = slot,
-            item = weapon,
-            source = "debug_squad_weapon",
-            ok = syncResult and syncResult.primaryMatches == true,
+            item = desiredWeapon or "none",
+            combatWeapon = combatWeapon,
+            source = "bandits",
+            ok = desiredWeapon == nil or (syncResult and syncResult.primaryMatches == true),
             detail = syncResult and syncResult.detail,
             changed = syncResult and syncResult.changed,
-        })
+            reason = "declared_equipment_sync",
+        }, { rateKey = tostring(record.id) .. ":equipment:" .. signature, rateMs = 2500 })
     end
 end
 
@@ -765,7 +945,8 @@ local function stampActor(record, handle, actor, brain)
     protectedCall(actor, "setForname", record.identity and record.identity.firstName or nil)
     protectedCall(actor, "setSurname", record.identity and record.identity.lastName or nil)
     syncHealth(record, actor, brain, "stamp_actor")
-    assignSquadWeapon(record, actor, brain)
+    clearBlockedAutonomousTasks(record, actor, brain, "stamp_actor")
+    syncDeclaredEquipment(record, actor, brain)
     if LWN.Combat and LWN.Combat.update then
         LWN.Combat.update(record, actor)
     end
@@ -1053,6 +1234,20 @@ local function tickMoveTo(record, handle, intent)
 
     enforceSafety(actor, brain)
     if brain.lwnCombatEngaged == true then
+        handle.runtime = handle.runtime or {}
+        if handle.runtime.move then
+            handle.runtime.move.combatPaused = true
+        end
+        brain.lwnMoveActive = false
+        if LWN.Log and LWN.Log.state then
+            LWN.Log.state("Movement", "combat_pause:move:" .. tostring(record.id), tostring(brain.lwnCombatReason or "combat"), {
+                npcId = record.id,
+                source = "bandits",
+                status = "combat",
+                intent = "move_to",
+                reason = brain.lwnCombatReason or "combat_interrupt",
+            })
+        end
         return {
             handled = true,
             status = "combat",
@@ -1081,6 +1276,21 @@ local function tickMoveTo(record, handle, intent)
         handle.runtime.move = move
         handle.runtime.follow = nil
         handle.runtime.lastMove = nil
+    end
+    if move.combatPaused == true then
+        move.combatPaused = false
+        move.lastProgressAtMs = nowMs()
+        move.bestDistance = math.huge
+        clearNonMovementTaskForCommand(record, actor, brain, "move", "move_resume_after_combat")
+        if LWN.Log and LWN.Log.state then
+            LWN.Log.state("Movement", "combat_resume:move:" .. tostring(record.id), "move_to", {
+                npcId = record.id,
+                source = "bandits",
+                status = "pathing",
+                intent = "move_to",
+                reason = "combat_resolved_resume_move",
+            })
+        end
     end
 
     local dx = (tonumber(protectedCall(actor, "getX") or tx) or tx) - tx
@@ -1156,6 +1366,8 @@ local function tickMoveTo(record, handle, intent)
         end
     end
 
+    clearBlockedAutonomousTasks(record, actor, brain, "move_to")
+    clearNonMovementTaskForCommand(record, actor, brain, "move", "move_command_reclaim")
     local hasTask = Bandit and Bandit.HasTask and Bandit.HasTask(actor) == true
     if not hasTask then
         move.taskCycles = move.taskCycles + 1
@@ -1291,6 +1503,20 @@ local function tickFollowPlayer(record, handle, intent)
 
     enforceSafety(actor, brain)
     if brain.lwnCombatEngaged == true then
+        handle.runtime = handle.runtime or {}
+        if handle.runtime.follow then
+            handle.runtime.follow.combatPaused = true
+        end
+        brain.lwnMoveActive = false
+        if LWN.Log and LWN.Log.state then
+            LWN.Log.state("Movement", "combat_pause:follow:" .. tostring(record.id), tostring(brain.lwnCombatReason or "combat"), {
+                npcId = record.id,
+                source = "bandits",
+                status = "combat",
+                intent = "follow_player",
+                reason = brain.lwnCombatReason or "combat_interrupt",
+            })
+        end
         return {
             handled = true,
             status = "combat",
@@ -1312,6 +1538,24 @@ local function tickFollowPlayer(record, handle, intent)
         handle.runtime.follow = follow
         handle.runtime.move = nil
         handle.runtime.lastMove = nil
+    end
+    if follow.combatPaused == true then
+        follow.combatPaused = false
+        follow.targetX = nil
+        follow.targetY = nil
+        follow.targetZ = nil
+        follow.lastTaskAtMs = nil
+        follow.lastProgressAtMs = nowMs()
+        clearNonMovementTaskForCommand(record, actor, brain, "follow", "follow_resume_after_combat")
+        if LWN.Log and LWN.Log.state then
+            LWN.Log.state("Movement", "combat_resume:follow:" .. tostring(record.id), "follow_player", {
+                npcId = record.id,
+                source = "bandits",
+                status = "following",
+                intent = "follow_player",
+                reason = "combat_resolved_resume_follow",
+            })
+        end
     end
 
     local ax = tonumber(protectedCall(actor, "getX") or 0) or 0
@@ -1451,6 +1695,8 @@ local function tickFollowPlayer(record, handle, intent)
         }
     end
 
+    clearBlockedAutonomousTasks(record, actor, brain, "follow_player")
+    clearNonMovementTaskForCommand(record, actor, brain, "follow", "follow_command_reclaim")
     currentTask = Bandit and Bandit.GetTask and Bandit.GetTask(actor) or nil
     if not currentTask then
         follow.taskCycles = follow.taskCycles + 1
