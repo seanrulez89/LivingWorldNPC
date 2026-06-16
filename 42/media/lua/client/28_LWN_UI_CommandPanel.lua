@@ -130,6 +130,7 @@ function Panel.renderTarget(actor)
     local identity = snapshot and snapshot.identity or {}
     local condition = snapshot and snapshot.condition or {}
     local relationship = snapshot and snapshot.relationship or {}
+    local team = snapshot and snapshot.team or {}
     local activity = snapshot and snapshot.activity or {}
     local inventory = snapshot and snapshot.inventory or {}
     local embodiment = snapshot and snapshot.embodiment or {}
@@ -139,11 +140,22 @@ function Panel.renderTarget(actor)
     lines[#lines + 1] = tostring(identity.name or protectedCall(actor, "getFullName") or npcId)
     lines[#lines + 1] = "Actor: " .. tostring(protectedCall(actor, "getObjectName"))
     lines[#lines + 1] = "Profession: " .. tostring(identity.profession or "unknown")
+    lines[#lines + 1] = "Relationship Stage: " .. tostring(relationship.stage or "neutral")
     lines[#lines + 1] = string.format(
-        "Trust %.2f / Fear %.2f / Resentment %.2f",
+        "Trust %.2f / Respect %.2f / Fear %.2f / Resentment %.2f / Attachment %.2f",
         tonumber(relationship.trust or 0) or 0,
+        tonumber(relationship.respect or 0) or 0,
         tonumber(relationship.fear or 0) or 0,
-        tonumber(relationship.resentment or 0) or 0
+        tonumber(relationship.resentment or 0) or 0,
+        tonumber(relationship.attachment or 0) or 0
+    )
+    lines[#lines + 1] = string.format(
+        "Team Mood: count %d / stress %.2f / morale %.2f / cohesion %.2f / %s",
+        tonumber(team.companionCount or 0) or 0,
+        tonumber(team.stress or 0) or 0,
+        tonumber(team.morale or 0.5) or 0.5,
+        tonumber(team.cohesion or 0.5) or 0.5,
+        tostring(team.pressureReason or "baseline")
     )
     lines[#lines + 1] = string.format(
         "Health %.1f / Endurance %.2f / Pain %.2f",
@@ -171,6 +183,19 @@ function Panel.renderTarget(actor)
         tostring(destination.label or "")
     )
     lines[#lines + 1] = "Squad Role: " .. tostring(activity.squadRole or "none")
+    lines[#lines + 1] = "Behavior: " .. tostring(activity.behaviorGuideline or "follow")
+    lines[#lines + 1] = string.format(
+        "Team: %s / Slot: %s / Stance: %s",
+        tostring(record.companion and record.companion.teamId or "none"),
+        tostring(record.companion and record.companion.squadSlot or "none"),
+        tostring(record.combat and record.combat.disposition or "passive")
+    )
+    lines[#lines + 1] = string.format(
+        "Combat: %s / %s / Policy: %s",
+        tostring(record.combat and record.combat.state or "idle"),
+        tostring(record.combat and record.combat.reason or "none"),
+        tostring(command.combatPolicy or "stance")
+    )
     lines[#lines + 1] = string.format(
         "Supplies: food %.1fd / water %.1f / meds %d / ammo %d",
         tonumber(inventory.foodDays or 0) or 0,
@@ -178,6 +203,22 @@ function Panel.renderTarget(actor)
         tonumber(inventory.meds or 0) or 0,
         tonumber(inventory.ammo or 0) or 0
     )
+    lines[#lines + 1] = string.format(
+        "Inventory: record items %d / actor items %d / worn %d / visuals %d",
+        #(inventory.items or {}),
+        tonumber(inventory.actorItemCount or 0) or 0,
+        tonumber(inventory.actorWornCount or 0) or 0,
+        tonumber(inventory.actorItemVisualCount or 0) or 0
+    )
+    lines[#lines + 1] = string.format(
+        "Equipment: primary %s / actor hand %s / secondary %s",
+        tostring(inventory.primaryWeapon or "none"),
+        tostring(inventory.actorPrimaryHand or "none"),
+        tostring(inventory.actorSecondaryHand or "none")
+    )
+    if inventory.lastChangeReason then
+        lines[#lines + 1] = "Inventory Change: " .. tostring(inventory.lastChangeReason)
+    end
     lines[#lines + 1] = "Arc: " .. tostring(record.storyArc and record.storyArc.type or "none")
     lines[#lines + 1] = "Clues: " .. tostring(record.storyArc and record.storyArc.clueCount or 0)
     lines[#lines + 1] = "Memories: " .. tostring(#(record.memories or {}))

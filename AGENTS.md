@@ -17,6 +17,21 @@
 - Onscreen NPCs are embodied only when needed.
 - Canonical NPC state lives in ModData.
 - Embodied actor state is a cache, not the source of truth.
+- Bandits actors and brains are runtime actuators/caches for current companions,
+  not durable NPC records.
+- User commands and autonomous choices should flow through LWN intents before a
+  carrier executes them.
+
+## Domain ownership
+- Use `docs/DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md` as the current
+  workstream and shared-contract rulebook.
+- Main integration authority stays in this thread/agent unless the user
+  explicitly delegates a narrow subtask.
+- Sub-agent style work should be scoped by domain owner, allowed files, public
+  APIs being changed, and validation requirements.
+- Schema, carrier, combat, action runtime, event adapter, and debug tools are
+  shared-contract surfaces; avoid broad edits across several of them in one
+  unplanned change.
 
 ## When editing code
 - Preserve file-by-file module boundaries.

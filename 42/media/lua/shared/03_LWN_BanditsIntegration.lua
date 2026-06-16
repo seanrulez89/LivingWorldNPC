@@ -10,7 +10,8 @@ Integration.ProfileId = "381888f8-af27-45b6-aa90-f56d22299753"
 local function isControlledBrain(brain)
     if type(brain) ~= "table" then return false end
     local program = brain.program
-    return brain.lwnNonCombat == true
+    return brain.lwnControlled == true
+        or brain.lwnNonCombat == true
         or (type(program) == "table" and program.name == Integration.ProgramName)
 end
 
@@ -31,8 +32,9 @@ local function enforceSafety(bandit, brain)
     brain.loyal = false
     brain.demolish = false
     brain.eatBody = false
-    brain.lwnNonCombat = true
-    if bandit.setTarget then bandit:setTarget(nil) end
+    brain.lwnControlled = true
+    brain.lwnNonCombat = brain.lwnCombatEngaged ~= true
+    if brain.lwnCombatEngaged ~= true and bandit.setTarget then bandit:setTarget(nil) end
     if bandit.setEatBodyTarget then bandit:setEatBodyTarget(nil, false) end
     if bandit.setVariable then
         bandit:setVariable("NoLungeTarget", true)
@@ -41,10 +43,12 @@ local function enforceSafety(bandit, brain)
         end
     end
     if bandit.setNoTeeth then bandit:setNoTeeth(true) end
-    if bandit.setGodMod then bandit:setGodMod(true) end
-    if bandit.setInvulnerable then bandit:setInvulnerable(true) end
-    if bandit.setAvoidDamage then bandit:setAvoidDamage(true) end
-    if bandit.setShootable then bandit:setShootable(false) end
+    if brain.lwnFriendlyFireProtected ~= true then
+        if bandit.setGodMod then bandit:setGodMod(false) end
+        if bandit.setInvulnerable then bandit:setInvulnerable(false) end
+        if bandit.setAvoidDamage then bandit:setAvoidDamage(false) end
+    end
+    if bandit.setShootable then bandit:setShootable(true) end
 end
 
 Integration.enforceSafety = enforceSafety
@@ -66,7 +70,10 @@ local function registerProgram()
         local brain = BanditBrain and BanditBrain.Get and BanditBrain.Get(bandit) or nil
         enforceSafety(bandit, brain)
         if Bandit and Bandit.ForceStationary then
-            Bandit.ForceStationary(bandit, not (brain and brain.lwnMoveActive == true))
+            Bandit.ForceStationary(
+                bandit,
+                not (brain and (brain.lwnMoveActive == true or brain.lwnCombatEngaged == true))
+            )
         end
         return { status = true, next = "Main", tasks = {} }
     end
@@ -79,7 +86,17 @@ local function installFriendlyFirePatch()
     Integration._originalCheckFriendlyFire = BanditPlayer.CheckFriendlyFire
     BanditPlayer.CheckFriendlyFire = function(bandit, attacker)
         local brain = BanditBrain and BanditBrain.Get and BanditBrain.Get(bandit) or nil
-        if isControlledBrain(brain) then
+        local playerAttack = attacker
+            and instanceof
+            and instanceof(attacker, "IsoPlayer")
+            and (not attacker.isNPC or attacker:isNPC() ~= true)
+        if isControlledBrain(brain) and playerAttack then
+            brain.lwnFriendlyFireProtected = true
+            brain.lwnProtectedHealth = bandit.getHealth and bandit:getHealth() or brain.health
+            brain.lwnFriendlyFireProtectedAtMs = getTimestampMs and getTimestampMs() or 0
+            if bandit.setGodMod then bandit:setGodMod(true) end
+            if bandit.setInvulnerable then bandit:setInvulnerable(true) end
+            if bandit.setAvoidDamage then bandit:setAvoidDamage(true) end
             enforceSafety(bandit, brain)
             return
         end
@@ -90,9 +107,35 @@ local function installFriendlyFirePatch()
     return true
 end
 
+local function installApplyVisualsPatch()
+    if Integration._applyVisualsPatchInstalled == true then return true end
+    if not (Bandit and type(Bandit.ApplyVisuals) == "function") then return false end
+
+    Integration._originalApplyVisuals = Bandit.ApplyVisuals
+    Bandit.ApplyVisuals = function(bandit, brain)
+        local preserve = isControlledBrain(brain)
+            and (brain.lwnControlled == true or brain.lwnNpcId ~= nil)
+        local beforeHealth = preserve and bandit and bandit.getHealth and bandit:getHealth() or nil
+        local protectedHealth = preserve and tonumber(brain.lwnProtectedHealth) or nil
+        local results = { Integration._originalApplyVisuals(bandit, brain) }
+        if preserve and bandit and bandit.setHealth then
+            local restoreHealth = protectedHealth or tonumber(beforeHealth)
+            if restoreHealth ~= nil then
+                bandit:setHealth(restoreHealth)
+                brain.health = restoreHealth
+            end
+        end
+        return unpack(results)
+    end
+    Integration._applyVisualsPatchInstalled = true
+    print("[LWN][Bandits] controlled NPC health-preserving visuals patch installed")
+    return true
+end
+
 function Integration.install()
     registerProgram()
     installFriendlyFirePatch()
+    installApplyVisualsPatch()
     if Integration._patchInstalled == true then return true end
     if not (BanditUtils and BanditBrain and Bandit) then return false end
     if type(BanditUtils.AreEnemies) ~= "function"
@@ -112,7 +155,17 @@ function Integration.install()
     Integration._originalSetProgram = Bandit.SetProgram
 
     BanditUtils.AreEnemies = function(brain1, brain2)
-        if isControlledBrain(brain1) or isControlledBrain(brain2) then
+        local controlled1 = isControlledBrain(brain1)
+        local controlled2 = isControlledBrain(brain2)
+        if controlled1 and controlled2 then
+            return false
+        end
+        if controlled1 then
+            if brain2 == nil then return brain1.lwnCombatEngaged == true end
+            return false
+        end
+        if controlled2 then
+            if brain1 == nil then return brain2.lwnCombatEngaged == true end
             return false
         end
         return Integration._originalAreEnemies(brain1, brain2)

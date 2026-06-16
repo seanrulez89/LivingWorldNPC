@@ -28,7 +28,11 @@ local function automationState()
         updatedAt = nil,
         step = 0,
     }
-    return debug.automation
+    local state = debug.automation
+    state.npcIds = state.npcIds or {}
+    state.pendingNpcId = state.pendingNpcId or nil
+    state.selectedNpcId = state.selectedNpcId or state.npcId
+    return state
 end
 
 local function clamp(value, minValue, maxValue)
@@ -602,6 +606,29 @@ local function relationshipPolicySummary(record, policy)
     return string.format("%s/%s", tostring(policy.state), tostring(policy.reason))
 end
 
+local function relationshipStage(record)
+    if LWN.Social and LWN.Social.computeRelationshipStage then
+        return LWN.Social.computeRelationshipStage(record)
+    end
+    return record and record.relationshipToPlayer and record.relationshipToPlayer.stage or "neutral"
+end
+
+local function teamMoodSummary(teamId)
+    if not (LWN.Social and LWN.Social.updateTeamMood) then
+        return "team=unknown"
+    end
+    local team = LWN.Social.updateTeamMood(teamId or "player-team-0") or {}
+    return string.format(
+        "team=%s count=%s stress=%.2f morale=%.2f cohesion=%.2f reason=%s",
+        tostring(team.id or teamId or "player-team-0"),
+        tostring(team.companionCount or 0),
+        tonumber(team.stress or 0) or 0,
+        tonumber(team.morale or 0.5) or 0.5,
+        tonumber(team.cohesion or 0.5) or 0.5,
+        tostring(team.pressureReason or "none")
+    )
+end
+
 local function syncRecordCarrier(record, player, source)
     if not record or not record.embodiment or record.embodiment.state ~= "embodied" then
         return false, "record_not_embodied"
@@ -824,13 +851,17 @@ local function dumpRecordSummary(record, actor, player)
     print("[LWN][Debug] npc summary :: " .. summary)
     print("[LWN][Debug] npc hybrid :: " .. tostring(hybridLine or "HYBRID unavailable"))
     print(string.format(
-        "[LWN][Debug] npc relations :: trust=%.2f respect=%.2f fear=%.2f resentment=%.2f loyaltyShift=%.2f",
+        "[LWN][Debug] npc relations :: stage=%s trust=%.2f respect=%.2f fear=%.2f resentment=%.2f attachment=%.2f debt=%.2f loyaltyShift=%.2f",
+        relationshipStage(record),
         relationshipValue(record, "trust"),
         relationshipValue(record, "respect"),
         relationshipValue(record, "fear"),
         relationshipValue(record, "resentment"),
+        relationshipValue(record, "attachment"),
+        relationshipValue(record, "debt"),
         relationshipValue(record, "loyaltyShift")
     ))
+    print("[LWN][Debug] npc team :: " .. teamMoodSummary(record.companion and record.companion.teamId or "player-team-0"))
     print(string.format(
         "[LWN][Debug] npc stats :: hunger=%.2f thirst=%.2f fatigue=%.2f panic=%.2f health=%.2f role=%s story=%s clueCount=%s memories=%d",
         tonumber(record.stats and record.stats.hunger or 0) or 0,
@@ -842,6 +873,16 @@ local function dumpRecordSummary(record, actor, player)
         tostring(record.storyArc and record.storyArc.type or "none"),
         tostring(record.storyArc and record.storyArc.clueCount or 0),
         #(record.memories or {})
+    ))
+    local inventorySnapshot = LWN.Inventory and LWN.Inventory.snapshot and LWN.Inventory.snapshot(record, actor) or nil
+    print(string.format(
+        "[LWN][Debug] npc inventory :: recordItems=%d actorItems=%s primary=%s actorPrimary=%s actorSecondary=%s last=%s",
+        #(record.inventory and record.inventory.items or {}),
+        tostring(inventorySnapshot and inventorySnapshot.actor and inventorySnapshot.actor.totalItems or "nil"),
+        tostring(record.inventory and record.inventory.equipment and record.inventory.equipment.primaryWeapon or "none"),
+        tostring(inventorySnapshot and inventorySnapshot.actor and inventorySnapshot.actor.primaryHand or "none"),
+        tostring(inventorySnapshot and inventorySnapshot.actor and inventorySnapshot.actor.secondaryHand or "none"),
+        tostring(record.inventory and record.inventory.lastChangeReason or "none")
     ))
     local meta = Store.getEmbodiedMeta and Store.getEmbodiedMeta(record.id) or nil
     local debugState = record.embodiment and record.embodiment.debug or nil
@@ -1025,6 +1066,15 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind, options)
     randomizeIdentity(record, carrierKind == "bandits" and false or nil)
     applyDebugHarnessOverrides(record, options and options.harness or nil)
     ensureMinimalDummyState(record)
+    if options and options.teamId then
+        record.companion.teamId = options.teamId
+        record.companion.squadSlot = options.squadSlot
+        record.companion.recruited = true
+        record.combat = record.combat or {}
+        record.combat.disposition = options.disposition == "aggressive" and "aggressive" or "passive"
+        record.combat.state = "idle"
+        record.combat.reason = "spawned"
+    end
     record.identity.profession = "unemployed"
     record.backstory.formerProfession = record.identity.profession
     record.anchor.x = math.floor(player:getX()) + ZombRand(-2, 3)
@@ -1106,6 +1156,9 @@ local function resetAutomation(player, reason)
     state.scenario = nil
     state.phase = nil
     state.npcId = nil
+    state.npcIds = {}
+    state.pendingNpcId = nil
+    state.selectedNpcId = nil
     state.destination = nil
     state.startedAt = nil
     state.updatedAt = worldAgeHours()
@@ -1231,8 +1284,9 @@ end
 
 local function getAutomationRecord()
     local state = automationState()
-    if not state.npcId then return nil, state end
-    local record = Store.getNPC and Store.getNPC(state.npcId) or nil
+    local npcId = state.selectedNpcId or state.npcId
+    if not npcId then return nil, state end
+    local record = Store.getNPC and Store.getNPC(npcId) or nil
     return record, state
 end
 
@@ -1441,6 +1495,7 @@ local function issueDesignatedMoveCommand(record, player, options)
         commandSource = options and options.commandSource or "debug_tools",
         commandReason = options and options.commandReason or "debug_designated_move",
         destinationLabel = destination.label,
+        combatPolicy = "self_defense",
     })
 
     local issued = false
@@ -1476,68 +1531,152 @@ local function issueDesignatedMoveCommand(record, player, options)
     return true, record, destination
 end
 
-local function runMovementAutomationTest01WithCarrier(player, carrierKind)
-    local lane = tostring(carrierKind or "isozombie")
-    logTestAction("TEST_01_BEGIN", automationState(), nil, string.format("carrier=%s", tostring(lane)))
-    prepareAutomationCleanSlate(player, "automation_test_start")
-    local record, actor = spawnOneNearPlayerWithCarrier(player, lane, {
+local function issueFollowCommand(record, actor, source)
+    if not record or not actor or not LWN.ActionIntents or not LWN.ActionRuntime then return false end
+    record.companion = record.companion or {}
+    record.companion.squadRole = "follow"
+    record.companion.behaviorGuideline = "follow"
+    local intent = LWN.ActionIntents.followPlayer(record, {
+        commandKind = "follow_player",
+        commandSource = source or "debug_squad_spawn",
+        commandReason = "squad_default_follow",
+        combatPolicy = "stance",
+    })
+    return LWN.ActionRuntime.replaceWithIntent(record, actor, intent) == true
+end
+
+local function liveTestSquadRecords()
+    local records = {}
+    Store.eachNPC(function(record)
+        if Store.isAlive(record) == true
+            and record.debugSpawnOnly == true
+            and record.companion
+            and record.companion.teamId == "player-team-0"
+        then
+            records[#records + 1] = record
+        end
+    end)
+    table.sort(records, function(a, b)
+        local aSlot = tonumber(a.companion and a.companion.squadSlot) or 99
+        local bSlot = tonumber(b.companion and b.companion.squadSlot) or 99
+        if aSlot == bSlot then return tostring(a.id) < tostring(b.id) end
+        return aSlot < bSlot
+    end)
+    return records
+end
+
+local function reconcileSquadState(state)
+    local records = liveTestSquadRecords()
+    state.npcIds = {}
+    for i = 1, #records do
+        state.npcIds[#state.npcIds + 1] = records[i].id
+    end
+    if state.selectedNpcId then
+        local selected = Store.getNPC(state.selectedNpcId)
+        if not selected or Store.isAlive(selected) ~= true then
+            state.selectedNpcId = nil
+        end
+    end
+    state.selectedNpcId = state.selectedNpcId or state.npcIds[#state.npcIds]
+    state.npcId = state.selectedNpcId
+    return records
+end
+
+local function nextSquadSlot(records)
+    local used = {}
+    for i = 1, #records do
+        local slot = tonumber(records[i].companion and records[i].companion.squadSlot)
+        if slot then used[slot] = true end
+    end
+    for slot = 1, 3 do
+        if not used[slot] then return slot end
+    end
+    return nil
+end
+
+local function spawnSquadCompanion(player, disposition)
+    local state = automationState()
+    local records = reconcileSquadState(state)
+    if state.pendingNpcId then
+        local pending = Store.getNPC(state.pendingNpcId)
+        if pending and pending.embodiment and pending.embodiment.state == "spawning" then
+            sayInfo(player, string.format("Spawn already pending: %s", tostring(state.pendingNpcId)))
+            return false
+        end
+        state.pendingNpcId = nil
+    end
+    if #records >= 3 then
+        sayInfo(player, "Squad full: three living test companions already exist")
+        return false
+    end
+
+    local slot = nextSquadSlot(records)
+    local stance = disposition == "aggressive" and "aggressive" or "passive"
+    local record, actor = spawnOneNearPlayerWithCarrier(player, "bandits", {
+        teamId = "player-team-0",
+        squadSlot = slot,
+        disposition = stance,
         harness = {
             forceFriendly = false,
-            holdPosition = true,
+            holdPosition = false,
             quarantine = false,
             allowCommandMovement = true,
-            mode = "minimal_dummy",
+            mode = "companion_squad_combat",
         },
     })
     if not record then
-        sayInfo(player, string.format("TEST 01 failed: spawn failed (%s)", lane))
+        sayInfo(player, "Companion spawn failed before record creation")
         return false
     end
     if not actor and (not record.embodiment or record.embodiment.state ~= "spawning") then
-        sayInfo(player, string.format(
-            "TEST 01 failed: %s (%s)",
-            tostring(record.embodiment and record.embodiment.lastFailureReason or "carrier spawn failed"),
-            tostring(record.embodiment and record.embodiment.lastFailureDetail or lane)
-        ))
+        local reason = record.embodiment and record.embodiment.lastFailureReason or "carrier_spawn_failed"
+        local detail = record.embodiment and record.embodiment.lastFailureDetail or "bandits"
+        if LWN.EmbodimentManager and LWN.EmbodimentManager.canonicalCleanup then
+            LWN.EmbodimentManager.canonicalCleanup(record, {
+                removeRecord = true,
+                blockNpcId = false,
+                reason = "squad_spawn_failed",
+                detail = tostring(reason) .. ":" .. tostring(detail),
+            })
+        end
+        sayInfo(player, string.format("Companion spawn failed: %s (%s)", tostring(reason), tostring(detail)))
         return false
     end
 
-    local state = automationState()
     state.active = true
-    state.scenario = string.format("minimal_dummy_move_return_%s_v1", lane)
-    state.carrierKind = lane
-    state.phase = actor and "test_02_ready" or "test_01_spawning"
+    state.scenario = "companion_squad_combat_v1"
+    state.carrierKind = "bandits"
+    state.phase = actor and "squad_ready" or "squad_spawning"
+    state.pendingNpcId = actor and nil or record.id
+    state.selectedNpcId = record.id
     state.npcId = record.id
     state.destination = nil
-    state.startedAt = worldAgeHours()
-    state.updatedAt = state.startedAt
-    state.step = 1
-    logTestAction(actor and "TEST_01_READY" or "TEST_01_SPAWNING", state, record, string.format("carrier=%s spawnedActor=%s", tostring(lane), tostring((actor or findActorForRecord(record)) ~= nil)))
+    state.startedAt = state.startedAt or worldAgeHours()
+    state.updatedAt = worldAgeHours()
+    state.step = #records + 1
+    reconcileSquadState(state)
 
-    if not actor then
-        sayInfo(player, string.format("TEST 01 [%s] spawning; wait for binding before TEST 02", lane))
-        return true
+    if actor then
+        issueFollowCommand(record, actor, "debug_squad_spawn_immediate")
     end
-
-    dumpRecordSummary(record, actor or findActorForRecord(record), player)
-    dumpMovementAudioForRecord(record, player)
-    dumpAutomationOneLineSummary(record, actor or findActorForRecord(record), player, string.format("TEST 01 SUMMARY [%s]", lane))
-
-    sayChecklist(player, string.format("TEST 01 CHECK [%s]", lane), {
-        "Look: only ONE test NPC should exist.",
-        "Check: shell lane / carrier kind shown in the summary.",
-        "Check: canWalk=yes and useless=no in the summary when possible.",
-        "Check: probeOk/appFail and role/guard fields for presentation truth.",
-        "Look: same face, hair, and clothes stay stable.",
-        "Look: idle posture reads human, not feral zombie.",
-        "Listen: zombie audio should stay quiet.",
-        "Then click TEST 02.",
-    })
-    return true
+    logTestAction(
+        actor and "SQUAD_SPAWN_READY" or "SQUAD_SPAWN_PENDING",
+        state,
+        record,
+        string.format("slot=%s stance=%s actor=%s", tostring(slot), stance, tostring(actor))
+    )
+    sayInfo(player, string.format(
+        "%s companion %s slot=%s %s",
+        actor and "Spawned" or "Spawning",
+        tostring(record.id),
+        tostring(slot),
+        stance
+    ))
+    return true, record, actor
 end
 
 local function runMovementAutomationTest01(player)
-    return runMovementAutomationTest01WithCarrier(player, "bandits")
+    return spawnSquadCompanion(player, "aggressive")
 end
 
 local function runIsoPlayerViabilityProbe(player)
@@ -1599,6 +1738,7 @@ local function isSupportedAutomationScenario(state)
         or scenario == "minimal_dummy_move_return_isozombie_v1"
         or scenario == "minimal_dummy_move_return_isosurvivor_v1"
         or scenario == "minimal_dummy_move_return_bandits_v1"
+        or scenario == "companion_squad_combat_v1"
 end
 
 local function isIsoPlayerProbeScenario(state)
@@ -1620,7 +1760,7 @@ local function runMovementAutomationTest02(player)
         sayInfo(player, string.format("Tracked NPC %s missing. Use TEST RESET.", tostring(state.npcId)))
         return false
     end
-    if state.phase ~= "test_02_ready" then
+    if state.phase ~= "test_02_ready" and state.phase ~= "squad_ready" then
         sayInfo(player, string.format("TEST 02 unavailable at phase %s", tostring(state.phase)))
         return false
     end
@@ -1991,42 +2131,69 @@ function DebugTools.runAutomatedIsoZombieTest01(player)
     return runMovementAutomationTest01(player)
 end
 
+function DebugTools.spawnAggressiveCompanion(player)
+    return spawnSquadCompanion(player, "aggressive")
+end
+
+function DebugTools.spawnPassiveCompanion(player)
+    return spawnSquadCompanion(player, "passive")
+end
+
+function DebugTools.selectSquadNpc(npcId)
+    local record = npcId and Store.getNPC(npcId) or nil
+    if not record or Store.isAlive(record) ~= true then return false end
+    local state = automationState()
+    state.selectedNpcId = npcId
+    state.npcId = npcId
+    state.updatedAt = worldAgeHours()
+    return true
+end
+
 function DebugTools.onCarrierEmbodied(record, actor)
     local state = automationState()
-    if not record or state.active ~= true or state.npcId ~= record.id or state.phase ~= "test_01_spawning" then
+    if not record or state.active ~= true or state.pendingNpcId ~= record.id then
         return false
     end
-    state.phase = "test_02_ready"
+    issueFollowCommand(record, actor, "debug_squad_spawn_bound")
+    state.pendingNpcId = nil
+    state.selectedNpcId = record.id
+    state.npcId = record.id
+    state.phase = "squad_ready"
     state.updatedAt = worldAgeHours()
-    state.step = 1
-    logTestAction("TEST_01_READY", state, record, string.format("carrier=%s asyncBound=true", tostring(state.carrierKind)))
+    reconcileSquadState(state)
+    logTestAction("SQUAD_SPAWN_READY", state, record, string.format(
+        "carrier=%s slot=%s stance=%s asyncBound=true",
+        tostring(state.carrierKind),
+        tostring(record.companion and record.companion.squadSlot),
+        tostring(record.combat and record.combat.disposition)
+    ))
     dumpRecordSummary(record, actor, getSpecificPlayer and getSpecificPlayer(0) or nil)
     dumpMovementAudioForRecord(record, getSpecificPlayer and getSpecificPlayer(0) or nil)
-    dumpAutomationOneLineSummary(record, actor, getSpecificPlayer and getSpecificPlayer(0) or nil, "TEST 01 SUMMARY [bandits]")
-    sayChecklist(getSpecificPlayer and getSpecificPlayer(0) or nil, "TEST 01 READY [bandits]", {
-        "Look: exactly one human-presenting dummy exists.",
-        "Wait and listen: zombie audio and Bandit speech must remain silent.",
-        "Watch: the dummy must not target or attack the player, zombies, or other Bandits.",
-        "Then click TEST 02 - Command Walk.",
+    dumpAutomationOneLineSummary(record, actor, getSpecificPlayer and getSpecificPlayer(0) or nil, "SQUAD SPAWN SUMMARY [bandits]")
+    sayChecklist(getSpecificPlayer and getSpecificPlayer(0) or nil, "SQUAD COMPANION READY", {
+        "The companion now follows the player using its selected combat stance.",
+        "Spawn up to three companions one at a time.",
+        "Use TEST STATUS to inspect all living squad members.",
     })
     return true
 end
 
 function DebugTools.onCarrierEmbodimentFailed(record, reason, detail)
     local state = automationState()
-    if not record or state.active ~= true or state.npcId ~= record.id or state.phase ~= "test_01_spawning" then
+    if not record or state.active ~= true or state.pendingNpcId ~= record.id then
         return false
     end
     state.phase = "failed"
+    state.pendingNpcId = nil
     state.updatedAt = worldAgeHours()
-    state.step = 1
-    logTestAction("TEST_01_FAILED", state, record, string.format(
+    reconcileSquadState(state)
+    logTestAction("SQUAD_SPAWN_FAILED", state, record, string.format(
         "reason=%s detail=%s",
         tostring(reason), tostring(detail)
     ))
     sayInfo(
         getSpecificPlayer and getSpecificPlayer(0) or nil,
-        string.format("TEST 01 failed: %s (%s)", tostring(reason), tostring(detail))
+        string.format("Companion spawn failed: %s (%s)", tostring(reason), tostring(detail))
     )
     return true
 end
@@ -2052,27 +2219,36 @@ function DebugTools.runAutomatedIsoZombieTest04(player)
 end
 
 function DebugTools.resetAutomatedIsoZombieTest(player)
-    local record = getAutomationRecord()
-    if record then
-        setAutomationReturnRecoveryMode(record, false, "TEST_RESET")
+    local records = liveTestSquadRecords()
+    for i = 1, #records do
+        setAutomationReturnRecoveryMode(records[i], false, "TEST_RESET")
     end
     logTestAction("TEST_RESET", automationState(), nil, "manual_reset")
     prepareAutomationCleanSlate(player, "manual_reset")
+    if LWN.Combat and LWN.Combat.resetTeam then
+        LWN.Combat.resetTeam("player-team-0")
+    end
     return true
 end
 
 function DebugTools.dumpAutomatedIsoZombieTestStatus(player)
-    local record, state = getAutomationRecord()
+    local _, state = getAutomationRecord()
+    local records = reconcileSquadState(state)
     local destination = state.destination or {}
-    logTestAction("TEST_STATUS", state, record, string.format("dest=%s,%s,%s", tostring(destination.x or "nil"), tostring(destination.y or "nil"), tostring(destination.z or "nil")))
+    logTestAction("TEST_STATUS", state, nil, string.format(
+        "members=%s pending=%s selected=%s",
+        tostring(#records), tostring(state.pendingNpcId), tostring(state.selectedNpcId)
+    ))
     sayShortAndLog(
         player,
-        string.format("TEST STATUS %s", tostring(state.phase or "unknown")),
+        string.format("SQUAD STATUS %d/3", #records),
         string.format(
-            "TEST STATUS scenario=%s phase=%s npcId=%s active=%s dest=%s,%s,%s %s",
+            "TEST STATUS scenario=%s phase=%s members=%s pending=%s selected=%s active=%s dest=%s,%s,%s %s",
             tostring(state.scenario),
             tostring(state.phase),
-            tostring(state.npcId),
+            tostring(#records),
+            tostring(state.pendingNpcId),
+            tostring(state.selectedNpcId),
             tostring(state.active),
             tostring(destination.x or "nil"),
             tostring(destination.y or "nil"),
@@ -2080,13 +2256,38 @@ function DebugTools.dumpAutomatedIsoZombieTestStatus(player)
             tostring(destination.label or "")
         )
     )
-    if record then
+    for i = 1, #records do
+        local record = records[i]
+        local actor = findActorForRecord(record)
+        local command = record.companion and record.companion.command or {}
+        local combat = record.combat or {}
+        local carrierDebug = LWN.CarrierAdapter and LWN.CarrierAdapter.getDebugState
+            and LWN.CarrierAdapter.getDebugState(record) or {}
+    print(string.format(
+            "[LWN][Squad] npcId=%s name=%s %s slot=%s stage=%s stance=%s policy=%s team=%s behavior=%s health=%.2f command=%s/%s combat=%s reason=%s followMode=%s playerDistance=%s targetDistance=%s %s",
+            tostring(record.id),
+            tostring(record.identity and record.identity.firstName or "Unknown"),
+            tostring(record.identity and record.identity.lastName or ""),
+            tostring(record.companion and record.companion.squadSlot),
+            relationshipStage(record),
+            tostring(combat.disposition),
+            tostring(command.combatPolicy or "none"),
+            tostring(record.companion and record.companion.teamId),
+            tostring(record.companion and record.companion.behaviorGuideline or "follow"),
+            tonumber(record.stats and record.stats.health or 0) or 0,
+            tostring(command.kind or "none"),
+            tostring(command.status or "idle"),
+            tostring(combat.state or "idle"),
+            tostring(combat.reason or "none"),
+            tostring(carrierDebug.followMode or "none"),
+            tostring(carrierDebug.followPlayerDistance or "nil"),
+            tostring(carrierDebug.followTargetDistance or "nil"),
+            teamMoodSummary(record.companion and record.companion.teamId or "player-team-0")
+        ))
         dumpRecordSummary(record, findActorForRecord(record), player)
-        dumpMovementAudioForRecord(record, player)
-        dumpAutomationOneLineSummary(record, findActorForRecord(record), player, "TEST STATUS SUMMARY")
-        return true
+        dumpAutomationOneLineSummary(record, actor, player, "SQUAD MEMBER SUMMARY")
     end
-    return false
+    return #records > 0
 end
 
 function DebugTools.applyStoryBeat(player, beat)

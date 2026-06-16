@@ -38,9 +38,18 @@ function Status.snapshot(record, actor)
     local embodiment = record.embodiment or {}
     local modData = protectedCall(actor, "getModData")
     local actorHealth = protectedCall(actor, "getHealth")
+    local inventorySnapshot = LWN.Inventory and LWN.Inventory.snapshot and LWN.Inventory.snapshot(record, actor) or nil
+    local stage = LWN.Social and LWN.Social.computeRelationshipStage and LWN.Social.computeRelationshipStage(record)
+        or relationship.stage
+        or "neutral"
+    local team = companion.teamId
+        and LWN.Social
+        and LWN.Social.updateTeamMood
+        and LWN.Social.updateTeamMood(companion.teamId)
+        or nil
 
     return {
-        version = 1,
+        version = 2,
         npcId = record.id,
         identity = {
             name = fullName(record),
@@ -59,11 +68,21 @@ function Status.snapshot(record, actor)
             pain = number(stats.pain),
         },
         relationship = {
+            stage = stage,
             trust = number(relationship.trust),
             respect = number(relationship.respect),
             fear = number(relationship.fear),
             resentment = number(relationship.resentment),
             attachment = number(relationship.attachment),
+            debt = number(relationship.debt),
+        },
+        team = {
+            id = companion.teamId or "none",
+            companionCount = number(team and team.companionCount),
+            stress = number(team and team.stress),
+            morale = number(team and team.morale, 0.5),
+            cohesion = number(team and team.cohesion, 0.5),
+            pressureReason = team and team.pressureReason or "none",
         },
         inventory = {
             foodDays = number(inventory.foodDays),
@@ -72,6 +91,19 @@ function Status.snapshot(record, actor)
             ammo = number(inventory.ammo),
             valuables = number(inventory.valuables),
             equipment = inventory.equipment or {},
+            items = inventory.items or {},
+            actorItemCount = number(inventorySnapshot and inventorySnapshot.actor and inventorySnapshot.actor.totalItems),
+            actorWornCount = number(inventorySnapshot and inventorySnapshot.actor and inventorySnapshot.actor.wornCount),
+            actorItemVisualCount = number(inventorySnapshot and inventorySnapshot.actor and inventorySnapshot.actor.itemVisualCount),
+            primaryWeapon = inventorySnapshot and inventorySnapshot.record and inventorySnapshot.record.primaryWeapon
+                or inventory.equipment and inventory.equipment.primaryWeapon
+                or nil,
+            actorPrimaryHand = inventorySnapshot and inventorySnapshot.actor and inventorySnapshot.actor.primaryHand or nil,
+            actorSecondaryHand = inventorySnapshot and inventorySnapshot.actor and inventorySnapshot.actor.secondaryHand or nil,
+            clothing = inventorySnapshot and inventorySnapshot.record and inventorySnapshot.record.clothing
+                or inventory.equipment and inventory.equipment.clothing
+                or {},
+            lastChangeReason = inventorySnapshot and inventorySnapshot.lastChangeReason or inventory.lastChangeReason,
         },
         skills = {
             perks = record.perks or {},
@@ -83,6 +115,7 @@ function Status.snapshot(record, actor)
             commandStatus = command.status or "idle",
             commandDestination = command.destination or {},
             squadRole = companion.squadRole or "none",
+            behaviorGuideline = companion.behaviorGuideline or "follow",
         },
         embodiment = {
             state = embodiment.state or "unknown",

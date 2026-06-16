@@ -29,6 +29,8 @@ function Store.root()
     if not root.version then
         local fresh = LWN.Schema.newRoot()
         for k, v in pairs(fresh) do root[k] = v end
+    elseif LWN.Schema and LWN.Schema.newRoot and LWN.Schema.ensureDefaults then
+        LWN.Schema.ensureDefaults(root, LWN.Schema.newRoot())
     end
     return root
 end

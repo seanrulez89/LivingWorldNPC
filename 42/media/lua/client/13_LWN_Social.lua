@@ -23,10 +23,151 @@ local function ensureCombatPolicyTables(record)
     if type(record) ~= "table" then
         return {}, {}, {}
     end
+    if LWN.PopulationStore and LWN.PopulationStore.ensureRecordShape then
+        LWN.PopulationStore.ensureRecordShape(record)
+    end
     record.relationshipToPlayer = record.relationshipToPlayer or {}
     record.drama = record.drama or {}
     record.companion = record.companion or {}
     return record.relationshipToPlayer, record.drama, record.companion
+end
+
+local function worldAgeHours()
+    return getGameTime() and getGameTime():getWorldAgeHours() or 0
+end
+
+local function relationScore(record)
+    local rel = record and record.relationshipToPlayer or {}
+    return (tonumber(rel.trust or 0) or 0) * 1.25
+        + (tonumber(rel.respect or 0) or 0) * 0.45
+        + (tonumber(rel.attachment or 0) or 0) * 0.55
+        + (tonumber(rel.debt or 0) or 0) * 0.25
+        - (tonumber(rel.fear or 0) or 0) * 0.45
+        - (tonumber(rel.resentment or 0) or 0) * 1.10
+end
+
+local function defaultTeam(teamId)
+    return {
+        id = teamId or "player-team-0",
+        companionCount = 0,
+        stress = 0.0,
+        morale = 0.5,
+        cohesion = 0.5,
+        pressureReason = "baseline",
+        lastUpdatedHour = worldAgeHours(),
+    }
+end
+
+function Social.computeRelationshipStage(record)
+    if type(record) ~= "table" then return "neutral" end
+    if Social.isMinimalDummyRecord(record) then
+        record.relationshipToPlayer = record.relationshipToPlayer or {}
+        record.relationshipToPlayer.stage = record.companion and record.companion.recruited == true
+            and "companion"
+            or "friendly"
+        return record.relationshipToPlayer.stage
+    end
+
+    local rel, drama, companion = ensureCombatPolicyTables(record)
+    if drama.pendingBetrayal == true or Social.betrayalScore(record) >= (LWN.Config.Social.BetrayThreshold or 1.25) then
+        rel.stage = "hostile"
+        return rel.stage
+    end
+
+    local score = relationScore(record)
+    if companion.recruited == true and score >= -0.15 then
+        rel.stage = "companion"
+    elseif score >= 0.45 then
+        rel.stage = "friendly"
+    elseif score <= -0.55 then
+        rel.stage = "hostile"
+    elseif score <= -0.15 or (tonumber(rel.fear or 0) or 0) >= 0.65 or (tonumber(rel.resentment or 0) or 0) >= 0.60 then
+        rel.stage = "wary"
+    else
+        rel.stage = "neutral"
+    end
+    return rel.stage
+end
+
+function Social.getTeam(teamId)
+    teamId = teamId or "player-team-0"
+    if not (LWN.PopulationStore and LWN.PopulationStore.root) then
+        return defaultTeam(teamId)
+    end
+    local root = LWN.PopulationStore.root()
+    root.teams = root.teams or {}
+    root.teams[teamId] = root.teams[teamId] or defaultTeam(teamId)
+    return root.teams[teamId]
+end
+
+function Social.updateTeamMood(teamId)
+    teamId = teamId or "player-team-0"
+    local team = Social.getTeam(teamId)
+    local count = 0
+    local stressSum = 0
+    local moraleSum = 0
+    local relationSum = 0
+
+    if LWN.PopulationStore and LWN.PopulationStore.eachNPC then
+        LWN.PopulationStore.eachNPC(function(record)
+            if LWN.PopulationStore.isAlive(record) == true
+                and record.companion
+                and record.companion.recruited == true
+                and record.companion.teamId == teamId
+            then
+                count = count + 1
+                Social.computeRelationshipStage(record)
+                stressSum = stressSum + (tonumber(record.stats and record.stats.stress or 0) or 0)
+                moraleSum = moraleSum + (tonumber(record.stats and record.stats.morale or 0.5) or 0.5)
+                relationSum = relationSum + relationScore(record)
+            end
+        end)
+    end
+
+    local comfortable = LWN.Config.Social.ComfortableCompanionCount or 3
+    local extra = math.max(0, count - comfortable)
+    local baseStress = count > 0 and (stressSum / count) or 0
+    local sizeStress = extra * (LWN.Config.Social.OversizeStressPerCompanion or 0.12)
+    local morale = count > 0 and (moraleSum / count) or 0.5
+    local cohesion = count > 0 and clamp(0.5 + (relationSum / count) * 0.25, 0, 1) or 0.5
+    cohesion = clamp(cohesion - extra * (LWN.Config.Social.OversizeCohesionPenaltyPerCompanion or 0.08), 0, 1)
+
+    team.companionCount = count
+    team.stress = clamp(baseStress + sizeStress, 0, 1.5)
+    team.morale = clamp(morale - sizeStress * 0.35, 0, 1)
+    team.cohesion = cohesion
+    team.pressureReason = extra > 0 and "oversized_group" or "baseline"
+    team.lastUpdatedHour = worldAgeHours()
+    return team
+end
+
+function Social.applyEvent(record, eventKind, data)
+    if type(record) ~= "table" then return false end
+    data = data or {}
+    eventKind = tostring(eventKind or "")
+
+    if eventKind == "rescued_from_zombie" then
+        Social.adjustTrust(record, 0.08, eventKind)
+        record.relationshipToPlayer.attachment = clamp((record.relationshipToPlayer.attachment or 0) + 0.05, -1, 1.5)
+    elseif eventKind == "friendly_fire" then
+        record.relationshipToPlayer.fear = clamp((record.relationshipToPlayer.fear or 0) + 0.08, 0, 1.5)
+        Social.adjustResentment(record, 0.10, eventKind)
+    elseif eventKind == "neglect" then
+        Social.adjustTrust(record, -0.05, eventKind)
+        Social.adjustResentment(record, 0.05, eventKind)
+    elseif eventKind == "companion_death" then
+        record.stats = record.stats or {}
+        record.stats.stress = clamp((record.stats.stress or 0) + 0.12, 0, 1.5)
+        remember(record, eventKind, 0.60, data)
+    else
+        remember(record, eventKind ~= "" and eventKind or "social_event", tonumber(data.salience or 0.10) or 0.10, data)
+    end
+
+    Social.computeRelationshipStage(record)
+    if record.companion and record.companion.teamId then
+        Social.updateTeamMood(record.companion.teamId)
+    end
+    return true
 end
 
 function Social.isMinimalDummyRecord(record)
@@ -94,20 +235,24 @@ function Social.adjustTrust(record, delta, reason)
     local rel = ensureCombatPolicyTables(record)
     if Social.isMinimalDummyRecord(record) then
         rel.trust = 0
+        rel.stage = "friendly"
         return
     end
     rel.trust = clamp((tonumber(rel.trust or 0) or 0) + delta, -1, 1)
     remember(record, reason or "trust_shift", math.abs(delta), { delta = delta })
+    Social.computeRelationshipStage(record)
 end
 
 function Social.adjustResentment(record, delta, reason)
     local rel = ensureCombatPolicyTables(record)
     if Social.isMinimalDummyRecord(record) then
         rel.resentment = 0
+        rel.stage = "friendly"
         return
     end
     rel.resentment = clamp((tonumber(rel.resentment or 0) or 0) + delta, 0, 1.5)
     remember(record, reason or "resentment_shift", math.abs(delta), { delta = delta })
+    Social.computeRelationshipStage(record)
 end
 
 function Social.commandResponse(record, command, context)
@@ -163,7 +308,9 @@ function Social.canRecruit(record)
     if Social.isMinimalDummyRecord(record) then
         return false
     end
+    Social.computeRelationshipStage(record)
     return record.relationshipToPlayer.trust >= LWN.Config.Social.RecruitTrustFloor
+        or record.relationshipToPlayer.stage == "friendly"
 end
 
 function Social.relationshipCombatPolicy(record)
@@ -171,6 +318,7 @@ function Social.relationshipCombatPolicy(record)
         return Social.minimalDummyPolicy(record)
     end
     local rel, drama, companion = ensureCombatPolicyTables(record)
+    local stage = Social.computeRelationshipStage(record)
     local trust = tonumber(rel.trust or 0) or 0
     local betrayalScore = Social.betrayalScore(record)
     local recruitFloor = LWN.Config.Social.RecruitTrustFloor or 0.45
@@ -179,6 +327,7 @@ function Social.relationshipCombatPolicy(record)
     if drama.pendingBetrayal == true or betrayalScore >= betrayThreshold then
         return {
             state = "hostile",
+            relationshipStage = stage,
             allowPlayerAttack = true,
             allowCarrierAttackPlayer = true,
             shouldNeutralizeCarrier = false,
@@ -189,9 +338,10 @@ function Social.relationshipCombatPolicy(record)
         }
     end
 
-    if companion.recruited == true and trust >= recruitFloor then
+    if companion.recruited == true and (trust >= recruitFloor or stage == "companion") then
         return {
             state = "friendly",
+            relationshipStage = stage,
             allowPlayerAttack = false,
             allowCarrierAttackPlayer = false,
             shouldNeutralizeCarrier = true,
@@ -204,6 +354,7 @@ function Social.relationshipCombatPolicy(record)
 
     return {
         state = "neutral",
+        relationshipStage = stage,
         allowPlayerAttack = true,
         allowCarrierAttackPlayer = false,
         shouldNeutralizeCarrier = true,
@@ -216,6 +367,7 @@ end
 
 function Social.combatPolicySummary(record, policy)
     local rel = ensureCombatPolicyTables(record)
+    local stage = Social.computeRelationshipStage(record)
     policy = policy or Social.relationshipCombatPolicy(record)
     if Social.isMinimalDummyRecord(record) then
         return string.format(
@@ -227,9 +379,10 @@ function Social.combatPolicySummary(record, policy)
         )
     end
     return string.format(
-        "%s/%s t=%.2f",
+        "%s/%s stage=%s t=%.2f",
         tostring(policy and policy.state or "unknown"),
         tostring(policy and policy.reason or "unknown"),
+        tostring(stage),
         tonumber(rel.trust or 0) or 0
     )
 end

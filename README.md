@@ -8,10 +8,15 @@ This project is currently in active R&D.
 
 - Canonical NPC state lives in `ModData`
 - On-screen NPCs are embodied dynamically when needed
-- The current embodiment path is still under active investigation
-- Highest current blocker: the active `IsoZombie` shell still reads as zombie-owned presentation instead of a human-looking NPC on first spawn
-- Current active hypothesis: Bandits-style visual/build ordering changes real appearance inputs, but final Build 42 presentation ownership still remains on the zombie side
-- Recommended next manual investigation order: `TEST RESET`, `TEST 01 - Spawn Baseline (IsoZombie)`, immediate visual observation, then `TEST STATUS`
+- The current active companion carrier is Bandits-backed, with LWN retaining the
+  canonical NPC record and command state
+- The initial milestone of a human-looking, non-zombie-sounding, commandable NPC
+  has been reached
+- Current work is moving into three-person companion squad behavior: follow,
+  wait, directed movement, combat stance, damage/death, status, inventory, and
+  autonomous-feeling decisions
+- Legacy `IsoZombie`, `IsoSurvivor`, and `IsoPlayer` carriers remain in the
+  repository as research paths, not as the current default test path
 - The repository contains both runtime code and research/debug documentation
 
 In short: this is a working development repository, **not a finished stable release**.
@@ -29,8 +34,9 @@ The project currently experiments with:
 
 - `ModData` as canonical NPC state
 - dynamic embodiment near the player
-- `IsoZombie` as the current practical world carrier
-- gradual Bandits-style visual/build borrowing for spawn-time appearance probes
+- Bandits as the current practical world carrier for test companions
+- LWN-owned intents and command state layered above Bandits execution
+- squad threat evaluation and combat permission through `LWN.Combat`
 - runtime tracing for presentation, cleanup, death/corpse/reanimation, and UI targeting
 - Build 42-specific validation and debugging workflow on macOS
 
@@ -76,10 +82,11 @@ bash scripts/bootstrap-lua-mac.sh
 Start here if you want context:
 
 - `docs/README.md`
+- `docs/DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md`
+- `docs/COMPANION_SQUAD_COMBAT_FOUNDATION_PLAN_2026-06-14.md`
+- `docs/BANDITS_CONTROLLED_NPC_IMPLEMENTATION_2026-06-13.md`
 - `docs/TEST_LOG_HISTORY.md`
-- `docs/LWN_BUILD42_DECISION_MATRIX_2026-03-12.md`
-- `docs/STRUCTURE_REVIEW_EXPERIMENTS_2026-03-12.md`
-- `docs/OFFICIAL_BUILD42_API_AUDIT_2026-03-12.md`
+- `docs/REFERENCE_MODS_LOCAL_CODE_REVIEW_2026-06-13.md`
 
 ## License / publishing note
 

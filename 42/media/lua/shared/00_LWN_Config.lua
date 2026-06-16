@@ -33,6 +33,9 @@ LWN.Config = {
         RecruitTrustFloor = 0.45,
         BetrayThreshold = 1.25,
         MemoryDecayPerDay = 0.02,
+        ComfortableCompanionCount = 3,
+        OversizeStressPerCompanion = 0.12,
+        OversizeCohesionPenaltyPerCompanion = 0.08,
     },
 
     Legacy = {

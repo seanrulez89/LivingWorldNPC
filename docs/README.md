@@ -2,6 +2,31 @@
 
 This directory contains research notes, audits, workflow references, and experiment summaries for LivingWorldNPC.
 
+## Current June 2026 foundation
+
+These documents supersede the March/April `IsoZombie` blocker notes for current
+development. Older documents remain useful historical research, but the active
+test path is now Bandits-backed companions with LWN-owned canonical state.
+
+- `DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md`
+  - current domain ownership, shared runtime contracts, and sub-agent work rules
+    for combat, status, inventory, personal history, and autonomous-feeling
+    behavior
+- `LONG_TERM_NPC_VISION_2026-06-16.md`
+  - long-term design vision for player-like survivors, relationships,
+    narrative, gifts, betrayal, autonomous behavior guidelines, and vehicles
+- `COMPANION_SQUAD_COMBAT_FOUNDATION_PLAN_2026-06-14.md`
+  - current three-person companion squad combat foundation plan
+- `BANDITS_CONTROLLED_NPC_IMPLEMENTATION_2026-06-13.md`
+  - Bandits-backed controlled NPC implementation note
+- `BANDITS_FRIENDLY_DAMAGE_AND_RESPAWN_FAILURE_INVESTIGATION_2026-06-13.md`
+  - investigation of friendly damage suppression and respawn failure before the
+    later damage/death patch
+- `REFERENCE_MODS_LOCAL_CODE_REVIEW_2026-06-13.md`
+  - local code review of reference mods downloaded through Steam
+- `WORKING_CONTEXT_2026-06-13.md`
+  - restart context for the June 2026 Bandits carrier work
+
 ## Fresh synthesis / triage
 
 - `NEXT_SESSION_HANDOFF_2026-04-05.md`
@@ -45,20 +70,28 @@ This directory contains research notes, audits, workflow references, and experim
 - `LWN_BANDITS_1TO1_MINIMAL_COMPONENT_MAP_2026-03-21.md`
   - detailed 1:1 structure map from Bandits into LWN, identifying the minimum missing orchestration components for a true `IsoZombie`-shell persistent-illusion architecture
 
-## Current blocker / next spike
+## Historical March/April blocker notes
 
-- for the most current branch-level judgment, read `NEXT_SESSION_HANDOFF_2026-04-05.md` first
-- current immediate goal is no longer movement / return-path correctness; it is **spawn-time human appearance, even for 1 second**
-- current active strategic lane remains gradual Bandits-style adoption on top of the `IsoZombie` shell, not a return to wider lifecycle debugging
+- These notes document the older `IsoZombie` shell investigation. They are no
+  longer the current test-path verdict.
+- For current branch-level judgment, start with the June 2026 foundation section
+  above.
+- The March/April immediate goal was spawn-time human appearance on an
+  `IsoZombie` shell. The current path uses a Bandits-backed carrier with LWN
+  canonical state and command/combat policy layered above it.
 - for older strategic background, `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md` is still useful historical context
 - the notes below are the 2026-03-20 session snapshot and are useful as historical context, not as the latest final verdict
-- current active carrier direction is `IsoZombie`, not `IsoPlayer`
-- the hybrid appearance experiment now really runs on the live `IsoZombie` shell, but the shell still renders through zombie presentation (`reanimated_zombie`, zombie body skin)
-- relationship policy has started affecting live behavior: `hostile` can now provoke pursuit/attack intent, while `friendly` / `neutral` still suffer from movement-churn / partial-neutralization issues
+- at that time, the active carrier direction was `IsoZombie`, not `IsoPlayer`
+- the hybrid appearance experiment then ran on the live `IsoZombie` shell, but
+  still rendered through zombie presentation (`reanimated_zombie`, zombie body
+  skin)
+- relationship policy had started affecting live behavior in that line of
+  research: `hostile` could provoke pursuit/attack intent, while `friendly` /
+  `neutral` still suffered from movement-churn / partial-neutralization issues
 - the March 20 snapshot's most immediate technical blocker was a repeatable Java-side exception during relationship/trust sync:
   - `NullPointerException: Cannot assign field "isNpc" because "this.player" is null`
   - current code has since added zombie-carrier guards around those human-only setters; the master reference covers the newer architecture verdict
-- recommended next manual experiments / fixes:
+- then-recommended manual experiments / fixes:
   1. strengthen non-hostile movement suppression and trace the repeated `retreat` / deferred movement churn
   2. probe the zombie presentation pipeline itself rather than only descriptor/human-visual shaping
   3. keep validating shell identity continuity and UI framing rather than treating the problem as purely visual

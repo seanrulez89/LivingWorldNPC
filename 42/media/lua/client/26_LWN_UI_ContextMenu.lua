@@ -334,6 +334,9 @@ end
 
 local function queueCommand(record, actor, intent, squadRole)
     if not record or not actor or not intent then return false end
+    if LWN.DebugTools and LWN.DebugTools.selectSquadNpc then
+        LWN.DebugTools.selectSquadNpc(record.id)
+    end
     record.companion = record.companion or {}
     record.companion.squadRole = squadRole
     if LWN.ActionRuntime and LWN.ActionRuntime.replaceWithIntent then
@@ -354,6 +357,7 @@ local function commandMoveToSquare(record, actor, square)
         commandSource = "world_context",
         commandReason = "player_right_click_move",
         destinationLabel = label,
+        combatPolicy = "self_defense",
     })
     local queued = queueCommand(record, actor, intent, "move")
     print(string.format(
@@ -369,6 +373,7 @@ local function commandFollowPlayer(record, actor)
         commandKind = "follow_player",
         commandSource = "world_context",
         commandReason = "player_follow_command",
+        combatPolicy = "stance",
     })
     local queued = queueCommand(record, actor, intent, "follow")
     print(string.format(
@@ -380,12 +385,69 @@ end
 
 local function commandWait(record, actor)
     if not record or not actor or not LWN.ActionRuntime then return false end
+    if LWN.DebugTools and LWN.DebugTools.selectSquadNpc then
+        LWN.DebugTools.selectSquadNpc(record.id)
+    end
     record.companion = record.companion or {}
     record.companion.squadRole = "wait"
     LWN.ActionRuntime.clear(record, actor)
+    record.companion.command = record.companion.command or {}
+    local command = record.companion.command
+    command.kind = "wait"
+    command.source = "world_context"
+    command.intentKind = nil
+    command.combatPolicy = "self_defense"
+    command.status = "waiting"
+    command.active = true
+    command.issuedAt = getGameTime() and getGameTime():getWorldAgeHours() or 0
+    command.startedAt = command.issuedAt
+    command.completedAt = nil
+    command.lastOutcome = nil
+    command.lastReason = "player_wait_command"
     print(string.format(
         "[LWN][Command] wait npcId=%s name=%s",
         tostring(record.id), displayNameFor(record, actor)
+    ))
+    return true
+end
+
+local function commandSetDisposition(record, actor, disposition)
+    if not record or not LWN.Combat or not LWN.Combat.setDisposition then return false end
+    if LWN.DebugTools and LWN.DebugTools.selectSquadNpc then
+        LWN.DebugTools.selectSquadNpc(record.id)
+    end
+    local stance = disposition == "aggressive" and "aggressive" or "passive"
+    LWN.Combat.setDisposition(record, stance, "world_context_stance_change")
+    local brain = actor and BanditBrain and BanditBrain.Get and BanditBrain.Get(actor) or nil
+    if brain then
+        brain.lwnCombatReason = "stance_changed"
+    end
+    print(string.format(
+        "[LWN][Command] stance npcId=%s name=%s stance=%s",
+        tostring(record.id), displayNameFor(record, actor), stance
+    ))
+    return true
+end
+
+local behaviorGuidelines = {
+    { id = "follow", label = "Follow" },
+    { id = "watch", label = "Watch surroundings" },
+    { id = "attack", label = "Attack threats" },
+    { id = "flee", label = "Flee danger" },
+    { id = "search_supplies", label = "Search supplies" },
+    { id = "autonomous", label = "Autonomous behavior" },
+}
+
+local function commandSetBehaviorGuideline(record, actor, guideline)
+    if not record then return false end
+    record.companion = record.companion or {}
+    record.companion.behaviorGuideline = guideline or "follow"
+    if LWN.DebugTools and LWN.DebugTools.selectSquadNpc then
+        LWN.DebugTools.selectSquadNpc(record.id)
+    end
+    print(string.format(
+        "[LWN][Command] behavior npcId=%s name=%s guideline=%s",
+        tostring(record.id), displayNameFor(record, actor), tostring(record.companion.behaviorGuideline)
     ))
     return true
 end
@@ -402,6 +464,35 @@ local function addCommandOptions(sub, record, actor, clickedSquare)
     sub:addOption("Wait here", { record = record, actor = actor }, function(args)
         commandWait(args.record, args.actor)
     end)
+    local disposition = record.combat and record.combat.disposition or "passive"
+    sub:addOption(
+        disposition == "aggressive" and "Combat stance: Aggressive [current]" or "Set combat stance: Aggressive",
+        { record = record, actor = actor },
+        function(args) commandSetDisposition(args.record, args.actor, "aggressive") end
+    )
+    sub:addOption(
+        disposition == "passive" and "Combat stance: Passive [current]" or "Set combat stance: Passive",
+        { record = record, actor = actor },
+        function(args) commandSetDisposition(args.record, args.actor, "passive") end
+    )
+
+    local behaviorOption = sub:addOption("Behavior guideline", nil, nil)
+    local behaviorSub = sub:getNew(sub)
+    sub:addSubMenu(behaviorOption, behaviorSub)
+    local currentGuideline = record.companion and record.companion.behaviorGuideline or "follow"
+    for i = 1, #behaviorGuidelines do
+        local guideline = behaviorGuidelines[i]
+        local label = guideline.id == currentGuideline
+            and (guideline.label .. " [current]")
+            or ("Set: " .. guideline.label)
+        behaviorSub:addOption(label, {
+            record = record,
+            actor = actor,
+            guideline = guideline.id,
+        }, function(args)
+            commandSetBehaviorGuideline(args.record, args.actor, args.guideline)
+        end)
+    end
 end
 
 local function embodiedCommandTargets()
@@ -474,9 +565,15 @@ local function addDebugSubmenu(context, player, actor)
         end
     end)
 
-    settingsSub:addOption("TEST 01 - Spawn Baseline (Bandits)", player, function(p)
-        if LWN.DebugTools and LWN.DebugTools.runAutomatedIsoZombieTest01 then
-            LWN.DebugTools.runAutomatedIsoZombieTest01(p)
+    settingsSub:addOption("Spawn Aggressive Companion", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.spawnAggressiveCompanion then
+            LWN.DebugTools.spawnAggressiveCompanion(p)
+        end
+    end)
+
+    settingsSub:addOption("Spawn Passive Companion", player, function(p)
+        if LWN.DebugTools and LWN.DebugTools.spawnPassiveCompanion then
+            LWN.DebugTools.spawnPassiveCompanion(p)
         end
     end)
 

@@ -603,11 +603,11 @@ local function isVisualProbeEnabled(record)
     if LWN.Config.Debug.Verbose == true then
         return true
     end
-    if record and record.debugSpawnOnly == true then
+    if record and record.debugVisualProbe == true then
         return true
     end
-    if LWN.DebugTools and LWN.DebugTools.isEnabled then
-        return LWN.DebugTools.isEnabled() == true
+    if record and record.debugHarness and record.debugHarness.visualProbe == true then
+        return true
     end
     return false
 end
@@ -1627,7 +1627,7 @@ local function traceCleanupContract(actor, stage, reason, detail)
 end
 
 local function tracePresentationWatch(moduleName, stage, record, actor, extra)
-    if not isDebugModeEnabled() or not actor then return end
+    if not actor or not isVisualProbeEnabled(record) then return end
 
     local key = presentationTraceKey(record, actor)
     Factory._presentationTraceCache = Factory._presentationTraceCache or {}
@@ -1777,6 +1777,15 @@ end
 
 stageTrace = function(moduleName, stage, record, actor, descriptor, extra)
     if not isDebugModeEnabled() then return end
+
+    local routineStage = stage == "tickEmbodiedRecord.start"
+        or stage == "tickEmbodiedRecord.pre_despawn"
+        or stage == "tryDespawn.skipped_debug_pinned"
+        or stage == "registerActor.bound"
+        or string.find(tostring(stage), "%.presentation_changed$") ~= nil
+    if routineStage and not isVisualProbeEnabled(record) then
+        return
+    end
 
     local currentSquare = actor and (protectedCall(actor, "getSquare") or protectedCall(actor, "getCurrentSquare")) or nil
     local targetSquare = extra and extra.square or nil

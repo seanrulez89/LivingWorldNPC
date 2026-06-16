@@ -18,8 +18,25 @@ local FOLLOW_OFFSET = 2.25
 local FOLLOW_ARRIVAL_DISTANCE = 1.0
 local FOLLOW_RETARGET_DISTANCE = 1.25
 local FOLLOW_RETARGET_MS = 350
+local FOLLOW_HEADING_EPSILON = 0.08
+local FOLLOW_CATCHUP_ENTER_DISTANCE = 8.0
+local FOLLOW_CATCHUP_EXIT_DISTANCE = 5.5
+local FOLLOW_HARD_CATCHUP_DISTANCE = 14.0
+local FOLLOW_CATCHUP_OFFSET = 1.25
+local SQUAD_TELEMETRY_MS = 3000
+local SQUAD_TELEMETRY_TRANSITION_MS = 750
 local DEFAULT_WALK_SPEED = 1.04
 local DEFAULT_RUN_SPEED = 0.72
+local FOLLOW_FORMATION = {
+    [1] = { back = 2.25, side = 0.00 },
+    [2] = { back = 3.10, side = -1.25 },
+    [3] = { back = 3.10, side = 1.25 },
+}
+local SQUAD_WEAPONS = {
+    [1] = "Base.BaseballBat",
+    [2] = "Base.Hammer",
+    [3] = "Base.Crowbar",
+}
 
 -- Bandits paths reliably with these three walk types; speed multipliers provide
 -- distinct sprint and crouch-run states without reintroducing unsupported SneakRun.
@@ -325,21 +342,214 @@ local function enforceSafety(actor, brain)
     brain.loyal = false
     brain.demolish = false
     brain.eatBody = false
-    brain.lwnNonCombat = true
-    protectedCall(actor, "setTarget", nil)
-    protectedCall(actor, "setLastTargettedBy", nil)
-    protectedCall(actor, "setAttackedBy", nil)
+    brain.lwnControlled = true
+    brain.lwnNonCombat = brain.lwnCombatEngaged ~= true
+    if brain.lwnCombatEngaged ~= true then
+        protectedCall(actor, "setTarget", nil)
+    end
     protectedCall(actor, "setEatBodyTarget", nil, false)
     protectedCall(actor, "setNoTeeth", true)
-    protectedCall(actor, "setGodMod", true)
-    protectedCall(actor, "setInvulnerable", true)
-    protectedCall(actor, "setAvoidDamage", true)
-    protectedCall(actor, "setShootable", false)
+    if brain.lwnFriendlyFireProtected ~= true then
+        protectedCall(actor, "setGodMod", false)
+        protectedCall(actor, "setInvulnerable", false)
+        protectedCall(actor, "setAvoidDamage", false)
+    end
+    protectedCall(actor, "setShootable", true)
     protectedCall(actor, "setVariable", "NoLungeTarget", true)
     if Bandit and Bandit.SurpressZombieSounds then
         Bandit.SurpressZombieSounds(actor)
     end
     stopBanditBreathing(actor)
+end
+
+local function isPlayerAttacker(attacker)
+    return attacker ~= nil
+        and instanceof ~= nil
+        and instanceof(attacker, "IsoPlayer")
+        and protectedCall(attacker, "isNPC") ~= true
+end
+
+local function syncHealth(record, actor, brain, source)
+    if not record or not actor or not brain then return nil end
+    record.combat = record.combat or {}
+    record.stats = record.stats or {}
+    local previous = tonumber(record.stats.health)
+    local health = tonumber(protectedCall(actor, "getHealth"))
+    if health == nil then return nil end
+    if record.combat.healthInitialized ~= true then
+        record.combat.healthInitialized = true
+        record.combat.maxHealth = health
+    else
+        record.combat.maxHealth = math.max(tonumber(record.combat.maxHealth) or 0, health)
+    end
+    record.stats.health = health
+    brain.health = health
+    brain.lwnLastHealthSyncSource = source
+    brain.lwnLastHealthSyncAt = worldAgeHours()
+    if previous == nil or math.abs(previous - health) > 0.001 then
+        print(string.format(
+            "[LWN][SquadHealth] npcId=%s previous=%s current=%.2f delta=%s source=%s",
+            tostring(record.id),
+            previous and string.format("%.2f", previous) or "nil",
+            health,
+            previous and string.format("%.2f", health - previous) or "nil",
+            tostring(source)
+        ))
+    end
+    return health
+end
+
+local function itemFullType(item)
+    return item and (protectedCall(item, "getFullType") or protectedCall(item, "getType")) or nil
+end
+
+local function inventoryItemCount(actor, fullType)
+    if not actor or not fullType then return 0 end
+    local inventory = protectedCall(actor, "getInventory")
+    local items = protectedCall(inventory, "getItems")
+    local size = tonumber(protectedCall(items, "size")) or 0
+    local count = 0
+    for i = 0, size - 1 do
+        if itemFullType(protectedCall(items, "get", i)) == fullType then
+            count = count + 1
+        end
+    end
+    return count
+end
+
+local function objectId(obj)
+    if not obj then return "nil" end
+    return tostring(protectedCall(obj, "getOnlineID") or protectedCall(obj, "getID") or obj)
+end
+
+local function logSquadTelemetry(record, handle, actor, brain)
+    if not record or not handle or not actor or not brain then return end
+    handle.runtime = handle.runtime or {}
+    local telemetry = handle.runtime.squadTelemetry or {}
+    handle.runtime.squadTelemetry = telemetry
+
+    local now = nowMs()
+    local task = Bandit and Bandit.GetTask and Bandit.GetTask(actor) or nil
+    local taskAction = task and task.action or "none"
+    local taskItem = task and (task.itemPrimary or task.weapon) or "none"
+    local significantTask = (taskAction == "Smack"
+        or taskAction == "Push"
+        or taskAction == "Equip"
+        or taskAction == "Unequip") and taskAction or "none"
+    local desiredWeapon = brain.weapons and brain.weapons.melee or "none"
+    local primaryWeapon = itemFullType(protectedCall(actor, "getPrimaryHandItem")) or "none"
+    local equipped = desiredWeapon ~= "none" and protectedCall(actor, "isPrimaryEquipped", desiredWeapon) == true
+    local command = record.companion and record.companion.command or {}
+    local combat = record.combat or {}
+    local follow = handle.runtime.follow or {}
+    local signature = table.concat({
+        tostring(command.kind), tostring(command.status), tostring(combat.state), tostring(combat.reason),
+        tostring(significantTask), tostring(desiredWeapon), tostring(primaryWeapon),
+        tostring(equipped), tostring(follow.movementMode), tostring(follow.followMode),
+        objectId(protectedCall(actor, "getTarget")),
+    }, "|")
+    local intervalElapsed = now - (tonumber(telemetry.lastAtMs) or 0) >= SQUAD_TELEMETRY_MS
+    local transitionElapsed = signature ~= telemetry.signature
+        and now - (tonumber(telemetry.lastAtMs) or 0) >= SQUAD_TELEMETRY_TRANSITION_MS
+    if not intervalElapsed and not transitionElapsed then return end
+
+    local ax = tonumber(protectedCall(actor, "getX") or 0) or 0
+    local ay = tonumber(protectedCall(actor, "getY") or 0) or 0
+    local az = tonumber(protectedCall(actor, "getZ") or 0) or 0
+    local player = getSpecificPlayer and getSpecificPlayer(0) or nil
+    local playerDistance = nil
+    if player then
+        local dx = ax - (tonumber(protectedCall(player, "getX")) or ax)
+        local dy = ay - (tonumber(protectedCall(player, "getY")) or ay)
+        playerDistance = math.sqrt(dx * dx + dy * dy)
+    end
+    local inventoryCount = desiredWeapon ~= "none" and inventoryItemCount(actor, desiredWeapon) or 0
+    print(string.format(
+        "[LWN][SquadTelemetry] npcId=%s name=%s slot=%s stance=%s policy=%s pos=%.1f,%.1f,%.1f playerDist=%s formation=%s followMode=%s locomotion=%s heading=%s targetPos=%s followTargetDist=%s command=%s/%s combat=%s reason=%s task=%s taskItem=%s desiredWeapon=%s primaryHand=%s equipped=%s inventoryCount=%s health=%.2f target=%s",
+        tostring(record.id), displayName(record),
+        tostring(record.companion and record.companion.squadSlot),
+        tostring(combat.disposition),
+        tostring(command.combatPolicy or "none"), ax, ay, az,
+        playerDistance and string.format("%.2f", playerDistance) or "nil",
+        tostring(follow.formationSlot or "none"), tostring(follow.followMode or "none"),
+        tostring(follow.movementMode or "none"), tostring(follow.headingSource or "none"),
+        follow.desiredTargetX and string.format("%.1f,%.1f", follow.desiredTargetX, follow.desiredTargetY) or "nil",
+        follow.targetDistance and string.format("%.2f", follow.targetDistance) or "nil",
+        tostring(command.kind or "none"), tostring(command.status or "idle"),
+        tostring(combat.state or "idle"), tostring(combat.reason or "none"),
+        tostring(taskAction), tostring(taskItem), tostring(desiredWeapon), tostring(primaryWeapon),
+        tostring(equipped), tostring(inventoryCount),
+        tonumber(protectedCall(actor, "getHealth") or 0) or 0,
+        objectId(protectedCall(actor, "getTarget"))
+    ))
+    telemetry.lastAtMs = now
+    telemetry.signature = signature
+end
+
+local function beginFriendlyFireProtection(record, actor, brain, source)
+    local actorHealth = tonumber(protectedCall(actor, "getHealth")) or 0
+    local canonicalHealth = tonumber(record.stats and record.stats.health) or actorHealth
+    local restoreHealth = math.max(actorHealth, canonicalHealth)
+    brain.lwnFriendlyFireProtected = true
+    brain.lwnProtectedHealth = restoreHealth
+    brain.lwnFriendlyFireProtectedAtMs = nowMs()
+    protectedCall(actor, "setGodMod", true)
+    protectedCall(actor, "setInvulnerable", true)
+    protectedCall(actor, "setAvoidDamage", true)
+    Carrier.PendingHitRepairs[record.id] = {
+        actor = actor,
+        health = restoreHealth,
+        remainingTicks = 3,
+        queuedAtMs = nowMs(),
+        source = source,
+    }
+    return restoreHealth
+end
+
+local function assignSquadWeapon(record, actor, brain)
+    local slot = tonumber(record and record.companion and record.companion.squadSlot)
+    local weapon = SQUAD_WEAPONS[slot]
+    if not weapon then return end
+    local alreadyAssigned = brain.lwnSquadWeaponAssigned == weapon
+    brain.weapons = brain.weapons or {}
+    brain.weapons.primary = brain.weapons.primary or { bulletsLeft = 0, ammoCount = 0, magCount = 0 }
+    brain.weapons.secondary = brain.weapons.secondary or { bulletsLeft = 0, ammoCount = 0, magCount = 0 }
+    brain.weapons.melee = weapon
+    brain.lwnSquadWeaponAssigned = weapon
+    if LWN.Inventory then
+        if LWN.Inventory.recordCount and LWN.Inventory.recordCount(record, weapon) <= 0 then
+            LWN.Inventory.grant(record, weapon, 1, "squad_weapon")
+        end
+        if LWN.Inventory.setEquipment then
+            LWN.Inventory.setEquipment(record, "primaryWeapon", weapon, "squad_weapon")
+        end
+    else
+        record.inventory = record.inventory or {}
+        record.inventory.equipment = record.inventory.equipment or {}
+        record.inventory.equipment.primaryWeapon = weapon
+    end
+    if Bandit and Bandit.SetWeapons then Bandit.SetWeapons(actor, brain.weapons) end
+    local syncResult = LWN.Inventory and LWN.Inventory.syncActorEquipment
+        and LWN.Inventory.syncActorEquipment(record, actor, {
+            apply = true,
+            reason = "squad_weapon",
+        })
+        or nil
+    if Bandit and Bandit.SetHands then Bandit.SetHands(actor, weapon) end
+    if LWN.Inventory and LWN.Inventory.syncActorEquipment then
+        syncResult = LWN.Inventory.syncActorEquipment(record, actor, {
+            apply = true,
+            reason = "squad_weapon_post_bandit_hands",
+        }) or syncResult
+    end
+    if alreadyAssigned and syncResult and syncResult.changed ~= true then return end
+    print(string.format(
+        "[LWN][Bandits] squad weapon npcId=%s slot=%s weapon=%s actual=%s primaryMatch=%s changed=%s",
+        tostring(record.id), tostring(slot), tostring(weapon),
+        tostring(syncResult and syncResult.snapshot and syncResult.snapshot.actor and syncResult.snapshot.actor.primaryHand or "unknown"),
+        tostring(syncResult and syncResult.primaryMatches),
+        tostring(syncResult and syncResult.changed)
+    ))
 end
 
 local function friendlyRecordForActor(actor)
@@ -356,31 +566,33 @@ local function friendlyRecordForActor(actor)
 end
 
 function Carrier.onHitZombie(actor, attacker)
+    if LWN.Combat and LWN.Combat.notePlayerAttack then
+        LWN.Combat.notePlayerAttack(actor, attacker)
+    end
     local brain = brainFor(actor)
     if not isControlledBrain(brain) then return end
     local record = friendlyRecordForActor(actor)
     if not record then return end
 
-    local actorHealth = tonumber(protectedCall(actor, "getHealth")) or 0
-    local canonicalHealth = tonumber(record.stats and record.stats.health) or 0
-    local restoreHealth = math.max(actorHealth, canonicalHealth)
-    if restoreHealth > 0 then
-        protectedCall(actor, "setHealth", restoreHealth)
+    if not isPlayerAttacker(attacker) then
+        if LWN.Combat and LWN.Combat.noteSquadHit then
+            LWN.Combat.noteSquadHit(record, attacker)
+        end
+        local health = syncHealth(record, actor, brain, "zombie_hit") or 0
+        print(string.format(
+            "[LWN][Bandits] zombie damage accepted npcId=%s banditId=%s attacker=%s health=%.2f",
+            tostring(record.id), tostring(brain.id), tostring(attacker), health
+        ))
+        return
     end
+
+    local restoreHealth = beginFriendlyFireProtection(record, actor, brain, "on_hit_zombie")
+    if restoreHealth > 0 then protectedCall(actor, "setHealth", restoreHealth) end
     protectedCall(actor, "setKnockedDown", false)
     protectedCall(actor, "setOnFloor", false)
     protectedCall(actor, "setFallOnFront", false)
     protectedCall(actor, "setAlwaysKnockedDown", false)
     enforceSafety(actor, brain)
-    Carrier.PendingHitRepairs[record.id] = {
-        actor = actor,
-        health = restoreHealth,
-        remainingTicks = 3,
-        queuedAtMs = nowMs(),
-    }
-    if Bandit and Bandit.ForceStationary then
-        Bandit.ForceStationary(actor, brain.lwnMoveActive ~= true)
-    end
     print(string.format(
         "[LWN][Bandits] friendly hit suppressed npcId=%s banditId=%s attacker=%s health=%.2f deferred=true",
         tostring(record.id), tostring(brain.id), tostring(attacker),
@@ -389,9 +601,13 @@ function Carrier.onHitZombie(actor, attacker)
 end
 
 function Carrier.onWeaponHitCharacter(attacker, actor)
+    if LWN.Combat and LWN.Combat.notePlayerAttack then
+        LWN.Combat.notePlayerAttack(actor, attacker)
+    end
     local brain = brainFor(actor)
-    if not isControlledBrain(brain) or not friendlyRecordForActor(actor) then return end
-    protectedCall(actor, "setAvoidDamage", true)
+    local record = friendlyRecordForActor(actor)
+    if not isControlledBrain(brain) or not record or not isPlayerAttacker(attacker) then return end
+    beginFriendlyFireProtection(record, actor, brain, "on_weapon_hit_character")
     enforceSafety(actor, brain)
     return false
 end
@@ -425,6 +641,13 @@ local function tickPendingHitRepairs()
             enforceSafety(actor, brain)
             repair.remainingTicks = (tonumber(repair.remainingTicks) or 1) - 1
             if repair.remainingTicks <= 0 then
+                brain.lwnFriendlyFireProtected = false
+                brain.lwnProtectedHealth = nil
+                brain.lwnFriendlyFireProtectedAtMs = nil
+                protectedCall(actor, "setGodMod", false)
+                protectedCall(actor, "setInvulnerable", false)
+                protectedCall(actor, "setAvoidDamage", false)
+                syncHealth(record, actor, brain, "friendly_fire_repair_complete")
                 Carrier.PendingHitRepairs[npcId] = nil
                 print(string.format(
                     "[LWN][Bandits] friendly hit repair complete npcId=%s banditId=%s health=%.2f",
@@ -439,9 +662,19 @@ end
 local function stampActor(record, handle, actor, brain)
     brain.lwnNpcId = record.id
     brain.lwnSessionId = handle.sessionId
-    brain.lwnNonCombat = true
+    brain.lwnControlled = true
+    brain.lwnNonCombat = brain.lwnCombatEngaged ~= true
+    brain.lwnTeamId = record.companion and record.companion.teamId or "player-team-0"
     brain.key = handle.correlationKey
     brain.fullname = displayName(record)
+    if brain.lwnFriendlyFireProtected == true
+        and Carrier.PendingHitRepairs[record.id] == nil
+        and nowMs() - (tonumber(brain.lwnFriendlyFireProtectedAtMs) or 0) >= 750
+    then
+        brain.lwnFriendlyFireProtected = false
+        brain.lwnProtectedHealth = nil
+        brain.lwnFriendlyFireProtectedAtMs = nil
+    end
     handle.lwnNpcId = record.id
     local modData = protectedCall(actor, "getModData")
     if modData then
@@ -463,6 +696,11 @@ local function stampActor(record, handle, actor, brain)
     protectedCall(descriptor, "setSurname", record.identity and record.identity.lastName or nil)
     protectedCall(actor, "setForname", record.identity and record.identity.firstName or nil)
     protectedCall(actor, "setSurname", record.identity and record.identity.lastName or nil)
+    syncHealth(record, actor, brain, "stamp_actor")
+    assignSquadWeapon(record, actor, brain)
+    if LWN.Combat and LWN.Combat.update then
+        LWN.Combat.update(record, actor)
+    end
     enforceSafety(actor, brain)
     applySpawnCalm(handle)
     handle.runtime = handle.runtime or {}
@@ -476,7 +714,9 @@ local function stampActor(record, handle, actor, brain)
             eatBody = false,
             lwnNpcId = record.id,
             lwnSessionId = handle.sessionId,
-            lwnNonCombat = true,
+            lwnControlled = true,
+            lwnNonCombat = brain.lwnCombatEngaged ~= true,
+            lwnTeamId = brain.lwnTeamId,
         })
         handle.runtime.safetySynced = true
     end
@@ -628,9 +868,10 @@ function Carrier.sync(record, handle, options)
         return { ok = handle and handle.pending == true, status = handle and handle.status or "missing", detail = "actor_or_brain_missing" }
     end
     stampActor(record, handle, actor, brain)
-    if brain.lwnMoveActive ~= true and Bandit and Bandit.ForceStationary then
+    if brain.lwnMoveActive ~= true and brain.lwnCombatEngaged ~= true and Bandit and Bandit.ForceStationary then
         Bandit.ForceStationary(actor, true)
     end
+    logSquadTelemetry(record, handle, actor, brain)
     return { ok = true, status = "active", detail = options and options.source or "synced" }
 end
 
@@ -641,7 +882,20 @@ end
 function Carrier.isUsable(handle)
     local actor = handle and handle.actor or nil
     if not actor then return false end
-    if actorDeathLike(actor) then return false end
+    if actorDeathLike(actor) then
+        handle.runtime = handle.runtime or {}
+        if handle.runtime.deathLogged ~= true then
+            local brain = brainFor(actor)
+            print(string.format(
+                "[LWN][SquadLifecycle] npcId=%s banditId=%s event=death_detected health=%.2f world=%s",
+                tostring(handle.lwnNpcId), tostring(brain and brain.id or handle.banditId),
+                tonumber(protectedCall(actor, "getHealth") or 0) or 0,
+                tostring(protectedCall(actor, "isExistInTheWorld"))
+            ))
+            handle.runtime.deathLogged = true
+        end
+        return false
+    end
     if protectedCall(actor, "isExistInTheWorld") == false then return false end
     return isControlledBrain(brainFor(actor))
 end
@@ -666,6 +920,13 @@ local function tickMoveTo(record, handle, intent)
     end
 
     enforceSafety(actor, brain)
+    if brain.lwnCombatEngaged == true then
+        return {
+            handled = true,
+            status = "combat",
+            reason = brain.lwnCombatReason or "combat_interrupt",
+        }
+    end
     applyMovementProfile(actor, FOLLOW_LOCOMOTION.walk)
     local data = intent.data or {}
     local tx, ty, tz = tonumber(data.x), tonumber(data.y), tonumber(data.z)
@@ -754,19 +1015,66 @@ local function tickMoveTo(record, handle, intent)
     }
 end
 
-local function followTarget(player)
-    local px = tonumber(protectedCall(player, "getX") or 0) or 0
-    local py = tonumber(protectedCall(player, "getY") or 0) or 0
-    local pz = tonumber(protectedCall(player, "getZ") or 0) or 0
-    local direction = protectedCall(player, "getForwardDirection")
-    local fx = tonumber(protectedCall(direction, "getX") or 0) or 0
-    local fy = tonumber(protectedCall(direction, "getY") or 0) or 0
-    local length = math.sqrt(fx * fx + fy * fy)
-    if length > 0.001 then
-        fx = fx / length
-        fy = fy / length
+local function updateFollowHeading(player, follow, px, py)
+    local dx = follow.lastPlayerX and (px - follow.lastPlayerX) or 0
+    local dy = follow.lastPlayerY and (py - follow.lastPlayerY) or 0
+    local distance = math.sqrt(dx * dx + dy * dy)
+    if follow.lastPlayerX == nil or follow.lastPlayerY == nil then
+        follow.lastPlayerX = px
+        follow.lastPlayerY = py
     end
-    return px - fx * FOLLOW_OFFSET, py - fy * FOLLOW_OFFSET, pz
+
+    if distance >= FOLLOW_HEADING_EPSILON then
+        follow.headingX = dx / distance
+        follow.headingY = dy / distance
+        follow.headingSource = "player_motion"
+        follow.lastPlayerX = px
+        follow.lastPlayerY = py
+    elseif follow.headingX == nil or follow.headingY == nil then
+        local direction = protectedCall(player, "getForwardDirection")
+        local fx = tonumber(protectedCall(direction, "getX") or 0) or 0
+        local fy = tonumber(protectedCall(direction, "getY") or 0) or 0
+        local length = math.sqrt(fx * fx + fy * fy)
+        if length > 0.001 then
+            follow.headingX = fx / length
+            follow.headingY = fy / length
+            follow.headingSource = "initial_facing"
+        else
+            follow.headingX = 0
+            follow.headingY = 1
+            follow.headingSource = "fallback_north"
+        end
+    end
+    return follow.headingX, follow.headingY
+end
+
+local function updateFollowMode(follow, playerDistance)
+    local catchup = follow.catchup == true
+    if catchup then
+        catchup = playerDistance > FOLLOW_CATCHUP_EXIT_DISTANCE
+    else
+        catchup = playerDistance >= FOLLOW_CATCHUP_ENTER_DISTANCE
+    end
+    follow.catchup = catchup
+    if not catchup then return "formation" end
+    if playerDistance >= FOLLOW_HARD_CATCHUP_DISTANCE then return "hard_catchup" end
+    return "catchup"
+end
+
+local function followTarget(player, record, follow, px, py, pz, playerDistance)
+    local fx, fy = updateFollowHeading(player, follow, px, py)
+    local slot = tonumber(record and record.companion and record.companion.squadSlot) or 1
+    local followMode = updateFollowMode(follow, playerDistance)
+    if followMode ~= "formation" then
+        return px - fx * FOLLOW_CATCHUP_OFFSET,
+            py - fy * FOLLOW_CATCHUP_OFFSET,
+            pz, slot, followMode
+    end
+    local formation = FOLLOW_FORMATION[slot] or { back = FOLLOW_OFFSET, side = 0 }
+    local lateralX, lateralY = -fy, fx
+    return px - fx * formation.back + lateralX * formation.side,
+        py - fy * formation.back + lateralY * formation.side,
+        pz, slot, followMode
 end
 
 local function followLocomotion(player)
@@ -801,6 +1109,13 @@ local function tickFollowPlayer(record, handle, intent)
     end
 
     enforceSafety(actor, brain)
+    if brain.lwnCombatEngaged == true then
+        return {
+            handled = true,
+            status = "combat",
+            reason = brain.lwnCombatReason or "combat_interrupt",
+        }
+    end
     handle.runtime = handle.runtime or {}
     local follow = handle.runtime.follow
     if not follow or follow.intent ~= intent then
@@ -822,12 +1137,22 @@ local function tickFollowPlayer(record, handle, intent)
     local ay = tonumber(protectedCall(actor, "getY") or 0) or 0
     local px = tonumber(protectedCall(player, "getX") or ax) or ax
     local py = tonumber(protectedCall(player, "getY") or ay) or ay
-    local tx, ty, tz = followTarget(player)
-    local targetDx, targetDy = ax - tx, ay - ty
-    local targetDistance = math.sqrt(targetDx * targetDx + targetDy * targetDy)
+    local pz = tonumber(protectedCall(player, "getZ") or 0) or 0
     local playerDx, playerDy = ax - px, ay - py
     local playerDistance = math.sqrt(playerDx * playerDx + playerDy * playerDy)
+    local tx, ty, tz, formationSlot, followMode = followTarget(
+        player, record, follow, px, py, pz, playerDistance
+    )
+    local targetDx, targetDy = ax - tx, ay - ty
+    local targetDistance = math.sqrt(targetDx * targetDx + targetDy * targetDy)
     local movementMode, profile, playerSneaking, playerRunning, playerSprinting = followLocomotion(player)
+    if followMode == "hard_catchup" then
+        movementMode = "sprint"
+        profile = FOLLOW_LOCOMOTION.sprint
+    elseif followMode == "catchup" and movementMode ~= "sprint" then
+        movementMode = "run"
+        profile = FOLLOW_LOCOMOTION.run
+    end
     local walkType = profile.walkType
     local now = nowMs()
 
@@ -880,6 +1205,19 @@ local function tickFollowPlayer(record, handle, intent)
     follow.playerSprinting = playerSprinting
     follow.playerDistance = playerDistance
     follow.targetDistance = targetDistance
+    follow.desiredTargetX = tx
+    follow.desiredTargetY = ty
+    follow.desiredTargetZ = tz
+    follow.formationSlot = formationSlot
+    if follow.loggedFollowMode ~= followMode then
+        print(string.format(
+            "[LWN][FollowWatch] npcId=%s slot=%s state=%s playerDistance=%.2f targetDistance=%.2f heading=%s target=%.1f,%.1f",
+            tostring(record.id), tostring(formationSlot), tostring(followMode), playerDistance,
+            targetDistance, tostring(follow.headingSource), tx, ty
+        ))
+        follow.loggedFollowMode = followMode
+    end
+    follow.followMode = followMode
 
     if targetDistance <= FOLLOW_ARRIVAL_DISTANCE then
         if currentTask or brain.lwnMoveActive == true then
@@ -1009,6 +1347,9 @@ function Carrier.getDebugState(record, handle)
         hostile = hostile,
         hostileP = hostileP,
         nonCombat = nonCombat,
+        controlled = brain and brain.lwnControlled == true or false,
+        combatEngaged = brain and brain.lwnCombatEngaged == true or false,
+        combatReason = brain and brain.lwnCombatReason or nil,
         task = task and task.action or nil,
         combatTask = combatTask,
         moveAttempt = task and task.lwnAttempt or move and move.attempts or lastMove and lastMove.attempts or nil,
@@ -1017,6 +1358,10 @@ function Carrier.getDebugState(record, handle)
         moveReason = lastMove and lastMove.reason or nil,
         moveDistance = lastMove and lastMove.distance or nil,
         followActive = follow ~= nil,
+        followMode = follow and follow.followMode or nil,
+        followHeadingSource = follow and follow.headingSource or nil,
+        followTargetX = follow and follow.desiredTargetX or nil,
+        followTargetY = follow and follow.desiredTargetY or nil,
         followMovementMode = follow and follow.movementMode or nil,
         followWalkType = follow and follow.walkType or nil,
         followPlayerSneaking = follow and follow.playerSneaking or false,

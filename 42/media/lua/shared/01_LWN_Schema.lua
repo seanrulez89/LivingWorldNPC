@@ -52,6 +52,17 @@ function Schema.newRoot()
             pendingEvents = {},
             visitedStrategicBuildings = {},
         },
+        teams = {
+            ["player-team-0"] = {
+                id = "player-team-0",
+                companionCount = 0,
+                stress = 0.0,
+                morale = 0.5,
+                cohesion = 0.5,
+                pressureReason = "baseline",
+                lastUpdatedHour = 0,
+            },
+        },
         legacy = {
             pending = nil,
         },
@@ -203,7 +214,15 @@ function Schema.newNPCRecord(id, seed)
             meds = 0,
             ammo = 0,
             valuables = 0,
-            equipment = {},
+            items = {},
+            equipment = {
+                primaryWeapon = nil,
+                secondaryWeapon = nil,
+                bag = nil,
+                clothing = {},
+            },
+            lastChangeReason = nil,
+            lastChangedAt = nil,
         },
         personality = {
             bravery = 0.5,
@@ -231,6 +250,7 @@ function Schema.newNPCRecord(id, seed)
             reader = false,
         },
         relationshipToPlayer = {
+            stage = "neutral",
             trust = 0.0,
             respect = 0.0,
             fear = 0.0,
@@ -274,10 +294,14 @@ function Schema.newNPCRecord(id, seed)
         companion = {
             recruited = false,
             squadRole = nil,
+            teamId = nil,
+            squadSlot = nil,
+            behaviorGuideline = "follow",
             command = {
                 kind = nil,
                 source = nil,
                 intentKind = nil,
+                combatPolicy = "stance",
                 status = "idle",
                 active = false,
                 issuedAt = nil,
@@ -293,6 +317,19 @@ function Schema.newNPCRecord(id, seed)
                     label = nil,
                 },
             },
+        },
+        combat = {
+            disposition = "passive",
+            state = "idle",
+            reason = "no_threat",
+            maxHealth = 0,
+            healthInitialized = false,
+            lastThreatX = nil,
+            lastThreatY = nil,
+            lastThreatZ = nil,
+            lastThreatAt = nil,
+            lastEngagedAt = nil,
+            lastDisengagedAt = nil,
         },
     }
 end

@@ -608,6 +608,19 @@ local function objectPresentationRole(kind, dead, deathLike, zombie, reanimated)
     return "alive_npc"
 end
 
+local function isLiveControlledBandit(record, actor, state)
+    if not record or not actor or not state then return false end
+    local modData = protectedCall(actor, "getModData")
+    local marked = modData
+        and modData.LWN_CarrierKind == "bandits"
+        and (modData.LWN_NpcId == record.id or modData.LWN_LastNpcId == record.id)
+    return marked == true
+        and state.dead ~= true
+        and state.deathLike ~= true
+        and state.downed ~= true
+        and (tonumber(state.health) or 1) > 0
+end
+
 local function summarizeWorldObject(obj, record, actor)
     local modData = protectedCall(obj, "getModData")
     local state = getPresentationState(obj)
@@ -632,9 +645,17 @@ local function summarizeWorldObject(obj, record, actor)
         humanVisual = protectedCall(obj, "getHumanVisual") ~= nil
     end
 
+    local controlledBandit = modData
+        and modData.LWN_CarrierKind == "bandits"
+        and record
+        and (modData.LWN_NpcId == record.id or modData.LWN_LastNpcId == record.id)
+        and dead ~= true
+        and deathLike ~= true
+
     return {
         kind = kind,
-        presentationRole = objectPresentationRole(kind, dead, deathLike, zombie, reanimated),
+        presentationRole = controlledBandit and "controlled_npc"
+            or objectPresentationRole(kind, dead, deathLike, zombie, reanimated),
         object = protectedCall(obj, "getObjectName"),
         objectRef = ref,
         sameActorRef = actor and ref == actorRef or false,
@@ -783,7 +804,12 @@ local function probeDeathObjects(record, actor, source)
     if not record then return end
 
     local state = getPresentationState(actor)
-    local shouldProbe = state and (state.downed == true or state.deathLike == true or state.zombie == true or state.reanimated == true)
+    local shouldProbe = state and (
+        state.downed == true
+        or state.deathLike == true
+        or state.reanimated == true
+        or (state.zombie == true and not isLiveControlledBandit(record, actor, state))
+    )
 
     Adapter._deathObjectCache = Adapter._deathObjectCache or {}
     local previousSignature = Adapter._deathObjectCache[record.id]
@@ -853,6 +879,10 @@ local function traceDeathState(record, actor, source)
 
     Adapter._deathStateCache = Adapter._deathStateCache or {}
     local previous = Adapter._deathStateCache[record.id]
+    if isLiveControlledBandit(record, actor, current) then
+        Adapter._deathStateCache[record.id] = current
+        return
+    end
     local detail = deathStateDiff(previous, current)
     if detail or previous == nil then
         logPresentationBlock(source, "actor_state", record.id, summarizeWorldObject(actor, record, actor))

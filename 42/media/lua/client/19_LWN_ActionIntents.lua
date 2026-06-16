@@ -18,11 +18,14 @@ function Intents.moveTo(record, x, y, z, options)
         x = x,
         y = y,
         z = z,
+        combatPolicy = "self_defense",
     }, options))
 end
 
 function Intents.followPlayer(record, options)
-    return LWN.Schema.newIntent("follow_player", mergeData({}, options))
+    return LWN.Schema.newIntent("follow_player", mergeData({
+        combatPolicy = "stance",
+    }, options))
 end
 
 function Intents.guardPlayer(record)

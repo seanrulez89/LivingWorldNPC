@@ -298,7 +298,7 @@ local function updateMovementTelemetry(record, intent, command, actor, status, r
 end
 
 local function updateMoveCommand(record, intent, status, reason, actor)
-    if not record or not intent or intent.kind ~= "move_to" then
+    if not record or not intent or (intent.kind ~= "move_to" and intent.kind ~= "follow_player") then
         return
     end
 
@@ -375,6 +375,8 @@ local function noteIssuedIntent(record, intent)
         command.kind = intent.data and (intent.data.commandKind or intent.kind) or intent.kind
         command.source = intent.data and (intent.data.commandSource or intent.data.source) or command.source
         command.intentKind = intent.kind
+        command.combatPolicy = intent.data and intent.data.combatPolicy
+            or (intent.kind == "follow_player" and "stance" or "self_defense")
         command.status = "queued"
         command.active = true
         command.issuedAt = worldAgeHours()
