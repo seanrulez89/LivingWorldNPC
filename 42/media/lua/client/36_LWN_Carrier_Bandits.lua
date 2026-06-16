@@ -532,6 +532,7 @@ local function assignSquadWeapon(record, actor, brain)
     local syncResult = LWN.Inventory and LWN.Inventory.syncActorEquipment
         and LWN.Inventory.syncActorEquipment(record, actor, {
             apply = true,
+            allowCreate = true,
             reason = "squad_weapon",
         })
         or nil
@@ -539,6 +540,7 @@ local function assignSquadWeapon(record, actor, brain)
     if LWN.Inventory and LWN.Inventory.syncActorEquipment then
         syncResult = LWN.Inventory.syncActorEquipment(record, actor, {
             apply = true,
+            allowCreate = true,
             reason = "squad_weapon_post_bandit_hands",
         }) or syncResult
     end

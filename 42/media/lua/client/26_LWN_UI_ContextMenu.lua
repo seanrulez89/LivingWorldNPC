@@ -30,6 +30,14 @@ local function objectRef(value)
     return safeText(tostring(value))
 end
 
+local function itemFullType(item)
+    return item and (protectedCall(item, "getFullType") or protectedCall(item, "getType")) or nil
+end
+
+local function itemLabel(item)
+    return tostring(protectedCall(item, "getDisplayName") or protectedCall(item, "getName") or itemFullType(item) or "item")
+end
+
 local function isDebugModeEnabled()
     if LWN and LWN.Config and LWN.Config.Debug and LWN.Config.Debug.Enabled == true then
         return true
@@ -316,6 +324,21 @@ local function clickedSquareFromWorldObjects(worldObjects)
     return nil
 end
 
+local function clickedWorldInventoryItem(worldObjects)
+    if not worldObjects then return nil end
+    for i = 1, #worldObjects do
+        local obj = worldObjects[i]
+        local item = protectedCall(obj, "getItem")
+        if item and itemFullType(item) then
+            return item
+        end
+        if itemFullType(obj) then
+            return obj
+        end
+    end
+    return nil
+end
+
 local function recordForActor(actor)
     local npcId = getNpcId(actor)
     return npcId and Store and Store.getNPC and Store.getNPC(npcId) or nil
@@ -452,7 +475,90 @@ local function commandSetBehaviorGuideline(record, actor, guideline)
     return true
 end
 
-local function addCommandOptions(sub, record, actor, clickedSquare)
+local function commandGiveExistingItem(record, actor, item, player, equip, slot, sourceLabel)
+    if not record or not actor or not item or not (LWN.Inventory and LWN.Inventory.transferExistingItemToActor) then
+        return false
+    end
+    if player then
+        if protectedCall(player, "getPrimaryHandItem") == item then
+            protectedCall(player, "setPrimaryHandItem", nil)
+        end
+        if protectedCall(player, "getSecondaryHandItem") == item then
+            protectedCall(player, "setSecondaryHandItem", nil)
+        end
+    end
+    local result = LWN.Inventory.transferExistingItemToActor(record, actor, item, {
+        equip = equip == true,
+        slot = slot or "auto",
+        reason = "player_give_item",
+    }) or {}
+    print(string.format(
+        "[LWN][Command] give_item npcId=%s name=%s item=%s source=%s equip=%s ok=%s detail=%s actorCount=%s",
+        tostring(record.id), displayNameFor(record, actor), tostring(itemFullType(item)),
+        tostring(sourceLabel or "unknown"), tostring(equip == true),
+        tostring(result.ok == true), tostring(result.detail), tostring(result.actorCount)
+    ))
+    return result.ok == true
+end
+
+local function addGiveItemOptions(sub, record, actor, player, clickedItem)
+    if not (LWN.Inventory and LWN.Inventory.transferExistingItemToActor) then return end
+
+    local giveOption = sub:addOption("Give item", nil, nil)
+    local giveSub = sub:getNew(sub)
+    sub:addSubMenu(giveOption, giveSub)
+
+    local added = 0
+    local primary = protectedCall(player, "getPrimaryHandItem")
+    if primary and itemFullType(primary) then
+        added = added + 1
+        giveSub:addOption("Give primary hand: " .. itemLabel(primary), {
+            record = record, actor = actor, item = primary, player = player,
+        }, function(args)
+            commandGiveExistingItem(args.record, args.actor, args.item, args.player, false, nil, "player_primary")
+        end)
+        giveSub:addOption("Give/equip primary hand: " .. itemLabel(primary), {
+            record = record, actor = actor, item = primary, player = player,
+        }, function(args)
+            commandGiveExistingItem(args.record, args.actor, args.item, args.player, true, "auto", "player_primary")
+        end)
+    end
+
+    local secondary = protectedCall(player, "getSecondaryHandItem")
+    if secondary and secondary ~= primary and itemFullType(secondary) then
+        added = added + 1
+        giveSub:addOption("Give secondary hand: " .. itemLabel(secondary), {
+            record = record, actor = actor, item = secondary, player = player,
+        }, function(args)
+            commandGiveExistingItem(args.record, args.actor, args.item, args.player, false, nil, "player_secondary")
+        end)
+        giveSub:addOption("Give/equip secondary hand: " .. itemLabel(secondary), {
+            record = record, actor = actor, item = secondary, player = player,
+        }, function(args)
+            commandGiveExistingItem(args.record, args.actor, args.item, args.player, true, "auto", "player_secondary")
+        end)
+    end
+
+    if clickedItem and itemFullType(clickedItem) then
+        added = added + 1
+        giveSub:addOption("Give clicked world item: " .. itemLabel(clickedItem), {
+            record = record, actor = actor, item = clickedItem, player = player,
+        }, function(args)
+            commandGiveExistingItem(args.record, args.actor, args.item, args.player, false, nil, "world_item")
+        end)
+        giveSub:addOption("Give/equip clicked world item: " .. itemLabel(clickedItem), {
+            record = record, actor = actor, item = clickedItem, player = player,
+        }, function(args)
+            commandGiveExistingItem(args.record, args.actor, args.item, args.player, true, "auto", "world_item")
+        end)
+    end
+
+    if added == 0 then
+        giveSub:addOption("No held or clicked item", nil, nil)
+    end
+end
+
+local function addCommandOptions(sub, record, actor, clickedSquare, player, clickedItem)
     if clickedSquare then
         sub:addOption("Move to this location", { record = record, actor = actor, square = clickedSquare }, function(args)
             commandMoveToSquare(args.record, args.actor, args.square)
@@ -493,6 +599,7 @@ local function addCommandOptions(sub, record, actor, clickedSquare)
             commandSetBehaviorGuideline(args.record, args.actor, args.guideline)
         end)
     end
+    addGiveItemOptions(sub, record, actor, player, clickedItem)
 end
 
 local function embodiedCommandTargets()
@@ -512,7 +619,7 @@ local function embodiedCommandTargets()
     return targets
 end
 
-local function addNpcInteractionSubmenu(context, player, actor, clickedSquare)
+local function addNpcInteractionSubmenu(context, player, actor, clickedSquare, clickedItem)
     local record = recordForActor(actor)
     local displayName = displayNameFor(record, actor)
     local rootText = LWN.Loc.textOrDefault("LWN_UI_Context_Root", "Living NPC") .. ": " .. tostring(displayName)
@@ -533,10 +640,10 @@ local function addNpcInteractionSubmenu(context, player, actor, clickedSquare)
         end
     end
 
-    addCommandOptions(sub, record, actor, clickedSquare)
+    addCommandOptions(sub, record, actor, clickedSquare, player, clickedItem)
 end
 
-local function addGroundCommandSubmenu(context, player, clickedSquare)
+local function addGroundCommandSubmenu(context, player, clickedSquare, clickedItem)
     if not clickedSquare then return end
     local targets = embodiedCommandTargets()
     if #targets == 0 then return end
@@ -549,7 +656,7 @@ local function addGroundCommandSubmenu(context, player, clickedSquare)
         local npcOption = rootSub:addOption(displayNameFor(target.record, target.actor), nil, nil)
         local npcSub = rootSub:getNew(rootSub)
         rootSub:addSubMenu(npcOption, npcSub)
-        addCommandOptions(npcSub, target.record, target.actor, clickedSquare)
+        addCommandOptions(npcSub, target.record, target.actor, clickedSquare, player, clickedItem)
     end
 end
 
@@ -602,11 +709,12 @@ function UIContext.onFillWorldObjectContextMenu(playerNum, context, worldObjects
     local player = getPlayerByNum(playerNum)
     local actor = UIContext.findNpcActorInWorldObjects(worldObjects)
     local clickedSquare = clickedSquareFromWorldObjects(worldObjects)
+    local clickedItem = clickedWorldInventoryItem(worldObjects)
 
     if actor then
-        addNpcInteractionSubmenu(context, player, actor, clickedSquare)
+        addNpcInteractionSubmenu(context, player, actor, clickedSquare, clickedItem)
     else
-        addGroundCommandSubmenu(context, player, clickedSquare)
+        addGroundCommandSubmenu(context, player, clickedSquare, clickedItem)
     end
 
     addDebugSubmenu(context, player, actor)

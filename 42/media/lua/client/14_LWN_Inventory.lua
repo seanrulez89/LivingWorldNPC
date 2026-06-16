@@ -65,10 +65,11 @@ local function findActorItem(actor, fullType)
     return nil
 end
 
-local function ensureActorItem(actor, fullType)
+local function ensureActorItem(actor, fullType, allowCreate)
     if not actor or not fullType then return nil, false end
     local existing = findActorItem(actor, fullType)
     if existing then return existing, false end
+    if allowCreate ~= true then return nil, false end
     local inventory = protectedCall(actor, "getInventory")
     local item = protectedCall(inventory, "AddItem", fullType)
     return item, item ~= nil
@@ -109,6 +110,25 @@ local function resolveWearLocation(item)
     local canEquip = protectedCall(item, "canBeEquipped")
     if canEquip and canEquip ~= "" then return canEquip end
     return nil
+end
+
+local function isWearLocation(value)
+    value = tostring(value or "")
+    return value ~= ""
+        and value ~= "Primary"
+        and value ~= "Secondary"
+        and value ~= "BothHands"
+        and value ~= "TwoHands"
+end
+
+local function clearHandsHoldingItem(actor, item)
+    if not actor or not item then return end
+    if protectedCall(actor, "getPrimaryHandItem") == item then
+        protectedCall(actor, "setPrimaryHandItem", nil)
+    end
+    if protectedCall(actor, "getSecondaryHandItem") == item then
+        protectedCall(actor, "setSecondaryHandItem", nil)
+    end
 end
 
 local function recordCount(inv, itemId)
@@ -184,6 +204,23 @@ function Inventory.grant(record, itemId, count, reason)
     return true
 end
 
+function Inventory.addExistingItemRecord(record, item, reason)
+    if not record or not item then return false, "record_or_item_missing" end
+    local fullType = itemFullType(item)
+    if not fullType then return false, "item_type_missing" end
+    local inv = ensure(record)
+    inv.items[#inv.items + 1] = {
+        fullType = fullType,
+        count = 1,
+        acquiredAt = nowHour(),
+        reason = reason or "existing_item_transfer",
+        itemName = protectedCall(item, "getDisplayName") or protectedCall(item, "getName") or fullType,
+        source = "existing_item",
+    }
+    setChanged(inv, reason or "existing_item_transfer")
+    return true
+end
+
 function Inventory.remove(record, itemId, count, reason)
     if not record or not itemId then return false, "record_or_item_missing" end
     local inv = ensure(record)
@@ -229,10 +266,65 @@ function Inventory.setClothing(record, wearLocation, itemId, reason)
     return true
 end
 
-function Inventory.equipActorItem(record, actor, itemId, slot, reason)
+function Inventory.equipExistingActorItem(record, actor, item, slot, reason)
+    if not actor or not item then return { ok = false, detail = "actor_or_item_missing" } end
+    local itemId = itemFullType(item)
+    if not itemId then return { ok = false, detail = "item_type_missing" } end
+    local changed = false
+    slot = slot or "auto"
+    if slot == "auto" then
+        local wearLocation = resolveWearLocation(item)
+        slot = isWearLocation(wearLocation) and wearLocation or "primaryWeapon"
+    end
+    if slot == "primaryWeapon" or slot == "primary" then
+        if itemFullType(protectedCall(actor, "getPrimaryHandItem")) ~= itemId then
+            protectedCall(actor, "setPrimaryHandItem", item)
+            changed = true
+        end
+        if protectedCall(item, "isRequiresEquippedBothHands") == true
+            or protectedCall(item, "isTwoHandWeapon") == true
+        then
+            if itemFullType(protectedCall(actor, "getSecondaryHandItem")) ~= itemId then
+                protectedCall(actor, "setSecondaryHandItem", item)
+                changed = true
+            end
+        end
+        Inventory.setEquipment(record, "primaryWeapon", itemId, reason or "equip_existing_item")
+    elseif slot == "secondaryWeapon" or slot == "secondary" then
+        if itemFullType(protectedCall(actor, "getSecondaryHandItem")) ~= itemId then
+            protectedCall(actor, "setSecondaryHandItem", item)
+            changed = true
+        end
+        Inventory.setEquipment(record, "secondaryWeapon", itemId, reason or "equip_existing_item")
+    else
+        local wearLocation = slot
+        if slot == "bag" then
+            wearLocation = resolveWearLocation(item) or "Back"
+            Inventory.setEquipment(record, "bag", itemId, reason or "equip_existing_item")
+        else
+            Inventory.setClothing(record, wearLocation, itemId, reason or "equip_existing_item")
+        end
+        if wearLocation then
+            protectedCall(actor, "setWornItem", wearLocation, item)
+            refreshActorVisuals(actor, reason or "equip_existing_worn_item")
+            changed = true
+        end
+    end
+
+    return {
+        ok = true,
+        detail = "existing_item_equipped",
+        item = item,
+        changed = changed,
+        fullType = itemId,
+    }
+end
+
+function Inventory.equipActorItem(record, actor, itemId, slot, reason, options)
     if not actor or not itemId then return { ok = false, detail = "actor_or_item_missing" } end
-    local item, added = ensureActorItem(actor, itemId)
-    if not item then return { ok = false, detail = "actor_item_add_failed" } end
+    options = options or {}
+    local item, added = ensureActorItem(actor, itemId, options.allowCreate == true)
+    if not item then return { ok = false, detail = "actor_item_missing" } end
 
     local changed = added == true
     slot = slot or "primaryWeapon"
@@ -275,6 +367,56 @@ function Inventory.equipActorItem(record, actor, itemId, slot, reason)
     }
 end
 
+function Inventory.transferExistingItemToActor(record, actor, item, options)
+    options = options or {}
+    if not record or not actor or not item then
+        return { ok = false, detail = "record_actor_or_item_missing" }
+    end
+
+    local targetInventory = protectedCall(actor, "getInventory")
+    if not targetInventory then return { ok = false, detail = "target_inventory_missing" } end
+
+    local fullType = itemFullType(item)
+    if not fullType then return { ok = false, detail = "item_type_missing" } end
+
+    local sourceContainer = protectedCall(item, "getContainer")
+    local worldItem = protectedCall(item, "getWorldItem")
+    local alreadyOwned = sourceContainer == targetInventory or findActorItem(actor, fullType) == item
+
+    if not alreadyOwned then
+        if sourceContainer then
+            clearHandsHoldingItem(protectedCall(sourceContainer, "getParent"), item)
+            protectedCall(sourceContainer, "DoRemoveItem", item)
+            protectedCall(sourceContainer, "Remove", item)
+            protectedCall(sourceContainer, "RemoveItem", item)
+            protectedCall(sourceContainer, "setDrawDirty", true)
+        elseif worldItem then
+            protectedCall(worldItem, "removeFromWorld")
+            protectedCall(worldItem, "removeFromSquare")
+            protectedCall(item, "setWorldItem", nil)
+        else
+            return { ok = false, detail = "item_has_no_source" }
+        end
+        protectedCall(targetInventory, "AddItem", item)
+    end
+
+    local recordOk = Inventory.addExistingItemRecord(record, item, options.reason or "existing_item_transfer")
+    local equipResult = nil
+    if options.equip == true then
+        equipResult = Inventory.equipExistingActorItem(record, actor, item, options.slot or "auto", options.reason or "existing_item_transfer")
+    end
+    local actorCount = Inventory.actorCount(actor, fullType)
+    return {
+        ok = actorCount > 0,
+        detail = alreadyOwned and "already_owned" or "transferred_existing_item",
+        recordOk = recordOk == true,
+        fullType = fullType,
+        actorCount = actorCount,
+        equipped = equipResult and equipResult.ok == true or false,
+        equipDetail = equipResult and equipResult.detail or nil,
+    }
+end
+
 function Inventory.syncActorEquipment(record, actor, options)
     options = options or {}
     local snapshot = Inventory.snapshot(record, actor)
@@ -286,7 +428,9 @@ function Inventory.syncActorEquipment(record, actor, options)
 
     local function applySlot(slot, itemId)
         if not apply or not itemId then return end
-        local result = Inventory.equipActorItem(record, actor, itemId, slot, options.reason or "sync_actor_equipment")
+        local result = Inventory.equipActorItem(record, actor, itemId, slot, options.reason or "sync_actor_equipment", {
+            allowCreate = options.allowCreate == true,
+        })
         applied[#applied + 1] = {
             slot = slot,
             itemId = itemId,
