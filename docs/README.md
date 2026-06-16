@@ -15,6 +15,9 @@ test path is now Bandits-backed companions with LWN-owned canonical state.
 - `LONG_TERM_NPC_VISION_2026-06-16.md`
   - long-term design vision for player-like survivors, relationships,
     narrative, gifts, betrayal, autonomous behavior guidelines, and vehicles
+- `LOGGING_AND_TEST_EVIDENCE_2026-06-16.md`
+  - current structured logging guide, console filtering commands, and manual
+    test evidence conventions
 - `COMPANION_SQUAD_COMBAT_FOUNDATION_PLAN_2026-06-14.md`
   - current three-person companion squad combat foundation plan
 - `BANDITS_CONTROLLED_NPC_IMPLEMENTATION_2026-06-13.md`

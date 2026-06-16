@@ -139,6 +139,15 @@ local function touchRecordStage(record, stage, reason)
     record.embodiment.stage = stage
     record.embodiment.lastStageAt = worldAgeHours()
     record.embodiment.lastStageReason = reason
+    if LWN.Log and LWN.Log.state then
+        LWN.Log.state("Embodiment", "stage:" .. tostring(record.id), tostring(stage) .. "|" .. tostring(reason), {
+            npcId = record.id,
+            state = record.embodiment.state,
+            stage = stage,
+            reason = reason,
+            carrier = record.embodiment.carrierKind,
+        })
+    end
 end
 
 local function touchCleanupRecord(record, state, reason, removeRecord)
@@ -156,6 +165,15 @@ local function touchCleanupRecord(record, state, reason, removeRecord)
         cleanup.requestedAt = cleanup.requestedAt or worldAgeHours()
     elseif state == "complete" then
         cleanup.completedAt = worldAgeHours()
+    end
+    if LWN.Log and LWN.Log.state then
+        LWN.Log.state("Cleanup", "cleanup:" .. tostring(record.id), tostring(state) .. "|" .. tostring(reason), {
+            npcId = record.id,
+            state = state,
+            reason = reason,
+            status = record.embodiment and record.embodiment.state,
+            removeRecord = cleanup.removeRecord,
+        })
     end
 end
 
@@ -182,6 +200,15 @@ local function touchDeathRecord(record, state, source, reason)
     death.state = state
     death.source = source or death.source
     death.reason = reason or death.reason
+    if LWN.Log and LWN.Log.state then
+        LWN.Log.state("Carrier", "death:" .. tostring(record.id), tostring(state) .. "|" .. tostring(source) .. "|" .. tostring(reason), {
+            npcId = record.id,
+            state = state,
+            source = source,
+            reason = reason,
+            health = record.stats and record.stats.health,
+        })
+    end
     if state == "alive" then
         death.latched = false
         death.latchedAt = nil

@@ -28,6 +28,14 @@ LWN.Config = {
         MaxOffscreenUpdatesPerTick = 64,
     },
 
+    Logging = {
+        Enabled = true,
+        Debug = false,
+        BufferEnabled = true,
+        MaxBufferEntries = 500,
+        DefaultRateMs = 1000,
+    },
+
     Social = {
         CommandTrustFloor = -0.25,
         RecruitTrustFloor = 0.45,

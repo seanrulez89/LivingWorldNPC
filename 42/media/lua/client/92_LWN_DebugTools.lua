@@ -76,6 +76,17 @@ local function logTestAction(action, state, record, detail)
         tostring(active),
         tostring(detail or "none")
     ))
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Test", "action", {
+            npcId = npcId,
+            command = action or "unknown",
+            status = phase,
+            source = "debug_tools",
+            detail = detail or "none",
+            ok = active,
+            scenario = scenario,
+        })
+    end
 end
 
 local function logInfo(text)
@@ -1601,12 +1612,14 @@ local function spawnSquadCompanion(player, disposition)
         local pending = Store.getNPC(state.pendingNpcId)
         if pending and pending.embodiment and pending.embodiment.state == "spawning" then
             sayInfo(player, string.format("Spawn already pending: %s", tostring(state.pendingNpcId)))
+            logTestAction("SQUAD_SPAWN_BLOCKED", state, pending, "spawn_already_pending")
             return false
         end
         state.pendingNpcId = nil
     end
     if #records >= 3 then
         sayInfo(player, "Squad full: three living test companions already exist")
+        logTestAction("SQUAD_SPAWN_BLOCKED", state, nil, "squad_full")
         return false
     end
 
@@ -1626,6 +1639,7 @@ local function spawnSquadCompanion(player, disposition)
     })
     if not record then
         sayInfo(player, "Companion spawn failed before record creation")
+        logTestAction("SQUAD_SPAWN_FAILED", state, nil, "record_creation_failed")
         return false
     end
     if not actor and (not record.embodiment or record.embodiment.state ~= "spawning") then
@@ -1640,6 +1654,7 @@ local function spawnSquadCompanion(player, disposition)
             })
         end
         sayInfo(player, string.format("Companion spawn failed: %s (%s)", tostring(reason), tostring(detail)))
+        logTestAction("SQUAD_SPAWN_FAILED", state, record, tostring(reason) .. ":" .. tostring(detail))
         return false
     end
 

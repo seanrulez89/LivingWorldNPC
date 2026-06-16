@@ -297,6 +297,29 @@ local function updateMovementTelemetry(record, intent, command, actor, status, r
     end
 end
 
+local function logCommandState(record, intent, command, status, reason)
+    if not (LWN.Log and LWN.Log.state and record and command) then return end
+    local state = table.concat({
+        tostring(intent and intent.kind or command.intentKind or command.kind or "none"),
+        tostring(status or command.status or "idle"),
+        tostring(reason or command.lastReason or "none"),
+    }, "|")
+    local destination = command.destination or {}
+    LWN.Log.state("CommandRuntime", "command:" .. tostring(record.id), state, {
+        npcId = record.id,
+        command = command.kind,
+        status = status or command.status,
+        intent = intent and intent.kind or command.intentKind,
+        policy = command.combatPolicy,
+        reason = reason or command.lastReason,
+        detail = command.lastOutcome,
+        x = destination.x,
+        y = destination.y,
+        z = destination.z,
+        distance = command.lastDistance and string.format("%.2f", tonumber(command.lastDistance) or 0) or nil,
+    })
+end
+
 local function updateMoveCommand(record, intent, status, reason, actor)
     if not record or not intent or (intent.kind ~= "move_to" and intent.kind ~= "follow_player") then
         return
@@ -335,6 +358,7 @@ local function updateMoveCommand(record, intent, status, reason, actor)
     if status == "arrived" or status == "failed" or status == "cleared" then
         settleDummyIdleIfStopped(record, actor, "ActionRuntime.updateMoveCommand." .. tostring(status))
     end
+    logCommandState(record, intent, command, status, reason)
 end
 
 local function clearActiveCommand(record, reason)
@@ -348,6 +372,7 @@ local function clearActiveCommand(record, reason)
     command.lastOutcome = "cleared"
     command.lastReason = reason or "runtime_clear"
     command.lastDistance = nil
+    logCommandState(record, nil, command, "cleared", command.lastReason)
     if isMinimalDummyRecord(record) then
         record.dummy = record.dummy or {}
         record.dummy.lastMoveResult = reason or "runtime_clear"
@@ -387,6 +412,19 @@ local function noteIssuedIntent(record, intent)
         command.lastDistance = nil
         command.movementTelemetry = {}
         setCommandDestination(command, intent.kind == "move_to" and intent.data or nil)
+        if LWN.Log and LWN.Log.info then
+            LWN.Log.info("CommandRuntime", "intent_issued", {
+                npcId = record.id,
+                command = command.kind,
+                status = command.status,
+                intent = intent.kind,
+                policy = command.combatPolicy,
+                reason = command.lastReason,
+                x = command.destination and command.destination.x,
+                y = command.destination and command.destination.y,
+                z = command.destination and command.destination.z,
+            })
+        end
         return
     end
 
@@ -569,6 +607,15 @@ function Runtime.replaceWithIntent(record, actor, intent)
     local inserted = Runtime.enqueue(record, intent)
     if inserted and LWN.EmbodimentManager and LWN.EmbodimentManager.touchGrace then
         LWN.EmbodimentManager.touchGrace(record)
+    end
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("CommandRuntime", "queue_replace", {
+            npcId = record.id,
+            command = intent.data and (intent.data.commandKind or intent.kind) or intent.kind,
+            intent = intent.kind,
+            ok = inserted == true,
+            reason = intent.data and intent.data.commandReason or nil,
+        })
     end
     return inserted
 end

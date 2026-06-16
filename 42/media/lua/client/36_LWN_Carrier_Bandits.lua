@@ -323,6 +323,15 @@ local function removeActor(actor, reason, idHint)
         "[LWN][Bandits] removed banditId=%s reason=%s dead=%s commandSent=%s",
         tostring(id), tostring(reason), tostring(dead), tostring(commandSent)
     ))
+    if LWN.Log and LWN.Log.warn then
+        LWN.Log.warn("Carrier", "actor_removed", {
+            actor = tostring(actor),
+            target = tostring(id),
+            reason = reason,
+            detail = dead and "dead_actor" or "live_actor",
+            ok = commandSent,
+        })
+    end
 end
 
 Carrier.removeActor = removeActor
@@ -387,6 +396,16 @@ local function syncHealth(record, actor, brain, source)
     brain.lwnLastHealthSyncSource = source
     brain.lwnLastHealthSyncAt = worldAgeHours()
     if previous == nil or math.abs(previous - health) > 0.001 then
+        if LWN.Log and LWN.Log.info then
+            LWN.Log.info("Combat", "health_sync", {
+                npcId = record.id,
+                actor = tostring(actor),
+                health = string.format("%.2f", health),
+                source = source,
+                previous = previous and string.format("%.2f", previous) or nil,
+                delta = previous and string.format("%.2f", health - previous) or nil,
+            })
+        end
         print(string.format(
             "[LWN][SquadHealth] npcId=%s previous=%s current=%.2f delta=%s source=%s",
             tostring(record.id),
@@ -552,6 +571,17 @@ local function assignSquadWeapon(record, actor, brain)
         tostring(syncResult and syncResult.primaryMatches),
         tostring(syncResult and syncResult.changed)
     ))
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Inventory", "squad_weapon_sync", {
+            npcId = record.id,
+            slot = slot,
+            item = weapon,
+            source = "debug_squad_weapon",
+            ok = syncResult and syncResult.primaryMatches == true,
+            detail = syncResult and syncResult.detail,
+            changed = syncResult and syncResult.changed,
+        })
+    end
 end
 
 local function friendlyRecordForActor(actor)
@@ -585,6 +615,15 @@ function Carrier.onHitZombie(actor, attacker)
             "[LWN][Bandits] zombie damage accepted npcId=%s banditId=%s attacker=%s health=%.2f",
             tostring(record.id), tostring(brain.id), tostring(attacker), health
         ))
+        if LWN.Log and LWN.Log.warn then
+            LWN.Log.warn("Combat", "zombie_damage_accepted", {
+                npcId = record.id,
+                actor = tostring(actor),
+                target = tostring(attacker),
+                health = string.format("%.2f", health),
+                reason = "zombie_hit",
+            })
+        end
         return
     end
 
@@ -600,6 +639,16 @@ function Carrier.onHitZombie(actor, attacker)
         tostring(record.id), tostring(brain.id), tostring(attacker),
         tonumber(protectedCall(actor, "getHealth") or restoreHealth or 0) or 0
     ))
+    if LWN.Log and LWN.Log.warn then
+        LWN.Log.warn("Combat", "friendly_hit_suppressed", {
+            npcId = record.id,
+            actor = tostring(actor),
+            target = tostring(attacker),
+            health = string.format("%.2f", tonumber(protectedCall(actor, "getHealth") or restoreHealth or 0) or 0),
+            reason = "player_hit_blocked",
+            detail = "deferred_repair",
+        })
+    end
 end
 
 function Carrier.onWeaponHitCharacter(attacker, actor)
@@ -609,8 +658,17 @@ function Carrier.onWeaponHitCharacter(attacker, actor)
     local brain = brainFor(actor)
     local record = friendlyRecordForActor(actor)
     if not isControlledBrain(brain) or not record or not isPlayerAttacker(attacker) then return end
-    beginFriendlyFireProtection(record, actor, brain, "on_weapon_hit_character")
+    local restoreHealth = beginFriendlyFireProtection(record, actor, brain, "on_weapon_hit_character")
     enforceSafety(actor, brain)
+    if LWN.Log and LWN.Log.warn then
+        LWN.Log.warn("Combat", "friendly_weapon_hit_suppressed", {
+            npcId = record.id,
+            actor = tostring(actor),
+            target = tostring(attacker),
+            health = string.format("%.2f", tonumber(restoreHealth) or 0),
+            reason = "player_weapon_hit_blocked",
+        })
+    end
     return false
 end
 
@@ -656,6 +714,14 @@ local function tickPendingHitRepairs()
                     tostring(npcId), tostring(brain.id),
                     tonumber(protectedCall(actor, "getHealth") or restoreHealth) or 0
                 ))
+                if LWN.Log and LWN.Log.info then
+                    LWN.Log.info("Combat", "friendly_hit_repair_complete", {
+                        npcId = npcId,
+                        actor = tostring(actor),
+                        health = string.format("%.2f", tonumber(protectedCall(actor, "getHealth") or restoreHealth) or 0),
+                        reason = repair.source,
+                    })
+                end
             end
         end
     end
@@ -763,6 +829,14 @@ local function validateProfileData()
         "[LWN][Bandits] profile check clanCount=%s profileCount=%s expectedProfile=%s clanId=%s profileId=%s",
         tostring(clan and 1 or 0), tostring(profileCount), tostring(profile ~= nil), CLAN_ID, PROFILE_ID
     ))
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Carrier", "profile_check", {
+            source = "bandits",
+            ok = clan ~= nil and profile ~= nil and profileCount == 1,
+            count = profileCount,
+            detail = "clan=" .. tostring(clan ~= nil) .. " profile=" .. tostring(profile ~= nil),
+        }, { rateKey = "bandits_profile", rateMs = 5000 })
+    end
     return clan ~= nil and profile ~= nil and profileCount == 1
 end
 
@@ -825,6 +899,19 @@ function Carrier.spawn(record, options)
         "[LWN][Bandits] spawn requested npcId=%s session=%s key=%s",
         tostring(record.id), tostring(sessionId), tostring(key)
     ))
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Carrier", "spawn_requested", {
+            npcId = record.id,
+            name = displayName(record),
+            source = "bandits",
+            status = handle.status,
+            detail = "session=" .. tostring(sessionId),
+            target = key,
+            x = math.floor(tonumber(anchor.x) or player:getX()),
+            y = math.floor(tonumber(anchor.y) or player:getY()),
+            z = math.floor(tonumber(anchor.z) or player:getZ()),
+        })
+    end
     return { ok = true, pending = true, actor = nil, handle = handle, detail = "spawn_requested" }
 end
 
@@ -850,6 +937,20 @@ function Carrier.poll(record, handle, options)
             tostring(record.id), tostring(handle.sessionId), tostring(handle.correlationKey),
             tostring(selected.id), tostring(math.max(0, #matches - 1))
         ))
+        if LWN.Log and LWN.Log.info then
+            LWN.Log.info("Carrier", "spawn_bound", {
+                npcId = record.id,
+                name = displayName(record),
+                source = "bandits",
+                status = handle.status,
+                actor = tostring(selected.actor),
+                target = tostring(selected.id),
+                detail = "duplicates=" .. tostring(math.max(0, #matches - 1)),
+                x = tonumber(protectedCall(selected.actor, "getX")),
+                y = tonumber(protectedCall(selected.actor, "getY")),
+                z = tonumber(protectedCall(selected.actor, "getZ")),
+            })
+        end
         return { ok = true, pending = false, actor = selected.actor, handle = handle, detail = "bound" }
     end
 
@@ -858,6 +959,15 @@ function Carrier.poll(record, handle, options)
         handle.status = "failed"
         handle.pending = false
         handle.detail = "spawn_timeout"
+        if LWN.Log and LWN.Log.error then
+            LWN.Log.error("Carrier", "spawn_timeout", {
+                npcId = record and record.id,
+                source = "bandits",
+                status = handle.status,
+                target = tostring(handle.correlationKey),
+                reason = "spawn_timeout",
+            })
+        end
         return { ok = false, pending = false, handle = handle, detail = "spawn_timeout" }
     end
     return { ok = true, pending = true, handle = handle, detail = "awaiting_bandit" }
@@ -894,6 +1004,17 @@ function Carrier.isUsable(handle)
                 tonumber(protectedCall(actor, "getHealth") or 0) or 0,
                 tostring(protectedCall(actor, "isExistInTheWorld"))
             ))
+            if LWN.Log and LWN.Log.error then
+                LWN.Log.error("Carrier", "death_detected", {
+                    npcId = handle.lwnNpcId,
+                    actor = tostring(actor),
+                    target = tostring(brain and brain.id or handle.banditId),
+                    health = string.format("%.2f", tonumber(protectedCall(actor, "getHealth") or 0) or 0),
+                    status = handle.status,
+                    reason = "actor_death_like",
+                    ok = protectedCall(actor, "isExistInTheWorld"),
+                })
+            end
             handle.runtime.deathLogged = true
         end
         return false
@@ -909,6 +1030,15 @@ function Carrier.cancelIntent(record, handle, intent, reason)
         rememberMoveResult(handle, handle.runtime.move, "cancelled", reason or "intent_cancelled", nil)
         handle.runtime.move = nil
         handle.runtime.follow = nil
+    end
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("CommandRuntime", "carrier_intent_cancelled", {
+            npcId = record and record.id,
+            source = "bandits",
+            intent = intent and intent.kind,
+            reason = reason or "intent_cancelled",
+            status = "cancelled",
+        })
     end
     return { ok = true, detail = reason or "intent_cancelled" }
 end
@@ -960,6 +1090,18 @@ local function tickMoveTo(record, handle, intent)
         stopActor(actor)
         rememberMoveResult(handle, move, "arrived", "bandits_distance_threshold", distance)
         handle.runtime.move = nil
+        if LWN.Log and LWN.Log.info then
+            LWN.Log.info("Movement", "move_arrived", {
+                npcId = record.id,
+                source = "bandits",
+                status = "arrived",
+                reason = "bandits_distance_threshold",
+                distance = string.format("%.2f", distance),
+                x = tx,
+                y = ty,
+                z = tz,
+            })
+        end
         return { handled = true, done = true, status = "arrived", reason = "bandits_distance_threshold", distance = distance }
     end
 
@@ -972,6 +1114,19 @@ local function tickMoveTo(record, handle, intent)
             stopActor(actor)
             rememberMoveResult(handle, move, "failed", "bandits_no_progress_after_3_attempts", distance)
             handle.runtime.move = nil
+            if LWN.Log and LWN.Log.warn then
+                LWN.Log.warn("Movement", "move_failed", {
+                    npcId = record.id,
+                    source = "bandits",
+                    status = "failed",
+                    reason = "bandits_no_progress_after_3_attempts",
+                    distance = string.format("%.2f", distance),
+                    count = move.attempts,
+                    x = tx,
+                    y = ty,
+                    z = tz,
+                })
+            end
             return {
                 handled = true,
                 failed = true,
@@ -988,6 +1143,17 @@ local function tickMoveTo(record, handle, intent)
             "[LWN][Bandits] move retry npcId=%s key=%s attempt=%s reason=no_progress_5s distance=%.2f",
             tostring(record.id), tostring(handle.correlationKey), tostring(move.attempts), distance
         ))
+        if LWN.Log and LWN.Log.warn then
+            LWN.Log.warn("Movement", "move_retry", {
+                npcId = record.id,
+                source = "bandits",
+                status = "retry",
+                reason = "no_progress_5s",
+                distance = string.format("%.2f", distance),
+                count = move.attempts,
+                target = tostring(handle.correlationKey),
+            })
+        end
     end
 
     local hasTask = Bandit and Bandit.HasTask and Bandit.HasTask(actor) == true
@@ -1005,6 +1171,19 @@ local function tickMoveTo(record, handle, intent)
             tostring(record.id), tostring(handle.correlationKey), tostring(move.attempts),
             tostring(move.taskCycles), distance, tx, ty, tz
         ))
+        if LWN.Log and LWN.Log.info then
+            LWN.Log.info("Movement", "move_task_added", {
+                npcId = record.id,
+                source = "bandits",
+                status = "pathing",
+                reason = "bandits_move_active",
+                distance = string.format("%.2f", distance),
+                count = move.taskCycles,
+                x = tx,
+                y = ty,
+                z = tz,
+            })
+        end
     end
 
     return {
@@ -1174,6 +1353,17 @@ local function tickFollowPlayer(record, handle, intent)
                 "[LWN][Bandits] follow repath npcId=%s key=%s repath=%s distance=%.2f",
                 tostring(record.id), tostring(handle.correlationKey), tostring(follow.repaths), playerDistance
             ))
+            if LWN.Log and LWN.Log.warn then
+                LWN.Log.warn("Movement", "follow_repath", {
+                    npcId = record.id,
+                    source = "bandits",
+                    status = "repath",
+                    reason = "follow_no_progress_5s",
+                    distance = string.format("%.2f", playerDistance),
+                    count = follow.repaths,
+                    target = tostring(handle.correlationKey),
+                })
+            end
         end
     else
         follow.lastProgressAtMs = now
@@ -1198,6 +1388,17 @@ local function tickFollowPlayer(record, handle, intent)
             tostring(record.id), tostring(handle.correlationKey), tostring(movementMode), tostring(walkType),
             baseWalkSpeed * (profile.walkMultiplier or 1), baseRunSpeed * (profile.runMultiplier or 1), playerDistance
         ))
+        if LWN.Log and LWN.Log.info then
+            LWN.Log.info("Movement", "follow_style", {
+                npcId = record.id,
+                source = "bandits",
+                status = "following",
+                reason = "locomotion_changed",
+                detail = tostring(walkType),
+                stance = tostring(movementMode),
+                distance = string.format("%.2f", playerDistance),
+            })
+        end
         follow.loggedMovementMode = movementMode
     end
     follow.movementMode = movementMode
@@ -1217,6 +1418,20 @@ local function tickFollowPlayer(record, handle, intent)
             tostring(record.id), tostring(formationSlot), tostring(followMode), playerDistance,
             targetDistance, tostring(follow.headingSource), tx, ty
         ))
+        if LWN.Log and LWN.Log.info then
+            LWN.Log.info("Movement", "follow_mode", {
+                npcId = record.id,
+                source = "bandits",
+                status = "following",
+                reason = tostring(followMode),
+                slot = formationSlot,
+                distance = string.format("%.2f", playerDistance),
+                targetDistance = string.format("%.2f", targetDistance),
+                x = tx,
+                y = ty,
+                z = tz,
+            })
+        end
         follow.loggedFollowMode = followMode
     end
     follow.followMode = followMode
@@ -1284,6 +1499,15 @@ function Carrier.retire(record, handle, options)
     handle.actor = nil
     handle.pending = false
     handle.status = "retired"
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Carrier", "retired", {
+            npcId = record and record.id,
+            source = "bandits",
+            status = handle.status,
+            reason = options and options.reason or "retired",
+            target = tostring(handle.correlationKey),
+        })
+    end
     return { ok = true, status = "retired", detail = options and options.reason or "retired" }
 end
 

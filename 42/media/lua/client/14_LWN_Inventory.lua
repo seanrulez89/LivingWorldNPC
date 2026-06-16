@@ -201,6 +201,15 @@ function Inventory.grant(record, itemId, count, reason)
         reason = reason or "grant",
     }
     setChanged(inv, reason or "grant")
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Inventory", "grant_virtual_item", {
+            npcId = record.id,
+            item = itemId,
+            count = count,
+            source = "virtual_or_test",
+            reason = reason or "grant",
+        })
+    end
     return true
 end
 
@@ -218,6 +227,14 @@ function Inventory.addExistingItemRecord(record, item, reason)
         source = "existing_item",
     }
     setChanged(inv, reason or "existing_item_transfer")
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Inventory", "record_existing_item", {
+            npcId = record.id,
+            item = fullType,
+            source = "existing_item",
+            reason = reason or "existing_item_transfer",
+        })
+    end
     return true
 end
 
@@ -311,13 +328,25 @@ function Inventory.equipExistingActorItem(record, actor, item, slot, reason)
         end
     end
 
-    return {
+    local result = {
         ok = true,
         detail = "existing_item_equipped",
         item = item,
         changed = changed,
         fullType = itemId,
     }
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Inventory", "equip_existing_item", {
+            npcId = record and record.id,
+            item = itemId,
+            slotName = slot,
+            ok = result.ok,
+            detail = result.detail,
+            changed = changed,
+            reason = reason or "equip_existing_item",
+        })
+    end
+    return result
 end
 
 function Inventory.equipActorItem(record, actor, itemId, slot, reason, options)
@@ -358,13 +387,26 @@ function Inventory.equipActorItem(record, actor, itemId, slot, reason, options)
         end
     end
 
-    return {
+    local result = {
         ok = true,
         detail = added and "item_added_and_equipped" or "item_equipped",
         item = item,
         added = added,
         changed = changed,
     }
+    if (changed == true or added == true) and LWN.Log and LWN.Log.info then
+        LWN.Log.info("Inventory", added and "equip_created_item" or "equip_actor_item", {
+            npcId = record and record.id,
+            item = itemId,
+            slotName = slot,
+            ok = result.ok,
+            detail = result.detail,
+            source = added and "created_by_debug_sync" or "actor_inventory",
+            changed = changed,
+            reason = reason or "equip_actor_item",
+        })
+    end
+    return result
 end
 
 function Inventory.transferExistingItemToActor(record, actor, item, options)
@@ -406,7 +448,7 @@ function Inventory.transferExistingItemToActor(record, actor, item, options)
         equipResult = Inventory.equipExistingActorItem(record, actor, item, options.slot or "auto", options.reason or "existing_item_transfer")
     end
     local actorCount = Inventory.actorCount(actor, fullType)
-    return {
+    local result = {
         ok = actorCount > 0,
         detail = alreadyOwned and "already_owned" or "transferred_existing_item",
         recordOk = recordOk == true,
@@ -415,6 +457,20 @@ function Inventory.transferExistingItemToActor(record, actor, item, options)
         equipped = equipResult and equipResult.ok == true or false,
         equipDetail = equipResult and equipResult.detail or nil,
     }
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Inventory", "transfer_existing_item", {
+            npcId = record.id,
+            item = fullType,
+            source = alreadyOwned and "already_owned" or (sourceContainer and "container" or worldItem and "world_item" or "unknown"),
+            ok = result.ok,
+            detail = result.detail,
+            count = actorCount,
+            equipped = result.equipped,
+            slotName = options.slot or "auto",
+            reason = options.reason or "existing_item_transfer",
+        })
+    end
+    return result
 end
 
 function Inventory.syncActorEquipment(record, actor, options)

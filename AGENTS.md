@@ -49,6 +49,7 @@
 - Bootstrap local Lua syntax checker on macOS: `bash scripts/bootstrap-lua-mac.sh`
 - Validate current macOS working tree: `bash scripts/validate-mac.sh`
 - Open latest Project Zomboid console log: `bash scripts/read-console-mac.sh`
+- Read latest LWN-only test evidence: `bash scripts/read-lwn-log-mac.sh`
 - Create a local zip artifact: `bash scripts/zip-local-release.sh`
 
 ## macOS validation preference

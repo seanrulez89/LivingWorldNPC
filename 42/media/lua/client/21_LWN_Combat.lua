@@ -139,6 +139,16 @@ end
 function Combat.notePlayerAttack(target, attacker)
     if not isPlayer(attacker) or not isOrdinaryZombie(target) then return false end
     setTeamSignal(DEFAULT_TEAM_ID, "player_attacked_zombie", target)
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Combat", "team_signal", {
+            teamId = DEFAULT_TEAM_ID,
+            reason = "player_attacked_zombie",
+            target = tostring(target),
+            x = tonumber(protectedCall(target, "getX")),
+            y = tonumber(protectedCall(target, "getY")),
+            z = tonumber(protectedCall(target, "getZ")),
+        })
+    end
     return true
 end
 
@@ -147,6 +157,18 @@ function Combat.noteSquadHit(record, attacker)
     ensureCombat(record)
     rememberDirectThreat(record, attacker, "self_hit_by_zombie")
     setTeamSignal(record.companion.teamId, "squad_member_hit", attacker)
+    if LWN.Log and LWN.Log.warn then
+        LWN.Log.warn("Combat", "squad_hit_by_zombie", {
+            npcId = record.id,
+            teamId = record.companion.teamId,
+            reason = "squad_member_hit",
+            target = tostring(attacker),
+            health = record.stats and record.stats.health,
+            x = tonumber(protectedCall(attacker, "getX")),
+            y = tonumber(protectedCall(attacker, "getY")),
+            z = tonumber(protectedCall(attacker, "getZ")),
+        })
+    end
     return true
 end
 
@@ -277,6 +299,23 @@ local function setEngaged(record, actor, brain, engaged, reason, threat, refresh
 
     if changed then
         local identity = record.identity or {}
+        if LWN.Log and LWN.Log.info then
+            LWN.Log.info("Combat", "engagement", {
+                npcId = record.id,
+                name = tostring(identity.firstName or "Unknown") .. " " .. tostring(identity.lastName or ""),
+                teamId = record.companion.teamId,
+                state = nextState,
+                stance = combat.disposition,
+                policy = Combat.commandPolicy(record),
+                reason = reason,
+                target = tostring(threat or protectedCall(actor, "getTarget")),
+                task = taskName(actor),
+                health = tonumber(record.stats and record.stats.health or protectedCall(actor, "getHealth") or 0) or 0,
+                x = tonumber(protectedCall(actor, "getX")),
+                y = tonumber(protectedCall(actor, "getY")),
+                z = tonumber(protectedCall(actor, "getZ")),
+            })
+        end
         print(string.format(
             "[LWN][Combat] npcId=%s name=%s %s stance=%s policy=%s team=%s health=%.2f threat=%s reason=%s task=%s target=%s",
             tostring(record.id),

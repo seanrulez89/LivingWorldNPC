@@ -387,6 +387,21 @@ local function commandMoveToSquare(record, actor, square)
         "[LWN][Command] move npcId=%s name=%s dest=%s queued=%s",
         tostring(record.id), displayNameFor(record, actor), label, tostring(queued)
     ))
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Command", "move_to", {
+            npcId = record.id,
+            name = displayNameFor(record, actor),
+            command = "move_to",
+            source = "world_context",
+            ok = queued,
+            reason = "player_right_click_move",
+            x = x,
+            y = y,
+            z = z,
+            detail = label,
+            policy = "self_defense",
+        })
+    end
     return queued
 end
 
@@ -403,6 +418,17 @@ local function commandFollowPlayer(record, actor)
         "[LWN][Command] follow npcId=%s name=%s queued=%s",
         tostring(record.id), displayNameFor(record, actor), tostring(queued)
     ))
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Command", "follow_player", {
+            npcId = record.id,
+            name = displayNameFor(record, actor),
+            command = "follow_player",
+            source = "world_context",
+            ok = queued,
+            reason = "player_follow_command",
+            policy = "stance",
+        })
+    end
     return queued
 end
 
@@ -431,6 +457,17 @@ local function commandWait(record, actor)
         "[LWN][Command] wait npcId=%s name=%s",
         tostring(record.id), displayNameFor(record, actor)
     ))
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Command", "wait", {
+            npcId = record.id,
+            name = displayNameFor(record, actor),
+            command = "wait",
+            source = "world_context",
+            ok = true,
+            reason = "player_wait_command",
+            policy = "self_defense",
+        })
+    end
     return true
 end
 
@@ -449,6 +486,17 @@ local function commandSetDisposition(record, actor, disposition)
         "[LWN][Command] stance npcId=%s name=%s stance=%s",
         tostring(record.id), displayNameFor(record, actor), stance
     ))
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Command", "combat_stance", {
+            npcId = record.id,
+            name = displayNameFor(record, actor),
+            command = "set_disposition",
+            stance = stance,
+            source = "world_context",
+            ok = true,
+            reason = "world_context_stance_change",
+        })
+    end
     return true
 end
 
@@ -472,6 +520,16 @@ local function commandSetBehaviorGuideline(record, actor, guideline)
         "[LWN][Command] behavior npcId=%s name=%s guideline=%s",
         tostring(record.id), displayNameFor(record, actor), tostring(record.companion.behaviorGuideline)
     ))
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Command", "behavior_guideline", {
+            npcId = record.id,
+            name = displayNameFor(record, actor),
+            command = "set_behavior_guideline",
+            guideline = record.companion.behaviorGuideline,
+            source = "world_context",
+            ok = true,
+        })
+    end
     return true
 end
 
@@ -498,6 +556,20 @@ local function commandGiveExistingItem(record, actor, item, player, equip, slot,
         tostring(sourceLabel or "unknown"), tostring(equip == true),
         tostring(result.ok == true), tostring(result.detail), tostring(result.actorCount)
     ))
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Command", "give_item", {
+            npcId = record.id,
+            name = displayNameFor(record, actor),
+            command = "give_item",
+            item = itemFullType(item),
+            source = sourceLabel or "unknown",
+            ok = result.ok == true,
+            detail = result.detail,
+            count = result.actorCount,
+            slotName = slot or "auto",
+            equip = equip == true,
+        })
+    end
     return result.ok == true
 end
 

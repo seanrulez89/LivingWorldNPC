@@ -68,6 +68,8 @@ function Schema.newRoot()
         },
         debug = {
             devToolsEnabled = true,
+            logSequence = 0,
+            logBuffer = {},
         },
     }
 end

@@ -65,12 +65,28 @@ function Social.computeRelationshipStage(record)
         record.relationshipToPlayer.stage = record.companion and record.companion.recruited == true
             and "companion"
             or "friendly"
+        if LWN.Log and LWN.Log.state then
+            LWN.Log.state("Social", "relationship:" .. tostring(record.id), record.relationshipToPlayer.stage, {
+                npcId = record.id,
+                stage = record.relationshipToPlayer.stage,
+                reason = "minimal_dummy_policy",
+            })
+        end
         return record.relationshipToPlayer.stage
     end
 
     local rel, drama, companion = ensureCombatPolicyTables(record)
+    local previousStage = rel.stage
     if drama.pendingBetrayal == true or Social.betrayalScore(record) >= (LWN.Config.Social.BetrayThreshold or 1.25) then
         rel.stage = "hostile"
+        if LWN.Log and LWN.Log.state then
+            LWN.Log.state("Social", "relationship:" .. tostring(record.id), rel.stage, {
+                npcId = record.id,
+                stage = rel.stage,
+                reason = "betrayal_threshold",
+                previous = previousStage,
+            })
+        end
         return rel.stage
     end
 
@@ -85,6 +101,18 @@ function Social.computeRelationshipStage(record)
         rel.stage = "wary"
     else
         rel.stage = "neutral"
+    end
+    if LWN.Log and LWN.Log.state then
+        LWN.Log.state("Social", "relationship:" .. tostring(record.id), rel.stage, {
+            npcId = record.id,
+            stage = rel.stage,
+            reason = "relationship_score",
+            previous = previousStage,
+            score = string.format("%.3f", tonumber(score) or 0),
+            trust = rel.trust,
+            fear = rel.fear,
+            resentment = rel.resentment,
+        })
     end
     return rel.stage
 end
@@ -138,6 +166,23 @@ function Social.updateTeamMood(teamId)
     team.cohesion = cohesion
     team.pressureReason = extra > 0 and "oversized_group" or "baseline"
     team.lastUpdatedHour = worldAgeHours()
+    if LWN.Log and LWN.Log.state then
+        local signature = table.concat({
+            tostring(count),
+            string.format("%.3f", tonumber(team.stress) or 0),
+            string.format("%.3f", tonumber(team.morale) or 0),
+            string.format("%.3f", tonumber(team.cohesion) or 0),
+            tostring(team.pressureReason),
+        }, "|")
+        LWN.Log.state("Social", "team:" .. tostring(teamId), signature, {
+            teamId = teamId,
+            count = count,
+            stress = string.format("%.3f", tonumber(team.stress) or 0),
+            morale = string.format("%.3f", tonumber(team.morale) or 0),
+            cohesion = string.format("%.3f", tonumber(team.cohesion) or 0),
+            reason = team.pressureReason,
+        })
+    end
     return team
 end
 
@@ -166,6 +211,19 @@ function Social.applyEvent(record, eventKind, data)
     Social.computeRelationshipStage(record)
     if record.companion and record.companion.teamId then
         Social.updateTeamMood(record.companion.teamId)
+    end
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Social", "event_applied", {
+            npcId = record.id,
+            teamId = record.companion and record.companion.teamId,
+            stage = record.relationshipToPlayer and record.relationshipToPlayer.stage,
+            reason = eventKind,
+            trust = record.relationshipToPlayer and record.relationshipToPlayer.trust,
+            fear = record.relationshipToPlayer and record.relationshipToPlayer.fear,
+            resentment = record.relationshipToPlayer and record.relationshipToPlayer.resentment,
+            health = record.stats and record.stats.health,
+            stress = record.stats and record.stats.stress,
+        })
     end
     return true
 end
