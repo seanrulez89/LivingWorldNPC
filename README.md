@@ -8,8 +8,8 @@ This project is currently in active R&D.
 
 - Canonical NPC state lives in `ModData`
 - On-screen NPCs are embodied dynamically when needed
-- The current active companion carrier is Bandits-backed, with LWN retaining the
-  canonical NPC record and command state
+- The current active companion carrier is LWN's own managed `IsoZombie` shell;
+  no external NPC runtime is required for the default test path
 - The initial milestone of a human-looking, non-zombie-sounding, commandable NPC
   has been reached
 - Current work is moving into three-person companion squad behavior: follow,
@@ -34,8 +34,10 @@ The project currently experiments with:
 
 - `ModData` as canonical NPC state
 - dynamic embodiment near the player
-- Bandits as the current practical world carrier for test companions
-- LWN-owned intents and command state layered above Bandits execution
+- LWN-managed `IsoZombie` shells as the practical world carrier for test
+  companions
+- LWN-owned intents, command state, movement, combat execution, damage handling,
+  and cleanup
 - squad threat evaluation and combat permission through `LWN.Combat`
 - runtime tracing for presentation, cleanup, death/corpse/reanimation, and UI targeting
 - Build 42-specific validation and debugging workflow on macOS
@@ -75,6 +77,8 @@ bash scripts/bootstrap-lua-mac.sh
 
 - `reference_mods/` is kept locally for research but is **not tracked** in the main git repository
 - Build 41 reference mods are used as learning material, not as direct drop-in solutions for Build 42
+- Bandits-related documents are historical/reference material only; the default
+  runtime must not require Bandits2 or copy third-party code/assets
 - Some documents in `docs/` are exploratory and may represent intermediate findings rather than final decisions
 
 ## Recommended reading
@@ -83,8 +87,9 @@ Start here if you want context:
 
 - `docs/README.md`
 - `docs/DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md`
-- `docs/COMPANION_SQUAD_COMBAT_FOUNDATION_PLAN_2026-06-14.md`
-- `docs/BANDITS_CONTROLLED_NPC_IMPLEMENTATION_2026-06-13.md`
+- `docs/MANAGED_ISOZOMBIE_INDEPENDENCE_2026-06-16.md`
+- `docs/COMPANION_SQUAD_COMBAT_FOUNDATION_PLAN_2026-06-14.md` historical only
+- `docs/BANDITS_CONTROLLED_NPC_IMPLEMENTATION_2026-06-13.md` historical only
 - `docs/TEST_LOG_HISTORY.md`
 - `docs/REFERENCE_MODS_LOCAL_CODE_REVIEW_2026-06-13.md`
 

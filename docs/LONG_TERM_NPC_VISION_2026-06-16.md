@@ -369,8 +369,8 @@ The NPC record needs to remain the durable source for identity, status,
 relationship, memory, preferences, narrative, inventory abstraction, and command
 policy.
 
-Actor state is temporary. Bandits brain state is temporary. UI state is
-temporary.
+Actor state is temporary. Any external-reference brain state is temporary. UI
+state is temporary.
 
 ### Autonomy Should Be Explainable
 
@@ -407,7 +407,7 @@ implemented yet.
 Story, memory, relationship, and personality should affect decisions by changing
 scores, permissions, dialogue, and intent generation.
 
-They should not directly push Bandits tasks or mutate actor movement/combat
+They should not directly push carrier tasks or mutate actor movement/combat
 state.
 
 ## Suggested Development Phases

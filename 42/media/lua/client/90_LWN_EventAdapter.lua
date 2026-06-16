@@ -608,11 +608,11 @@ local function objectPresentationRole(kind, dead, deathLike, zombie, reanimated)
     return "alive_npc"
 end
 
-local function isLiveControlledBandit(record, actor, state)
+local function isLiveManagedShell(record, actor, state)
     if not record or not actor or not state then return false end
     local modData = protectedCall(actor, "getModData")
     local marked = modData
-        and modData.LWN_CarrierKind == "bandits"
+        and modData.LWN_CarrierKind == "isozombie"
         and (modData.LWN_NpcId == record.id or modData.LWN_LastNpcId == record.id)
     return marked == true
         and state.dead ~= true
@@ -645,8 +645,8 @@ local function summarizeWorldObject(obj, record, actor)
         humanVisual = protectedCall(obj, "getHumanVisual") ~= nil
     end
 
-    local controlledBandit = modData
-        and modData.LWN_CarrierKind == "bandits"
+    local controlledShell = modData
+        and modData.LWN_CarrierKind == "isozombie"
         and record
         and (modData.LWN_NpcId == record.id or modData.LWN_LastNpcId == record.id)
         and dead ~= true
@@ -654,7 +654,7 @@ local function summarizeWorldObject(obj, record, actor)
 
     return {
         kind = kind,
-        presentationRole = controlledBandit and "controlled_npc"
+        presentationRole = controlledShell and "controlled_npc"
             or objectPresentationRole(kind, dead, deathLike, zombie, reanimated),
         object = protectedCall(obj, "getObjectName"),
         objectRef = ref,
@@ -808,7 +808,7 @@ local function probeDeathObjects(record, actor, source)
         state.downed == true
         or state.deathLike == true
         or state.reanimated == true
-        or (state.zombie == true and not isLiveControlledBandit(record, actor, state))
+        or (state.zombie == true and not isLiveManagedShell(record, actor, state))
     )
 
     Adapter._deathObjectCache = Adapter._deathObjectCache or {}
@@ -879,7 +879,7 @@ local function traceDeathState(record, actor, source)
 
     Adapter._deathStateCache = Adapter._deathStateCache or {}
     local previous = Adapter._deathStateCache[record.id]
-    if isLiveControlledBandit(record, actor, current) then
+    if isLiveManagedShell(record, actor, current) then
         Adapter._deathStateCache[record.id] = current
         return
     end
@@ -1269,7 +1269,7 @@ local function missingActorThreshold(record)
         return tonumber(LWN.Config.Debug.DebugActorLostRecoveryTicks) or 120
     end
     local carrierKind = getCarrierKind(record)
-    if carrierKind == "isozombie" or carrierKind == "bandits" then
+    if carrierKind == "isozombie" then
         return 40
     end
     return 10
@@ -1554,9 +1554,7 @@ local function tickEmbodiedRecord(record, actor, player)
     local carrierKind = getCarrierKind(record)
     traceDeathState(record, actor, "tickEmbodiedRecord.start")
     traceEmbodiedDeathLike(record, actor, "tickEmbodiedRecord.start")
-    local actorDeathLike = carrierKind == "bandits"
-        and (protectedCall(actor, "isAlive") == false or (tonumber(protectedCall(actor, "getHealth")) or 1) <= 0)
-        or (carrierKind ~= "bandits" and LWN.ActorFactory and LWN.ActorFactory.isDeathLikeActor and LWN.ActorFactory.isDeathLikeActor(actor))
+    local actorDeathLike = LWN.ActorFactory and LWN.ActorFactory.isDeathLikeActor and LWN.ActorFactory.isDeathLikeActor(actor)
     if actorDeathLike
         or isAliveRecord(record) == false
     then
@@ -1570,12 +1568,6 @@ local function tickEmbodiedRecord(record, actor, player)
     end
     if harnessQuarantine(record) then
         hardReNeutralize(record, actor, "tickEmbodiedRecord.pre_sync")
-    end
-    if carrierKind == "bandits" and LWN.CarrierAdapter and LWN.CarrierAdapter.sync then
-        LWN.CarrierAdapter.sync(record, getCarrierHandle(record), {
-            mode = "maintenance",
-            source = "tickEmbodiedRecord.bandits_maintenance",
-        })
     end
     if LWN.ActorSync and LWN.ActorSync.ensureEmbodiedActorState then
         LWN.ActorSync.ensureEmbodiedActorState(record, actor)
@@ -1611,13 +1603,20 @@ local function tickEmbodiedRecord(record, actor, player)
         )
     end
     local queueBefore = LWN.ActionRuntime.peek(record)
-    if relationPolicy and relationPolicy.shouldNeutralizeCarrier == true and queueBefore and queueBefore.kind == "attack_melee" then
-        LWN.ActionRuntime.clear(record, actor)
-        queueBefore = nil
-    end
     local allowMovement = relationPolicy and relationPolicy.allowMovement == true
     local allowAutonomousMovement = relationPolicy and relationPolicy.allowAutonomousMovement == true
     local suppressForNeutralized = relationPolicy and relationPolicy.shouldNeutralizeCarrier == true and allowMovement ~= true
+    if suppressForNeutralized and queueBefore and queueBefore.kind == "attack_melee" then
+        LWN.ActionRuntime.clear(record, actor)
+        queueBefore = nil
+    end
+
+    local combatIntent = nil
+    if not harnessQuarantine(record) and LWN.Combat and LWN.Combat.update then
+        LWN.Combat.update(record, actor)
+        local combatCtx = LWN.Combat.buildContext(record, actor)
+        combatIntent = LWN.Combat.chooseIntent(record, actor, combatCtx)
+    end
 
     if dummyMode
         and queueBefore
@@ -1636,7 +1635,17 @@ local function tickEmbodiedRecord(record, actor, player)
         queueBefore = nil
     end
 
-    if suppressForNeutralized then
+    if combatIntent then
+        stampEmbodiedDecision(record, {
+            source = "combat",
+            chosen = combatIntent.kind,
+            neutralized = false,
+            queueBefore = queueBefore and queueBefore.kind or nil,
+            utility = nil,
+            behavior = nil,
+        })
+        LWN.ActionRuntime.enqueue(record, combatIntent)
+    elseif suppressForNeutralized then
         if queueBefore then
             LWN.ActionRuntime.clear(record, actor)
         end
@@ -1705,33 +1714,19 @@ local function tickEmbodiedRecord(record, actor, player)
             })
         end
     else
-        local combatCtx = LWN.Combat.buildContext(record, actor)
-        local combatIntent = LWN.Combat.chooseIntent(record, actor, combatCtx)
-        if combatIntent then
-            stampEmbodiedDecision(record, {
-                source = "combat",
-                chosen = combatIntent.kind,
-                neutralized = false,
-                queueBefore = queueBefore and queueBefore.kind or nil,
-                utility = nil,
-                behavior = nil,
-            })
-            LWN.ActionRuntime.enqueue(record, combatIntent)
-        else
-            local chosen = LWN.UtilityAI.choose(record, {})
-            local chosenKind = chosen and chosen.kind or nil
-            local intent = LWN.BehaviorTree.tick(record, actor, {}, chosen)
-            stampEmbodiedDecision(record, {
-                source = intent and "utility_behavior" or "utility_none",
-                chosen = intent and intent.kind or nil,
-                neutralized = false,
-                queueBefore = queueBefore and queueBefore.kind or nil,
-                utility = chosenKind,
-                behavior = intent and intent.kind or nil,
-            })
-            if intent and not queueBefore then
-                LWN.ActionRuntime.enqueue(record, intent)
-            end
+        local chosen = LWN.UtilityAI.choose(record, {})
+        local chosenKind = chosen and chosen.kind or nil
+        local intent = LWN.BehaviorTree.tick(record, actor, {}, chosen)
+        stampEmbodiedDecision(record, {
+            source = intent and "utility_behavior" or "utility_none",
+            chosen = intent and intent.kind or nil,
+            neutralized = false,
+            queueBefore = queueBefore and queueBefore.kind or nil,
+            utility = chosenKind,
+            behavior = intent and intent.kind or nil,
+        })
+        if intent and not queueBefore then
+            LWN.ActionRuntime.enqueue(record, intent)
         end
     end
 
@@ -1928,7 +1923,7 @@ local function handleCreatedCharacter(actor, hookName)
         local carrierHandle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
         if not carrierHandle then
             carrierHandle = {
-                kind = record and record.embodiment and record.embodiment.carrierKind or "isoplayer",
+                kind = record and record.embodiment and record.embodiment.carrierKind or "isozombie",
                 actor = actor,
                 status = "active",
                 detail = "event_hook_ephemeral_handle",

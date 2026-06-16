@@ -34,6 +34,10 @@ local function itemFullType(item)
     return item and (protectedCall(item, "getFullType") or protectedCall(item, "getType")) or nil
 end
 
+local function isInventoryItem(item)
+    return item and instanceof and instanceof(item, "InventoryItem")
+end
+
 local function itemLabel(item)
     return tostring(protectedCall(item, "getDisplayName") or protectedCall(item, "getName") or itemFullType(item) or "item")
 end
@@ -199,7 +203,7 @@ local function isManagedZombieCarrier(actor)
     if not npcId then return false end
 
     local modData = getModData(actor)
-    return modData ~= nil and (modData.LWN_CarrierKind == "isozombie" or modData.LWN_CarrierKind == "bandits")
+    return modData ~= nil and modData.LWN_CarrierKind == "isozombie"
 end
 
 local function isTargetableNpcActor(actor)
@@ -347,10 +351,6 @@ function UIContext.findNpcActorInWorldObjects(worldObjects)
 end
 
 local function clickedSquareFromWorldObjects(worldObjects)
-    if BanditCompatibility and BanditCompatibility.GetClickedSquare then
-        local ok, square = pcall(BanditCompatibility.GetClickedSquare)
-        if ok and square then return square end
-    end
     if not worldObjects then return nil end
     for i = 1, #worldObjects do
         local square = protectedCall(worldObjects[i], "getSquare") or protectedCall(worldObjects[i], "getCurrentSquare")
@@ -364,10 +364,10 @@ local function clickedWorldInventoryItem(worldObjects)
     for i = 1, #worldObjects do
         local obj = worldObjects[i]
         local item = protectedCall(obj, "getItem")
-        if item and itemFullType(item) then
+        if isInventoryItem(item) and itemFullType(item) then
             return item
         end
-        if itemFullType(obj) then
+        if isInventoryItem(obj) and itemFullType(obj) then
             return obj
         end
     end
@@ -513,9 +513,9 @@ local function commandSetDisposition(record, actor, disposition)
     end
     local stance = disposition == "aggressive" and "aggressive" or "passive"
     LWN.Combat.setDisposition(record, stance, "world_context_stance_change")
-    local brain = actor and BanditBrain and BanditBrain.Get and BanditBrain.Get(actor) or nil
-    if brain then
-        brain.lwnCombatReason = "stance_changed"
+    local modData = actor and protectedCall(actor, "getModData") or nil
+    if modData then
+        modData.LWN_CombatReason = "stance_changed"
     end
     print(string.format(
         "[LWN][Command] stance npcId=%s name=%s stance=%s",
@@ -563,6 +563,51 @@ local function commandSetBehaviorGuideline(record, actor, guideline)
             guideline = record.companion.behaviorGuideline,
             source = "world_context",
             ok = true,
+        })
+    end
+    return true
+end
+
+local function commandDumpInventory(record, actor)
+    if not record then return false end
+    local snapshot = LWN.Inventory and LWN.Inventory.snapshot and LWN.Inventory.snapshot(record, actor) or nil
+    if not snapshot then return false end
+    local recordCounts, actorCounts = {}, {}
+    for fullType, count in pairs(snapshot.record and snapshot.record.counts or {}) do
+        recordCounts[#recordCounts + 1] = tostring(fullType) .. "=" .. tostring(count)
+    end
+    for fullType, count in pairs(snapshot.actor and snapshot.actor.counts or {}) do
+        actorCounts[#actorCounts + 1] = tostring(fullType) .. "=" .. tostring(count)
+    end
+    table.sort(recordCounts)
+    table.sort(actorCounts)
+    local detail = string.format(
+        "recordItems={%s} actorItems={%s} primary=%s secondary=%s worn=%s visuals=%s",
+        table.concat(recordCounts, ","),
+        table.concat(actorCounts, ","),
+        tostring(snapshot.actor and snapshot.actor.primaryHand or "none"),
+        tostring(snapshot.actor and snapshot.actor.secondaryHand or "none"),
+        tostring(snapshot.actor and snapshot.actor.wornCount or 0),
+        tostring(snapshot.actor and snapshot.actor.itemVisualCount or 0)
+    )
+    print(string.format(
+        "[LWN][InventoryDump] npcId=%s name=%s %s",
+        tostring(record.id),
+        displayNameFor(record, actor),
+        detail
+    ))
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("Inventory", "manual_inventory_dump", {
+            npcId = record.id,
+            name = displayNameFor(record, actor),
+            ok = true,
+            detail = detail,
+            recordItems = table.concat(recordCounts, ","),
+            actorItems = table.concat(actorCounts, ","),
+            primary = snapshot.actor and snapshot.actor.primaryHand or nil,
+            secondary = snapshot.actor and snapshot.actor.secondaryHand or nil,
+            worn = snapshot.actor and snapshot.actor.wornCount or 0,
+            visuals = snapshot.actor and snapshot.actor.itemVisualCount or 0,
         })
     end
     return true
@@ -621,6 +666,9 @@ local function addCommandOptions(sub, record, actor, clickedSquare)
     end)
     sub:addOption("Wait here", { record = record, actor = actor }, function(args)
         commandWait(args.record, args.actor)
+    end)
+    sub:addOption("Dump inventory to log", { record = record, actor = actor }, function(args)
+        commandDumpInventory(args.record, args.actor)
     end)
     local disposition = record.combat and record.combat.disposition or "passive"
     sub:addOption(
@@ -695,7 +743,7 @@ local function addCompanionItemTargetOptions(sub, targets, item, player, equip, 
 end
 
 local function addItemActionSubmenu(context, player, item, sourceLabel, selectedCount)
-    if not item or not itemFullType(item) then return false end
+    if not isInventoryItem(item) or not itemFullType(item) then return false end
     local targets = embodiedCommandTargets()
     if #targets == 0 then return false end
 

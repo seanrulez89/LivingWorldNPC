@@ -253,7 +253,9 @@ local function updateMovementTelemetry(record, intent, command, actor, status, r
     telemetry.lastDisplacement = displacement
     telemetry.isMoving = moving
     telemetry.path2 = path2 ~= nil
-    telemetry.walkType = protectedCall(actor, "getVariableString", "BanditWalkType") or protectedCall(actor, "getWalkType") or "unknown"
+    telemetry.walkType = protectedCall(actor, "getVariableString", "LWNWalkType")
+        or protectedCall(actor, "getWalkType")
+        or "unknown"
     telemetry.canWalk = protectedCall(actor, "isCanWalk")
     telemetry.useless = protectedCall(actor, "isUseless")
 
@@ -584,6 +586,14 @@ function Runtime.enqueue(record, intent)
         return false
     end
     local q = queueFor(record.id)
+    if intent and intent.kind == "attack_melee" then
+        if intentsEquivalent(q[1], intent) then
+            return false
+        end
+        table.insert(q, 1, intent)
+        syncPlanMirror(record)
+        return true
+    end
     local last = q[#q]
     if intentsEquivalent(last, intent) then
         return false
@@ -980,7 +990,7 @@ function Runtime._startMovement(record, actor, intent)
     protectedCall(actor, "setNoTeeth", true)
     protectedCall(actor, "setVariable", "NoLungeTarget", true)
     protectedCall(actor, "setWalkType", "Walk")
-    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    protectedCall(actor, "setVariable", "LWNWalkType", "Walk")
     protectedCall(actor, "clearVariable", "bPathfind")
     if LWN.Carriers and LWN.Carriers.isozombie and LWN.Carriers.isozombie.reassertManagedShellContract then
         LWN.Carriers.isozombie.reassertManagedShellContract(record, actor, {

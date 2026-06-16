@@ -17,8 +17,8 @@
 - Onscreen NPCs are embodied only when needed.
 - Canonical NPC state lives in ModData.
 - Embodied actor state is a cache, not the source of truth.
-- Bandits actors and brains are runtime actuators/caches for current companions,
-  not durable NPC records.
+- Current companions use LWN's own managed `IsoZombie` carrier. External NPC
+  runtimes are reference material only, not required execution layers.
 - User commands and autonomous choices should flow through LWN intents before a
   carrier executes them.
 

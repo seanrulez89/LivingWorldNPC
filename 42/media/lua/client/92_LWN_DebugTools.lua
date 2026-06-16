@@ -180,33 +180,33 @@ local function movementSummaryLine(record, actor)
         tostring(modData and modData.LWN_AppearanceCadenceOverwriteReason or "none"),
         boolText(modData and modData.LWN_RuntimeSettleAliveResetDone),
         boolText(modData and modData.LWN_RuntimeSettleAliveResetTouched),
-        boolText(modData and modData.LWN_BanditsVisualProbeApplied),
-        tostring(modData and modData.LWN_BanditsVisualProbeStage or "none"),
-        tostring(modData and modData.LWN_BanditsVisualProbeNetEffect or "none"),
-        tostring(modData and modData.LWN_BanditsPathEnterCount or 0),
-        tostring(modData and modData.LWN_BanditsPathLastEnter or "none"),
-        tostring(modData and modData.LWN_BanditsPathLastSource or "none"),
-        tostring(modData and modData.LWN_BanditsPathResetReason or "none"),
-        tostring(modData and modData.LWN_BanditsVisualProbeCheckpointStage or "none"),
-        tostring(modData and modData.LWN_BanditsVisualProbeCheckpointSource or "none"),
-        tostring(modData and modData.LWN_BanditsVisualProbeCheckpointRole or "none"),
-        tostring(modData and modData.LWN_BanditsVisualProbeCheckpointFail or "none"),
-        boolText(modData and modData.LWN_BanditsVisualProbeCheckpointWorld),
-        boolText(modData and modData.LWN_BanditsVisualProbeCheckpointSquare),
-        numberText(modData and modData.LWN_BanditsVisualProbeCheckpointAlpha, 2),
-        numberText(modData and modData.LWN_BanditsVisualProbeCheckpointTargetAlpha, 2),
-        boolText(modData and modData.LWN_BanditsVisualProbeCheckpointModelRegistered),
-        tostring(modData and modData.LWN_BanditsFactoryCount or 0),
-        tostring(modData and modData.LWN_BanditsFactoryStage or "none"),
-        tostring(modData and modData.LWN_BanditsFactorySource or "none"),
-        tostring(modData and modData.LWN_BanditsVisualProbePostFlagsStage or "none"),
-        tostring(modData and modData.LWN_BanditsVisualProbePostFlagsRole or "none"),
-        tostring(modData and modData.LWN_BanditsVisualProbePostFlagsFail or "none"),
-        boolText(modData and modData.LWN_BanditsVisualProbePostFlagsWorld),
-        boolText(modData and modData.LWN_BanditsVisualProbePostFlagsSquare),
-        numberText(modData and modData.LWN_BanditsVisualProbePostFlagsAlpha, 2),
-        numberText(modData and modData.LWN_BanditsVisualProbePostFlagsTargetAlpha, 2),
-        boolText(modData and modData.LWN_BanditsVisualProbePostFlagsModelRegistered),
+        boolText(modData and modData.LWN_ShellVisualProbeApplied),
+        tostring(modData and modData.LWN_ShellVisualProbeStage or "none"),
+        tostring(modData and modData.LWN_ShellVisualProbeNetEffect or "none"),
+        tostring(modData and modData.LWN_ShellProbePathEnterCount or 0),
+        tostring(modData and modData.LWN_ShellProbePathLastEnter or "none"),
+        tostring(modData and modData.LWN_ShellProbePathLastSource or "none"),
+        tostring(modData and modData.LWN_ShellProbePathResetReason or "none"),
+        tostring(modData and modData.LWN_ShellVisualProbeCheckpointStage or "none"),
+        tostring(modData and modData.LWN_ShellVisualProbeCheckpointSource or "none"),
+        tostring(modData and modData.LWN_ShellVisualProbeCheckpointRole or "none"),
+        tostring(modData and modData.LWN_ShellVisualProbeCheckpointFail or "none"),
+        boolText(modData and modData.LWN_ShellVisualProbeCheckpointWorld),
+        boolText(modData and modData.LWN_ShellVisualProbeCheckpointSquare),
+        numberText(modData and modData.LWN_ShellVisualProbeCheckpointAlpha, 2),
+        numberText(modData and modData.LWN_ShellVisualProbeCheckpointTargetAlpha, 2),
+        boolText(modData and modData.LWN_ShellVisualProbeCheckpointModelRegistered),
+        tostring(modData and modData.LWN_ShellVisualFactoryCount or 0),
+        tostring(modData and modData.LWN_ShellVisualFactoryStage or "none"),
+        tostring(modData and modData.LWN_ShellVisualFactorySource or "none"),
+        tostring(modData and modData.LWN_ShellVisualProbePostFlagsStage or "none"),
+        tostring(modData and modData.LWN_ShellVisualProbePostFlagsRole or "none"),
+        tostring(modData and modData.LWN_ShellVisualProbePostFlagsFail or "none"),
+        boolText(modData and modData.LWN_ShellVisualProbePostFlagsWorld),
+        boolText(modData and modData.LWN_ShellVisualProbePostFlagsSquare),
+        numberText(modData and modData.LWN_ShellVisualProbePostFlagsAlpha, 2),
+        numberText(modData and modData.LWN_ShellVisualProbePostFlagsTargetAlpha, 2),
+        boolText(modData and modData.LWN_ShellVisualProbePostFlagsModelRegistered),
         tostring(modData and modData.LWN_WorldRegistrationCheckpointStage or "none"),
         tostring(modData and modData.LWN_WorldRegistrationCheckpointRole or "none"),
         tostring(modData and modData.LWN_WorldRegistrationCheckpointFail or "none"),
@@ -250,8 +250,8 @@ local function movementSummaryLine(record, actor)
         tostring(modData and modData.LWN_FirstPresentationFailureStage or "none"),
         tostring(modData and modData.LWN_FirstPresentationFailureCode or "none"),
         tostring(modData and modData.LWN_FirstPresentationFailureCause or "none"),
-        boolText(modData and modData.LWN_BanditsFirstBuildLane),
-        tostring(modData and modData.LWN_BanditsFirstBuildLaneMode or "none")
+        boolText(modData and modData.LWN_ShellFirstBuildLane),
+        tostring(modData and modData.LWN_ShellFirstBuildLaneMode or "none")
     )
 end
 
@@ -428,6 +428,7 @@ end
 
 local function applyDebugHarnessDefaults(record, carrierKind)
     if not record then return end
+    carrierKind = carrierKind or "isozombie"
     record.debugHarness = record.debugHarness or {}
     record.debugHarness.enabled = true
     record.debugHarness.label = string.format("TEST-%s", tostring(record.id or "NPC"))
@@ -438,7 +439,7 @@ local function applyDebugHarnessDefaults(record, carrierKind)
     record.debugHarness.quarantine = false
     record.debugHarness.allowCommandMovement = true
     record.debugHarness.allowForcedHostile = false
-    record.debugHarness.carrierKind = carrierKind or "isoplayer"
+    record.debugHarness.carrierKind = carrierKind
     record.debugHarness.mode = "minimal_dummy"
     record.relationshipToPlayer.trust = 0.0
     record.relationshipToPlayer.respect = 0.0
@@ -1060,6 +1061,7 @@ end
 
 local function spawnOneNearPlayerWithCarrier(player, carrierKind, options)
     if not player then return nil end
+    carrierKind = carrierKind or "isozombie"
 
     local roomOk, roomDetail = makeRoomForDebugSpawn(player)
     if not roomOk then
@@ -1074,13 +1076,20 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind, options)
     local record = LWN.Schema.newNPCRecord(id, seed)
 
     applyDebugHarnessDefaults(record, carrierKind)
-    randomizeIdentity(record, carrierKind == "bandits" and false or nil)
+    randomizeIdentity(record, nil)
     applyDebugHarnessOverrides(record, options and options.harness or nil)
     ensureMinimalDummyState(record)
     if options and options.teamId then
+        record.dummy = record.dummy or {}
+        record.dummy.enabled = false
+        record.dummy.mode = "managed_companion"
+        record.dummy.state = nil
+        record.debugHarness = record.debugHarness or {}
+        record.debugHarness.mode = options.harness and options.harness.mode or "companion_squad_combat"
         record.companion.teamId = options.teamId
         record.companion.squadSlot = options.squadSlot
         record.companion.recruited = true
+        record.companion.squadRole = "follow"
         record.combat = record.combat or {}
         record.combat.disposition = options.disposition == "aggressive" and "aggressive" or "passive"
         record.combat.state = "idle"
@@ -1094,8 +1103,8 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind, options)
     record.debugSpawnOnly = true
     record.embodiment.state = "eligible"
     record.embodiment.cooldownUntilHour = worldAgeHours()
-    record.embodiment.preferredCarrierKind = carrierKind or "isoplayer"
-    record.embodiment.carrierKind = carrierKind or "isoplayer"
+    record.embodiment.preferredCarrierKind = carrierKind
+    record.embodiment.carrierKind = carrierKind
 
     local sterileRadius = tonumber(record.debugHarness and record.debugHarness.sterileRadius or 0) or 0
     if sterileRadius > 0 then
@@ -1122,12 +1131,12 @@ local function spawnOneNearPlayerWithCarrier(player, carrierKind, options)
             actorModData.LWN_TestHarnessIdentityLock = record.debugHarness and record.debugHarness.identityLock == true or false
             actorModData.LWN_TestHarnessHoldPosition = record.debugHarness and record.debugHarness.holdPosition == true or false
             actorModData.LWN_TestHarnessAllowCommandMovement = record.debugHarness and record.debugHarness.allowCommandMovement ~= false or false
-            actorModData.LWN_DummyEnabled = true
+            actorModData.LWN_DummyEnabled = record.dummy and record.dummy.enabled == true or false
             actorModData.LWN_DummyMode = record.dummy and record.dummy.mode or "minimal_neutral_dummy"
             actorModData.LWN_DummyState = record.dummy and record.dummy.state or "spawn_pending"
             actorModData.LWN_DummyGenerationId = record.dummy and record.dummy.generationId or 1
         end
-        sayInfo(player, string.format("Spawned minimal dummy %s via %s", record.id, tostring(record.embodiment and record.embodiment.carrierKind or carrierKind)))
+        sayInfo(player, string.format("Spawned managed NPC %s via %s", record.id, tostring(record.embodiment and record.embodiment.carrierKind or carrierKind)))
     else
         local handle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
         local handleDetail = handle and handle.detail or nil
@@ -1221,13 +1230,7 @@ local function purgeRogueDebugHarnessShells(player, radius)
         if not hasHarnessMarker(obj) then return end
         local ok, err = pcall(function()
             local modData = protectedCall(obj, "getModData")
-            if modData and modData.LWN_CarrierKind == "bandits"
-                and LWN.Carriers
-                and LWN.Carriers.bandits
-                and LWN.Carriers.bandits.removeActor
-            then
-                LWN.Carriers.bandits.removeActor(obj, "debug_test_clean_slate_orphan")
-            elseif LWN.ActorFactory and LWN.ActorFactory.cleanupActor and LWN.ActorFactory.hasRuntimeCore and LWN.ActorFactory.hasRuntimeCore(obj) then
+            if LWN.ActorFactory and LWN.ActorFactory.cleanupActor and LWN.ActorFactory.hasRuntimeCore and LWN.ActorFactory.hasRuntimeCore(obj) then
                 LWN.ActorFactory.cleanupActor(obj, "debug_test_clean_slate")
             else
                 protectedCall(obj, "removeFromSquare")
@@ -1625,7 +1628,7 @@ local function spawnSquadCompanion(player, disposition)
 
     local slot = nextSquadSlot(records)
     local stance = disposition == "aggressive" and "aggressive" or "passive"
-    local record, actor = spawnOneNearPlayerWithCarrier(player, "bandits", {
+    local record, actor = spawnOneNearPlayerWithCarrier(player, "isozombie", {
         teamId = "player-team-0",
         squadSlot = slot,
         disposition = stance,
@@ -1644,7 +1647,7 @@ local function spawnSquadCompanion(player, disposition)
     end
     if not actor and (not record.embodiment or record.embodiment.state ~= "spawning") then
         local reason = record.embodiment and record.embodiment.lastFailureReason or "carrier_spawn_failed"
-        local detail = record.embodiment and record.embodiment.lastFailureDetail or "bandits"
+        local detail = record.embodiment and record.embodiment.lastFailureDetail or "isozombie"
         if LWN.EmbodimentManager and LWN.EmbodimentManager.canonicalCleanup then
             LWN.EmbodimentManager.canonicalCleanup(record, {
                 removeRecord = true,
@@ -1660,7 +1663,7 @@ local function spawnSquadCompanion(player, disposition)
 
     state.active = true
     state.scenario = "companion_squad_combat_v1"
-    state.carrierKind = "bandits"
+    state.carrierKind = "isozombie"
     state.phase = actor and "squad_ready" or "squad_spawning"
     state.pendingNpcId = actor and nil or record.id
     state.selectedNpcId = record.id
@@ -1752,7 +1755,6 @@ local function isSupportedAutomationScenario(state)
     return scenario == "minimal_dummy_move_return_v1"
         or scenario == "minimal_dummy_move_return_isozombie_v1"
         or scenario == "minimal_dummy_move_return_isosurvivor_v1"
-        or scenario == "minimal_dummy_move_return_bandits_v1"
         or scenario == "companion_squad_combat_v1"
 end
 
@@ -1845,44 +1847,6 @@ local function runMovementAutomationTest03(player)
     dumpMovementAudioForRecord(record, player)
     dumpAutomationOneLineSummary(record, findActorForRecord(record), player, string.format("TEST 03 SUMMARY [%s]", lane))
     DebugTools.dumpLastActorFailure(player)
-    if lane == "bandits" then
-        local handle = LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or nil
-        local carrierDebug = LWN.CarrierAdapter and LWN.CarrierAdapter.getDebugState and LWN.CarrierAdapter.getDebugState(record, handle) or nil
-        print(string.format(
-            "[LWN][Bandits] TEST 03 npcId=%s key=%s banditId=%s pending=%s hostile=%s hostileP=%s nonCombat=%s target=%s task=%s combatTask=%s audioActive=%s audio=%s attempt=%s cycle=%s move=%s/%s distance=%s command=%s/%s",
-            tostring(record.id),
-            tostring(carrierDebug and carrierDebug.correlationKey or nil),
-            tostring(carrierDebug and carrierDebug.banditId or nil),
-            tostring(carrierDebug and carrierDebug.pending or false),
-            tostring(carrierDebug and carrierDebug.hostile),
-            tostring(carrierDebug and carrierDebug.hostileP),
-            tostring(carrierDebug and carrierDebug.nonCombat),
-            tostring(carrierDebug and carrierDebug.target or false),
-            tostring(carrierDebug and carrierDebug.task or nil),
-            tostring(carrierDebug and carrierDebug.combatTask or nil),
-            tostring(carrierDebug and carrierDebug.audioActive or false),
-            tostring(carrierDebug and carrierDebug.audio or "none"),
-            tostring(carrierDebug and carrierDebug.moveAttempt or nil),
-            tostring(carrierDebug and carrierDebug.moveCycle or nil),
-            tostring(carrierDebug and carrierDebug.moveStatus or nil),
-            tostring(carrierDebug and carrierDebug.moveReason or nil),
-            tostring(carrierDebug and carrierDebug.moveDistance or nil),
-            tostring(record.companion and record.companion.command and record.companion.command.kind or nil),
-            tostring(record.companion and record.companion.command and record.companion.command.status or nil)
-        ))
-        state.phase = "complete"
-        state.updatedAt = worldAgeHours()
-        state.step = 3
-        logTestAction("TEST_03_COMPLETE", state, record, "bandits_initial_dummy_complete")
-        sayChecklist(player, "TEST 03 COMPLETE [bandits]", {
-            "Confirm: NPC stopped within 0.75 tiles of the destination.",
-            "Listen: no zombie audio or Bandit speech leaked.",
-            "Watch: no targeting, attack, shove, bite, weapon search, or escape behavior occurred.",
-            "Check console: hostile=false, hostileP=false, nonCombat=true, and no combat task.",
-            "Run TEST RESET to remove the actor and clustered brain.",
-        })
-        return true
-    end
     setAutomationReturnRecoveryMode(record, true, "TEST_03_READY")
     state.phase = "test_04_ready"
     state.updatedAt = worldAgeHours()
@@ -2184,7 +2148,7 @@ function DebugTools.onCarrierEmbodied(record, actor)
     ))
     dumpRecordSummary(record, actor, getSpecificPlayer and getSpecificPlayer(0) or nil)
     dumpMovementAudioForRecord(record, getSpecificPlayer and getSpecificPlayer(0) or nil)
-    dumpAutomationOneLineSummary(record, actor, getSpecificPlayer and getSpecificPlayer(0) or nil, "SQUAD SPAWN SUMMARY [bandits]")
+    dumpAutomationOneLineSummary(record, actor, getSpecificPlayer and getSpecificPlayer(0) or nil, "SQUAD SPAWN SUMMARY [isozombie]")
     sayChecklist(getSpecificPlayer and getSpecificPlayer(0) or nil, "SQUAD COMPANION READY", {
         "The companion now follows the player using its selected combat stance.",
         "Spawn up to three companions one at a time.",
@@ -2382,7 +2346,7 @@ function DebugTools.wipeAndReseed(player)
             })
         elseif actor and LWN.CarrierAdapter and LWN.CarrierAdapter.retire then
             LWN.CarrierAdapter.retire(record, LWN.EmbodimentManager and LWN.EmbodimentManager.getCarrierHandle and LWN.EmbodimentManager.getCarrierHandle(record) or {
-                kind = record and record.embodiment and record.embodiment.carrierKind or "isoplayer",
+                kind = record and record.embodiment and record.embodiment.carrierKind or "isozombie",
                 actor = actor,
                 status = "active",
             }, {

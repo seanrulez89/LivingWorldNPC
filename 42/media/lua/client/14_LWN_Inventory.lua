@@ -65,6 +65,19 @@ local function findActorItem(actor, fullType)
     return nil
 end
 
+local function actorHasExactItem(actor, expected)
+    if not actor or not expected then return false end
+    local inventory = protectedCall(actor, "getInventory")
+    local items = protectedCall(inventory, "getItems")
+    local size = tonumber(protectedCall(items, "size")) or 0
+    for i = 0, size - 1 do
+        if protectedCall(items, "get", i) == expected then
+            return true
+        end
+    end
+    return false
+end
+
 local function findWornItem(actor, wearLocation)
     if not actor or not wearLocation then return nil end
     return protectedCall(actor, "getWornItem", wearLocation)
@@ -201,6 +214,22 @@ end
 
 function Inventory.grant(record, itemId, count, reason)
     if not record or not itemId then return false, "record_or_item_missing" end
+    local grantReason = tostring(reason or "")
+    local debugGrant = grantReason == "debug_grant"
+        or grantReason == "debug_squad_weapon"
+        or grantReason == "test_only"
+    if debugGrant ~= true then
+        if LWN.Log and LWN.Log.warn then
+            LWN.Log.warn("Inventory", "virtual_grant_blocked", {
+                npcId = record.id,
+                item = itemId,
+                source = "virtual_or_test",
+                reason = grantReason ~= "" and grantReason or "missing_reason",
+                detail = "existing_item_required",
+            })
+        end
+        return false, "virtual_grant_disabled_existing_item_required"
+    end
     local inv = ensure(record)
     count = math.max(1, tonumber(count or 1) or 1)
     inv.items[#inv.items + 1] = {
@@ -456,6 +485,9 @@ function Inventory.transferExistingItemToActor(record, actor, item, options)
     if not record or not actor or not item then
         return { ok = false, detail = "record_actor_or_item_missing" }
     end
+    if instanceof and not instanceof(item, "InventoryItem") then
+        return { ok = false, detail = "not_inventory_item" }
+    end
 
     local targetInventory = protectedCall(actor, "getInventory")
     if not targetInventory then return { ok = false, detail = "target_inventory_missing" } end
@@ -465,7 +497,7 @@ function Inventory.transferExistingItemToActor(record, actor, item, options)
 
     local sourceContainer = protectedCall(item, "getContainer")
     local worldItem = protectedCall(item, "getWorldItem")
-    local alreadyOwned = sourceContainer == targetInventory or findActorItem(actor, fullType) == item
+    local alreadyOwned = sourceContainer == targetInventory or actorHasExactItem(actor, item)
 
     if not alreadyOwned then
         if sourceContainer then
@@ -482,6 +514,12 @@ function Inventory.transferExistingItemToActor(record, actor, item, options)
             return { ok = false, detail = "item_has_no_source" }
         end
         protectedCall(targetInventory, "AddItem", item)
+        if actorHasExactItem(actor, item) ~= true then
+            if sourceContainer then
+                protectedCall(sourceContainer, "AddItem", item)
+            end
+            return { ok = false, detail = "target_inventory_add_failed" }
+        end
     end
 
     local recordOk = Inventory.addExistingItemRecord(record, item, options.reason or "existing_item_transfer")
@@ -491,7 +529,7 @@ function Inventory.transferExistingItemToActor(record, actor, item, options)
     end
     local actorCount = Inventory.actorCount(actor, fullType)
     local result = {
-        ok = actorCount > 0,
+        ok = actorHasExactItem(actor, item) == true,
         detail = alreadyOwned and "already_owned" or "transferred_existing_item",
         recordOk = recordOk == true,
         fullType = fullType,
@@ -523,11 +561,24 @@ function Inventory.syncActorEquipment(record, actor, options)
     local applied = {}
     local equipment = snapshot.record or {}
     local apply = options.apply == true
+    local syncReason = tostring(options.reason or "sync_actor_equipment")
+    local allowCreate = options.allowCreate == true
+        and (syncReason == "debug_grant"
+            or syncReason == "debug_squad_weapon"
+            or syncReason == "test_only")
+    if options.allowCreate == true and allowCreate ~= true and LWN.Log and LWN.Log.warn then
+        LWN.Log.warn("Inventory", "sync_allow_create_blocked", {
+            npcId = record and record.id,
+            source = "Inventory.syncActorEquipment",
+            reason = syncReason,
+            detail = "existing_item_required",
+        })
+    end
 
     local function applySlot(slot, itemId)
         if not apply or not itemId then return end
-        local result = Inventory.equipActorItem(record, actor, itemId, slot, options.reason or "sync_actor_equipment", {
-            allowCreate = options.allowCreate == true,
+        local result = Inventory.equipActorItem(record, actor, itemId, slot, syncReason, {
+            allowCreate = allowCreate == true,
         })
         applied[#applied + 1] = {
             slot = slot,

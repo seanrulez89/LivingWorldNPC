@@ -5,13 +5,18 @@ This directory contains research notes, audits, workflow references, and experim
 ## Current June 2026 foundation
 
 These documents supersede the March/April `IsoZombie` blocker notes for current
-development. Older documents remain useful historical research, but the active
-test path is now Bandits-backed companions with LWN-owned canonical state.
+development. Older documents remain useful historical research. The active test
+path is now LWN's own managed `IsoZombie` carrier with LWN-owned canonical state;
+Bandits-related notes are retained only as external reference and retired
+implementation history.
 
 - `DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md`
   - current domain ownership, shared runtime contracts, and sub-agent work rules
     for combat, status, inventory, personal history, and autonomous-feeling
     behavior
+- `MANAGED_ISOZOMBIE_INDEPENDENCE_2026-06-16.md`
+  - current independence decision: default companions run through LWN's own
+    managed `IsoZombie` carrier, not an external NPC runtime
 - `LONG_TERM_NPC_VISION_2026-06-16.md`
   - long-term design vision for player-like survivors, relationships,
     narrative, gifts, betrayal, autonomous behavior guidelines, and vehicles
@@ -19,18 +24,22 @@ test path is now Bandits-backed companions with LWN-owned canonical state.
   - current structured logging guide, console filtering commands, and manual
     test evidence conventions
 - `COMPANION_SQUAD_COMBAT_FOUNDATION_PLAN_2026-06-14.md`
-  - current three-person companion squad combat foundation plan
+  - retired Bandits-backed squad combat plan; useful for intent/policy history,
+    not as the current runtime design
 - `BANDITS_CONTROLLED_NPC_IMPLEMENTATION_2026-06-13.md`
-  - Bandits-backed controlled NPC implementation note
+  - retired Bandits-backed controlled NPC implementation note
 - `BANDITS_FRIENDLY_DAMAGE_AND_RESPAWN_FAILURE_INVESTIGATION_2026-06-13.md`
-  - investigation of friendly damage suppression and respawn failure before the
-    later damage/death patch
+  - retired investigation of the former external-carrier damage/respawn failure
 - `REFERENCE_MODS_LOCAL_CODE_REVIEW_2026-06-13.md`
   - local code review of reference mods downloaded through Steam
 - `WORKING_CONTEXT_2026-06-13.md`
-  - restart context for the June 2026 Bandits carrier work
+  - retired restart context from the June 2026 external-carrier experiment
 
-## Fresh synthesis / triage
+## Historical fresh synthesis / triage
+
+The following March/April notes are preserved for research context. They may
+mention Bandits-led or Bandits-style experiments, but they are not current
+runtime instructions for the June 2026 independent carrier path.
 
 - `NEXT_SESSION_HANDOFF_2026-04-05.md`
   - hard scope reset for the current branch: ignore return/recovery/walking for now, focus only on whether spawn-time Bandits-led build work can make the NPC read as human for even 1 second
@@ -71,7 +80,8 @@ test path is now Bandits-backed companions with LWN-owned canonical state.
     - likely removable but confirm first
     - suspicious but should not be removed yet
 - `LWN_BANDITS_1TO1_MINIMAL_COMPONENT_MAP_2026-03-21.md`
-  - detailed 1:1 structure map from Bandits into LWN, identifying the minimum missing orchestration components for a true `IsoZombie`-shell persistent-illusion architecture
+  - historical external-reference structure map, useful only for comparing
+    missing orchestration concepts in an `IsoZombie` shell architecture
 
 ## Historical March/April blocker notes
 
@@ -80,8 +90,9 @@ test path is now Bandits-backed companions with LWN-owned canonical state.
 - For current branch-level judgment, start with the June 2026 foundation section
   above.
 - The March/April immediate goal was spawn-time human appearance on an
-  `IsoZombie` shell. The current path uses a Bandits-backed carrier with LWN
-  canonical state and command/combat policy layered above it.
+  `IsoZombie` shell. The current path has returned to an LWN-managed
+  `IsoZombie` carrier with LWN canonical state and command/combat execution
+  owned in-tree.
 - for older strategic background, `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md` is still useful historical context
 - the notes below are the 2026-03-20 session snapshot and are useful as historical context, not as the latest final verdict
 - at that time, the active carrier direction was `IsoZombie`, not `IsoPlayer`

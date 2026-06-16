@@ -31,10 +31,16 @@ local function protectedCall(obj, methodName, ...)
     return nil
 end
 
-local function brainFor(actor)
-    if not (actor and BanditBrain and BanditBrain.Get) then return nil end
-    local ok, brain = pcall(BanditBrain.Get, actor)
-    return ok and brain or nil
+local function actorNpcId(actor)
+    local modData = protectedCall(actor, "getModData")
+    return modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or nil
+end
+
+local function isManagedLwnActor(actor)
+    if not actor then return false end
+    local modData = protectedCall(actor, "getModData")
+    return actorNpcId(actor) ~= nil
+        or (modData and modData.LWN_ManagedShellContract == true)
 end
 
 local function ensureCombat(record)
@@ -69,7 +75,7 @@ local function isOrdinaryZombie(obj)
     if not obj or not instanceof or not instanceof(obj, "IsoZombie") or not isAlive(obj) then
         return false
     end
-    return brainFor(obj) == nil
+    return isManagedLwnActor(obj) ~= true
 end
 
 local function distanceBetween(a, b)
@@ -83,8 +89,7 @@ local function distanceBetween(a, b)
 end
 
 local function recordForActor(actor)
-    local modData = protectedCall(actor, "getModData")
-    local npcId = modData and modData.LWN_NpcId or nil
+    local npcId = actorNpcId(actor)
     return npcId and LWN.PopulationStore and LWN.PopulationStore.getNPC
         and LWN.PopulationStore.getNPC(npcId) or nil
 end
@@ -252,28 +257,52 @@ local function scanThreats(record, actor)
 end
 
 local function taskName(actor)
-    local task = Bandit and Bandit.GetTask and Bandit.GetTask(actor) or nil
-    return task and task.action or "none"
+    local modData = protectedCall(actor, "getModData")
+    return modData and modData.LWN_ActiveTask or "none"
 end
 
-local function setEngaged(record, actor, brain, engaged, reason, threat, refreshThreatMemory)
+local function clearNonCombatTarget(actor)
+    if not actor then return end
+    protectedCall(actor, "setTarget", nil)
+    protectedCall(actor, "setTargetSeenTime", 0)
+    protectedCall(actor, "setLastTargettedBy", nil)
+    protectedCall(actor, "setAttackedBy", nil)
+    protectedCall(actor, "setEatBodyTarget", nil, false)
+    protectedCall(actor, "clearAggroList")
+    protectedCall(actor, "clearVariable", "AttackAnim")
+    protectedCall(actor, "clearVariable", "AttackCollisionCheck")
+    protectedCall(actor, "clearVariable", "AttackDidDamage")
+    protectedCall(actor, "clearVariable", "AttackOutcome")
+    protectedCall(actor, "clearVariable", "isattacking")
+    protectedCall(actor, "clearVariable", "attacking")
+    protectedCall(actor, "clearVariable", "bAttack")
+    protectedCall(actor, "clearVariable", "bAttacking")
+    protectedCall(actor, "clearVariable", "Bite")
+    protectedCall(actor, "clearVariable", "BiteDefended")
+    protectedCall(actor, "clearVariable", "ZombieFaceTarget")
+    protectedCall(actor, "clearVariable", "TurnTowardsTarget")
+    protectedCall(actor, "setVariable", "NoLungeTarget", true)
+    protectedCall(actor, "setVariable", "NoLungeAttack", true)
+end
+
+local function setEngaged(record, actor, engaged, reason, threat, refreshThreatMemory)
     local combat = ensureCombat(record)
     local nextState = engaged and "engaged" or "idle"
     local stateChanged = combat.state ~= nextState
     local changed = stateChanged or combat.reason ~= reason
-    if stateChanged and Bandit and Bandit.ClearTasks then
-        Bandit.ClearTasks(actor)
-        local pathfinder = protectedCall(actor, "getPathFindBehavior2")
-        protectedCall(pathfinder, "cancel")
-        protectedCall(pathfinder, "reset")
-        brain.lwnMoveActive = false
-    end
 
     combat.state = nextState
     combat.reason = reason
-    brain.lwnCombatEngaged = engaged == true
-    brain.lwnCombatReason = reason
-    brain.lwnTeamId = record.companion.teamId
+    combat.targetRef = threat and tostring(threat) or nil
+    combat.teamId = record.companion.teamId
+
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_CombatEngaged = engaged == true
+        modData.LWN_CombatReason = reason
+        modData.LWN_TeamId = record.companion.teamId
+        modData.LWN_ActiveTask = engaged and "attack_melee" or nil
+    end
 
     if threat then
         combat.lastThreatX = tonumber(protectedCall(threat, "getX"))
@@ -283,18 +312,22 @@ local function setEngaged(record, actor, brain, engaged, reason, threat, refresh
     end
     if engaged then
         combat.lastEngagedAt = worldAgeHours()
+        protectedCall(actor, "setTarget", threat)
+        protectedCall(actor, "setVariable", "NoLungeAttack", false)
         local runtime = runtimeFor(record)
         if refreshThreatMemory ~= false then
             runtime.lastValidThreatAtMs = nowMs()
             runtime.lastThreat = threat or runtime.lastThreat
         end
-        if Bandit and Bandit.ForceStationary then Bandit.ForceStationary(actor, false) end
-    elseif stateChanged then
-        combat.lastDisengagedAt = worldAgeHours()
+    else
+        if stateChanged then
+            combat.lastDisengagedAt = worldAgeHours()
+        end
         local runtime = runtimeFor(record)
         runtime.lastThreat = nil
         runtime.lastValidThreatAtMs = nil
-        protectedCall(actor, "setTarget", nil)
+        combat.targetRef = nil
+        clearNonCombatTarget(actor)
     end
 
     if changed then
@@ -335,8 +368,7 @@ end
 
 function Combat.update(record, actor)
     if not record or not actor then return false end
-    local brain = brainFor(actor)
-    if not brain or brain.lwnControlled ~= true then return false end
+    if isManagedLwnActor(actor) ~= true then return false end
 
     local combat = ensureCombat(record)
     local runtime = runtimeFor(record)
@@ -380,7 +412,7 @@ function Combat.update(record, actor)
     if threat then
         runtime.lastThreat = threat
         runtime.lastValidThreatAtMs = now
-        setEngaged(record, actor, brain, true, reason, threat)
+        setEngaged(record, actor, true, reason, threat)
         return true
     end
 
@@ -389,20 +421,40 @@ function Combat.update(record, actor)
         and runtime.lastThreat
         and isOrdinaryZombie(runtime.lastThreat)
     then
-        setEngaged(record, actor, brain, true, combat.reason or "threat_memory", runtime.lastThreat, false)
+        setEngaged(record, actor, true, combat.reason or "threat_memory", runtime.lastThreat, false)
         return true
     end
 
-    setEngaged(record, actor, brain, false, "no_valid_threat", nil)
+    setEngaged(record, actor, false, "no_valid_threat", nil)
     return false
 end
 
--- Legacy callers still expect these functions. Bandits-backed companions use
--- update() as a combat gate and leave execution to Bandits ManageCombat.
 function Combat.buildContext(record, actor)
-    return { record = record, actor = actor, threatPos = nil, hostile = nil, threatScore = 0 }
+    local runtime = record and Combat.Runtime[record.id] or nil
+    return {
+        record = record,
+        actor = actor,
+        threat = runtime and runtime.lastThreat or nil,
+        threatPos = record and record.combat and record.combat.lastThreatX and {
+            x = record.combat.lastThreatX,
+            y = record.combat.lastThreatY,
+            z = record.combat.lastThreatZ,
+        } or nil,
+        hostile = record and record.combat and record.combat.state == "engaged" or false,
+        threatScore = record and record.combat and record.combat.state == "engaged" and 1 or 0,
+    }
 end
 
 function Combat.chooseIntent(record, actor, ctx)
-    return nil
+    if not record or not actor or not ctx then return nil end
+    local combat = ensureCombat(record)
+    if combat.state ~= "engaged" then return nil end
+    local target = ctx.threat
+    if not isOrdinaryZombie(target) then return nil end
+    if not (LWN.ActionIntents and LWN.ActionIntents.attackMelee) then return nil end
+    local intent = LWN.ActionIntents.attackMelee(record, target)
+    intent.data = intent.data or {}
+    intent.data.commandReason = combat.reason or "combat_engaged"
+    intent.data.combatPolicy = Combat.commandPolicy(record)
+    return intent
 end

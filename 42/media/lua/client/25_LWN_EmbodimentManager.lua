@@ -811,7 +811,7 @@ function Embody.tryEmbody(record, player)
             actor = legacyActor,
             detail = legacyActor and "legacy_spawn_without_adapter" or "legacy_spawn_failed_without_adapter",
             handle = legacyActor and {
-                kind = record.embodiment and record.embodiment.carrierKind or "isoplayer",
+                kind = record.embodiment and record.embodiment.carrierKind or "isozombie",
                 actor = legacyActor,
                 status = "active",
             } or nil,
@@ -1160,7 +1160,7 @@ function Embody.registerActor(record, actor)
     end
     Embody._actors[record.id] = actor
     local handle = Embody.getCarrierHandle(record) or {
-        kind = record.embodiment and record.embodiment.carrierKind or "isoplayer",
+        kind = record.embodiment and record.embodiment.carrierKind or "isozombie",
         spawnedAt = worldAgeHours(),
         detail = "legacy_registerActor_bridge",
         runtime = {},
@@ -1301,7 +1301,7 @@ function Embody.unregisterActor(record, reason)
     Embody._actors[record.id] = nil
     if preserveCarrierHandle then
         local handle = previousHandle or {
-            kind = record.embodiment and record.embodiment.carrierKind or "isoplayer",
+            kind = record.embodiment and record.embodiment.carrierKind or "isozombie",
             actor = actor,
             status = "hidden_recoverable",
             spawnedAt = worldAgeHours(),
@@ -1630,7 +1630,7 @@ function Embody.canonicalCleanup(recordOrNpcId, options)
             retireWorldObjectIdentity(modData, npcId)
         elseif LWN.CarrierAdapter and LWN.CarrierAdapter.retire then
             local handle = Embody.getCarrierHandle(record) or {
-                kind = record and record.embodiment and record.embodiment.carrierKind or "isoplayer",
+                kind = record and record.embodiment and record.embodiment.carrierKind or "isozombie",
                 actor = actor,
                 status = "active",
             }

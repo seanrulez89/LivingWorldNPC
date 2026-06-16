@@ -66,7 +66,7 @@ end
 
 local function say(actor, text)
     local modData = protectedCall(actor, "getModData")
-    if actor and actor.Say and not (modData and modData.LWN_CarrierKind == "bandits") then
+    if actor and actor.Say then
         actor:Say(text)
     end
     print("[LWN][UIRadial] " .. tostring(text))

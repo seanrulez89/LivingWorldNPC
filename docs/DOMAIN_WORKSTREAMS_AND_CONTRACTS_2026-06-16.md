@@ -8,12 +8,13 @@ combat, status, inventory, personal history, and autonomous-feeling behavior.
 
 The short version:
 
-- Do not move behavior authority into the Bandits actor or brain.
+- Do not move behavior authority into a runtime actor cache.
 - Do not let story, social, or status code directly drive world actors.
 - Keep canonical NPC state in the LWN record.
 - Convert decisions into intents.
 - Let `ActionRuntime` and the active carrier execute those intents.
-- Let `LWN.Combat` decide whether combat is allowed; let Bandits execute combat.
+- Let `LWN.Combat` decide whether combat is allowed; let the active LWN carrier
+  execute combat.
 
 ## Current Architecture Verdict
 
@@ -22,7 +23,7 @@ is not the folder layout. The risky part is that several large files are acting
 as integration hubs while the project is still moving fast.
 
 Therefore the safe structural move for this pass is documentation and ownership,
-not a physical file split. Splitting `36_LWN_Carrier_Bandits.lua`,
+not a physical file split. Splitting `35_LWN_Carrier_IsoZombie.lua`,
 `90_LWN_EventAdapter.lua`, or `92_LWN_DebugTools.lua` before the next combat and
 follow tests would create behavior risk without giving enough benefit.
 
@@ -36,9 +37,9 @@ NPC status UI.
 - `record.identity`, `record.stats`, `record.personality`,
   `record.motivations`, `record.backstory`, `record.relationshipToPlayer`,
   `record.companion`, and `record.combat` are the source of truth.
-- Bandit `brain` fields are runtime hints only. They may cache `lwnControlled`,
-  `lwnCombatEngaged`, `lwnCombatReason`, `lwnTeamId`, movement flags, and spawn
-  correlation data, but must not become save data.
+- Actor `ModData` may cache runtime hints such as `LWN_CombatEngaged`,
+  `LWN_CombatReason`, `LWN_TeamId`, movement flags, and shell identity, but must
+  not become save data.
 - Actor `ModData` is an identification and runtime bridge, not a second NPC
   database.
 - Carriers own embodiment, movement task execution, animation posture, actor
@@ -48,8 +49,8 @@ NPC status UI.
 - User-facing commands and autonomous decisions must flow through intents.
 - Debug tools may create test flows, but debug state must not become required
   production state.
-- General Bandits behavior must keep its original result unless the actor or
-  brain is positively identified as LWN-managed.
+- The LWN carrier must positively identify managed actors before applying shell,
+  movement, damage, or cleanup workarounds.
 
 ## Domain Workstreams
 
@@ -72,8 +73,8 @@ Responsibilities:
 Rules:
 
 - Any new cross-domain field starts here, with a default.
-- Do not store Java objects, actor refs, Bandit brain refs, or transient task
-  refs in the canonical record.
+- Do not store Java objects, actor refs, carrier executor refs, or transient
+  task refs in the canonical record.
 - Prefer adding a small field to the record over hiding durable behavior state in
   actor `ModData`.
 
@@ -96,7 +97,7 @@ Responsibilities:
 Rules:
 
 - Backstory should alter preferences, thresholds, dialogue, and intent scoring.
-- Backstory should not directly enqueue Bandits tasks.
+- Backstory should not directly enqueue carrier tasks.
 - Social policy may answer questions such as "is the player allowed to harm this
   NPC?" or "should this NPC trust this order?"
 - Memory writes should be event-based and explainable.
@@ -121,7 +122,7 @@ Rules:
 
 - Autonomous behavior must emit `LWN.Schema.newIntent(...)` objects.
 - Do not call carrier functions from autonomy files.
-- Do not mutate actor movement, target, health, or Bandits tasks from this layer.
+- Do not mutate actor movement, target, health, or carrier tasks from this layer.
 - Every autonomous choice should have a reason string suitable for telemetry.
 - Future "autonomous feeling" should come from varied scoring and thresholds, not
   hidden carrier side effects.
@@ -142,7 +143,7 @@ Recommended future pipeline:
 Owned files:
 
 - `42/media/lua/client/20_LWN_ActionRuntime.lua`
-- Movement sections inside `42/media/lua/client/36_LWN_Carrier_Bandits.lua`
+- Movement sections inside `42/media/lua/client/35_LWN_Carrier_IsoZombie.lua`
 - `42/media/lua/client/31_LWN_CarrierAdapter.lua`
 
 Responsibilities:
@@ -160,28 +161,29 @@ Rules:
   result instead of silently overriding runtime state.
 - Follow, wait, move, and future "fetch car" or "retreat to shelter" commands
   should remain command/intents, not debug-only actions.
-- Movement code must not clear combat tasks while `lwnCombatEngaged` is true.
+- Movement code must not clear combat execution while `record.combat.state` is
+  `engaged` or the actor has `LWN_CombatEngaged=true`.
 
 ### 5. Combat, Damage, and Threat Policy
 
 Owned files:
 
 - `42/media/lua/client/21_LWN_Combat.lua`
-- LWN wrappers in `42/media/lua/shared/03_LWN_BanditsIntegration.lua`
-- Damage and combat bridge sections in `42/media/lua/client/36_LWN_Carrier_Bandits.lua`
+- Damage and combat execution sections in
+  `42/media/lua/client/35_LWN_Carrier_IsoZombie.lua`
 
 Responsibilities:
 
 - Decide whether an LWN NPC is allowed to engage.
 - Maintain team defense signals and direct self-defense signals.
-- Keep `record.combat` and runtime brain flags synchronized.
+- Keep `record.combat` and runtime actor flags synchronized.
 - Preserve player-friendly attack suppression without blocking ordinary zombie
   damage.
 
 Rules:
 
 - `LWN.Combat` controls engagement permission.
-- Bandits executes combat once permission is granted.
+- The active carrier executes combat once permission is granted.
 - LWN vs player and LWN vs LWN are not enemies in the current version.
 - LWN vs ordinary zombie is enemy only when `lwnCombatEngaged` is true.
 - Friendly player attack suppression must be scoped to the player relation
@@ -200,7 +202,6 @@ Owned files:
 - `42/media/lua/client/33_LWN_Carrier_IsoPlayer.lua`
 - `42/media/lua/client/34_LWN_Carrier_IsoSurvivor.lua`
 - `42/media/lua/client/35_LWN_Carrier_IsoZombie.lua`
-- `42/media/lua/client/36_LWN_Carrier_Bandits.lua`
 
 Responsibilities:
 
@@ -211,7 +212,7 @@ Responsibilities:
 
 Rules:
 
-- `Bandits` is the current active carrier for test companions.
+- `isozombie` is the current active carrier for test companions.
 - Legacy carriers remain research code unless explicitly reactivated.
 - Spawn may be asynchronous; `pending` is a valid carrier result.
 - Duplicate or orphan actors must be cleaned through carrier lifecycle APIs.
@@ -239,8 +240,8 @@ Rules:
 
 - UI can call `ActionRuntime.replaceWithIntent`, `ActionRuntime.clear`,
   `Combat.setDisposition`, and future public APIs.
-- UI should not write Bandit brain fields directly except for temporary debug
-  bridge code that is clearly isolated.
+- UI should not write actor execution fields directly except through public LWN
+  domain APIs.
 - NPC status windows should read canonical state first and runtime debug state
   second.
 
@@ -387,10 +388,10 @@ Public functions:
 
 Rules:
 
-- `update` is the combat gate for Bandits-backed companions.
+- `update` is the combat gate for managed `IsoZombie` companions.
 - It may set `record.combat.state`, `record.combat.reason`,
-  `brain.lwnCombatEngaged`, `brain.lwnCombatReason`, and `brain.lwnTeamId`.
-- It must not turn unrelated ordinary Bandits into LWN-controlled actors.
+  actor `ModData` engagement flags, and the active attack intent.
+- It must not turn unrelated ordinary zombies into LWN-controlled actors.
 - It must not grant full invulnerability.
 
 ## Sub-Agent / Parallel Work Rules
@@ -412,7 +413,7 @@ Bad sub-agent tasks:
 - "Refactor the carrier" without a precise boundary.
 - "Improve autonomy" by editing carrier, combat, UI, and schema at once.
 - Any schema change without compatibility defaults.
-- Any Bandits wrapper change without checking generic Bandits behavior.
+- Any broad carrier workaround that affects non-LWN actors.
 - Any debug-tool shortcut that becomes required for normal runtime behavior.
 
 For any multi-agent or parallel edit:
@@ -429,7 +430,7 @@ For any multi-agent or parallel edit:
 These are not refactors to do immediately. They are the likely safe split points
 once related features are active.
 
-- From `36_LWN_Carrier_Bandits.lua`:
+- From `35_LWN_Carrier_IsoZombie.lua`:
   - spawn correlation and binding
   - follow locomotion tasking
   - combat damage bridge
@@ -447,7 +448,7 @@ once related features are active.
 - From `23_LWN_ActorFactory.lua`:
   - legacy IsoZombie experiment helpers
   - reusable actor diagnostics
-  - obsolete appearance probes after Bandits carrier stabilizes
+  - obsolete appearance probes after the managed shell stabilizes
 
 Do not split duplicate numeric-prefix UI files yet. Their load order currently
 works, and a rename would be a behavior risk unless performed as a dedicated
@@ -467,7 +468,6 @@ Before finishing:
 
 - Run `bash scripts/validate-mac.sh` after Lua changes.
 - Run `git diff --check` after any change.
-- For Bandits changes, confirm the wrapper is idempotent and LWN-scoped.
+- For carrier changes, confirm the workaround is idempotent and LWN-scoped.
 - For autonomous behavior changes, include a compact explanation log.
 - For UI changes, confirm actions route through intent or public domain APIs.
-

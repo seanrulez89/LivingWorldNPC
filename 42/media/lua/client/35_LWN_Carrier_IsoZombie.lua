@@ -11,6 +11,7 @@ Carrier.ManagedShellCache = Carrier.ManagedShellCache or {
     byNpcId = {},
     byActorRef = {},
 }
+Carrier.PendingHitRepairs = Carrier.PendingHitRepairs or {}
 
 local function ensureRecordShape(record)
     if Store and Store.ensureRecordShape then
@@ -34,8 +35,44 @@ local ISOZOMBIE_APPEARANCE_EXPERIMENT = "isozombie_shared_desc_visual_v1"
 local ISOZOMBIE_APPEARANCE_REUSE = "desc+baseline+clothes+bridge"
 local ISOZOMBIE_ROLE_GUARD_RELAX_EXPERIMENT = true
 local ISOZOMBIE_ALIVE_RESET_AFTER_RUNTIME_SETTLE = true
-local ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE = true
-local ISOZOMBIE_BANDITS_FIRST_BUILD_LANE = true
+local ISOZOMBIE_SHELL_DIRECT_VISUAL_PROBE = false
+local ISOZOMBIE_SHELL_FIRST_BUILD_LANE = false
+local MOVE_STALL_MS = 5000
+local MOVE_ARRIVAL_DISTANCE = 0.75
+local MOVE_MAX_ATTEMPTS = 3
+local MOVE_PROGRESS_EPSILON = 0.05
+local FOLLOW_OFFSET = 1.20
+local FOLLOW_ARRIVAL_DISTANCE = 0.65
+local FOLLOW_RETARGET_DISTANCE = 0.70
+local FOLLOW_RETARGET_MS = 300
+local FOLLOW_HEADING_EPSILON = 0.08
+local FOLLOW_CATCHUP_ENTER_DISTANCE = 3.8
+local FOLLOW_CATCHUP_EXIT_DISTANCE = 2.4
+local FOLLOW_HARD_CATCHUP_DISTANCE = 7.0
+local FOLLOW_CATCHUP_OFFSET = 0.75
+local ATTACK_RANGE = 1.25
+local ATTACK_REPATH_DISTANCE = 0.8
+local ATTACK_RETRY_MS = 650
+local ATTACK_TIMEOUT_MS = 9000
+local DEFAULT_WALK_SPEED = 1.04
+local DEFAULT_RUN_SPEED = 0.72
+local FOLLOW_FORMATION = {
+    [1] = { back = 1.20, side = 0.00 },
+    [2] = { back = 1.55, side = -0.75 },
+    [3] = { back = 1.55, side = 0.75 },
+}
+local FOLLOW_LOCOMOTION = {
+    walk = { walkType = "Walk", endurance = 0, walkMultiplier = 1.0, runMultiplier = 1.0 },
+    run = { walkType = "Run", endurance = -0.03, walkMultiplier = 1.0, runMultiplier = 1.0 },
+    sprint = { walkType = "Run", endurance = -0.06, walkMultiplier = 1.0, runMultiplier = 1.35 },
+    crouch_walk = { walkType = "SneakWalk", endurance = -0.01, walkMultiplier = 1.0, runMultiplier = 1.0 },
+    crouch_run = { walkType = "SneakWalk", endurance = -0.03, walkMultiplier = 1.35, runMultiplier = 1.0 },
+}
+
+local function nowMs()
+    if getTimestampMs then return getTimestampMs() end
+    return math.floor((os and os.clock and os.clock() or 0) * 1000)
+end
 
 local function worldAgeHours()
     return getGameTime() and getGameTime():getWorldAgeHours() or 0
@@ -563,6 +600,9 @@ local function clearCombatIntent(actor, options)
     protectedCall(actor, "setLastTargettedBy", nil)
     protectedCall(actor, "setEatBodyTarget", nil, false)
     protectedCall(actor, "setTargetSeenTime", 0)
+    protectedCall(actor, "clearAggroList")
+    protectedCall(actor, "setVariable", "NoLungeTarget", true)
+    protectedCall(actor, "setVariable", "NoLungeAttack", true)
     if not (options and options.clearPath == false) then
         protectedCall(actor, "setPath2", nil)
         protectedCall(actor, "setMoving", false)
@@ -645,14 +685,21 @@ local function applyManagedShellContract(record, actor, policy, options)
     protectedCall(actor, "setVariable", "NoLungeTarget", true)
     protectedCall(actor, "setVariable", "ZombieHitReaction", "Chainsaw")
     protectedCall(actor, "setWalkType", "Walk")
-    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    protectedCall(actor, "setVariable", "LWNWalkType", "Walk")
     protectedCall(actor, "setNoTeeth", policy and policy.allowCarrierAttackPlayer ~= true)
-    protectedCall(actor, "setPrimaryHandItem", nil)
-    protectedCall(actor, "setSecondaryHandItem", nil)
-    protectedCall(actor, "resetEquippedHandsModels")
-    protectedCall(actor, "clearAttachedItems")
+    if options.clearEquipment == true then
+        protectedCall(actor, "setPrimaryHandItem", nil)
+        protectedCall(actor, "setSecondaryHandItem", nil)
+        protectedCall(actor, "resetEquippedHandsModels")
+        protectedCall(actor, "clearAttachedItems")
+    end
     protectedCall(actor, "setUseless", neutralized == true)
     protectedCall(actor, "setCanWalk", allowMovement == true)
+    protectedCall(actor, "setGodMod", false)
+    protectedCall(actor, "setInvulnerable", false)
+    if not (record and Carrier.PendingHitRepairs and Carrier.PendingHitRepairs[record.id]) then
+        protectedCall(actor, "setAvoidDamage", false)
+    end
 
     if options.clearCombat ~= false then
         clearCombatIntent(actor, {
@@ -689,7 +736,7 @@ local function applyShellLaneContract(record, actor, policy, options)
     elseif lane == "non_hostile_commandable" or lane == "non_hostile_mobile" or lane == "recovery_non_hostile_mobile" or lane == "dummy_move" then
         laneOptions.allowMovement = true
         laneOptions.neutralized = false
-        laneOptions.clearCombat = true
+        laneOptions.clearCombat = options.clearCombat ~= false
     else
         laneOptions.allowMovement = options.allowMovement
         laneOptions.neutralized = options.neutralized
@@ -886,7 +933,7 @@ local function scrubDummyAttackPresentation(record, actor, mode, source, options
         clearPath = mode ~= "move",
     })
     protectedCall(actor, "setWalkType", "Walk")
-    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    protectedCall(actor, "setVariable", "LWNWalkType", "Walk")
     protectedCall(actor, "setVariable", "LWNManagedShell", true)
 
     if mode ~= "move" then
@@ -932,7 +979,7 @@ local function forceDummyIdlePresentation(record, actor, source, options)
     protectedCall(actor, "setLastTargettedBy", nil)
     protectedCall(actor, "setDir", IsoDirections and IsoDirections.S or nil)
     protectedCall(actor, "setWalkType", "Walk")
-    protectedCall(actor, "setVariable", "BanditWalkType", "Walk")
+    protectedCall(actor, "setVariable", "LWNWalkType", "Walk")
     protectedCall(actor, "setIdleAnimatorState")
 
     local modData = protectedCall(actor, "getModData")
@@ -1109,12 +1156,13 @@ end
 local function applyPersistentIllusionPackage(record, actor, descriptor, policy)
     if not actor then return end
     policy = policy or relationshipCombatPolicy(record)
+    local engaged = record and record.combat and record.combat.state == "engaged"
 
     applyShellLaneContract(record, actor, policy, {
         source = "CarrierIsoZombie.applyPersistentIllusionPackage",
         allowMovement = policy.allowMovement == true,
         neutralized = policy.shouldNeutralizeCarrier == true and policy.allowMovement ~= true,
-        clearCombat = policy.shouldNeutralizeCarrier == true,
+        clearCombat = policy.shouldNeutralizeCarrier == true and engaged ~= true,
         stopAudio = false,
         forceLane = policy.shellMode,
     })
@@ -1149,12 +1197,16 @@ local function applyRelationshipCombatState(record, actor, options, policy)
         applyEmergencyQuarantine(record, actor, "CarrierIsoZombie.applyRelationshipCombatState")
     end
 
-    protectedCall(actor, "setGodMod", policy.allowPlayerAttack ~= true)
+    protectedCall(actor, "setGodMod", false)
+    protectedCall(actor, "setInvulnerable", false)
+    if not (record and Carrier.PendingHitRepairs and Carrier.PendingHitRepairs[record.id]) then
+        protectedCall(actor, "setAvoidDamage", false)
+    end
     applyShellLaneContract(record, actor, policy, {
         source = "CarrierIsoZombie.applyRelationshipCombatState",
         allowMovement = allowMovement,
         neutralized = policy.shouldNeutralizeCarrier == true and allowMovement ~= true,
-        clearCombat = policy.shouldNeutralizeCarrier == true,
+        clearCombat = not (record and record.combat and record.combat.state == "engaged"),
         stopAudio = policy.shouldNeutralizeCarrier == true,
         forceLane = policy.shellMode,
     })
@@ -1193,14 +1245,14 @@ local function applyRelationshipCombatState(record, actor, options, policy)
     return policy
 end
 
-local function applyBanditsFirstDummyCarrierState(record, actor, policy, source)
+local function applyShellFirstDummyCarrierState(record, actor, policy, source)
     if not actor then return nil end
     policy = policy or relationshipCombatPolicy(record)
     local mode = record and record.dummy and record.dummy.state == "move_to" and "move" or "idle"
     local lane = mode == "move" and "dummy_move" or "dummy_idle"
 
     applyShellLaneContract(record, actor, policy, {
-        source = source or "CarrierIsoZombie.applyBanditsFirstDummyCarrierState",
+        source = source or "CarrierIsoZombie.applyShellFirstDummyCarrierState",
         allowMovement = mode == "move",
         neutralized = mode ~= "move",
         clearCombat = true,
@@ -1213,8 +1265,10 @@ local function applyBanditsFirstDummyCarrierState(record, actor, policy, source)
         clearPath = mode ~= "move",
     })
     applyDummyVoicePrefix(actor)
-    applyDummyAudioMute(actor, source or "CarrierIsoZombie.applyBanditsFirstDummyCarrierState")
-    protectedCall(actor, "setGodMod", policy.allowPlayerAttack ~= true)
+    applyDummyAudioMute(actor, source or "CarrierIsoZombie.applyShellFirstDummyCarrierState")
+    protectedCall(actor, "setGodMod", false)
+    protectedCall(actor, "setInvulnerable", false)
+    protectedCall(actor, "setAvoidDamage", false)
     protectedCall(actor, "setNoTeeth", true)
     protectedCall(actor, "setTarget", nil)
     protectedCall(actor, "setLastTargettedBy", nil)
@@ -1233,10 +1287,10 @@ local function applyBanditsFirstDummyCarrierState(record, actor, policy, source)
 
     local modData = protectedCall(actor, "getModData")
     if modData then
-        modData.LWN_BanditsFirstBuildLane = true
-        modData.LWN_BanditsFirstBuildLaneSource = source or "CarrierIsoZombie.applyBanditsFirstDummyCarrierState"
-        modData.LWN_BanditsFirstBuildLaneMode = mode
-        modData.LWN_BanditsFirstBuildLaneFlags = "minimal_shell_lane+audio_mute+no_posture_refresh"
+        modData.LWN_ShellFirstBuildLane = true
+        modData.LWN_ShellFirstBuildLaneSource = source or "CarrierIsoZombie.applyShellFirstDummyCarrierState"
+        modData.LWN_ShellFirstBuildLaneMode = mode
+        modData.LWN_ShellFirstBuildLaneFlags = "minimal_shell_lane+audio_mute+no_posture_refresh"
     end
 
     return lane
@@ -1305,8 +1359,8 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
     registerManagedShell(record, actor, "CarrierIsoZombie.applyBasicZombieCarrierFlags")
 
     stampHybridSummary(record, actor, summary, descriptor, appearanceDetail)
-    if options.banditsFirstDummyMinFlags == true and isMinimalDummyRecord(record) then
-        applyBanditsFirstDummyCarrierState(record, actor, policy, options.source or "CarrierIsoZombie.applyBasicZombieCarrierFlags.bandits_first")
+    if options.shellFirstDummyMinFlags == true and isMinimalDummyRecord(record) then
+        applyShellFirstDummyCarrierState(record, actor, policy, options.source or "CarrierIsoZombie.applyBasicZombieCarrierFlags.shell_first")
     else
         applyPersistentIllusionPackage(record, actor, descriptor, policy)
         applyRelationshipCombatState(record, actor, options, policy)
@@ -1320,7 +1374,7 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
     protectedCall(actor, "setSitAgainstWall", false)
     protectedCall(actor, "setReanimate", false)
     protectedCall(actor, "setInvisible", false)
-    protectedCall(actor, "setHealth", 1)
+    protectedCall(actor, "setHealth", record and record.stats and tonumber(record.stats.health) or protectedCall(actor, "getHealth") or 1)
 end
 
 local function assessRuntimeReadiness(actor)
@@ -1620,7 +1674,7 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
     return ok, detail
 end
 
-local function clearBanditsObservationState(record, actor, reason)
+local function clearShellObservationState(record, actor, reason)
     if not actor then
         return false
     end
@@ -1630,57 +1684,57 @@ local function clearBanditsObservationState(record, actor, reason)
         return false
     end
 
-    modData.LWN_BanditsVisualProbeCheckpointStage = nil
-    modData.LWN_BanditsVisualProbeCheckpointSource = nil
-    modData.LWN_BanditsVisualProbeCheckpointDetail = nil
-    modData.LWN_BanditsVisualProbeCheckpointAt = nil
-    modData.LWN_BanditsVisualProbeCheckpointRole = nil
-    modData.LWN_BanditsVisualProbeCheckpointFail = nil
-    modData.LWN_BanditsVisualProbeCheckpointGuard = nil
-    modData.LWN_BanditsVisualProbeCheckpointSignature = nil
-    modData.LWN_BanditsVisualProbeCheckpointWorld = nil
-    modData.LWN_BanditsVisualProbeCheckpointSquare = nil
-    modData.LWN_BanditsVisualProbeCheckpointAlpha = nil
-    modData.LWN_BanditsVisualProbeCheckpointTargetAlpha = nil
-    modData.LWN_BanditsVisualProbeCheckpointModelRegistered = nil
-    modData.LWN_BanditsVisualProbePostFlagsStage = nil
-    modData.LWN_BanditsVisualProbePostFlagsRole = nil
-    modData.LWN_BanditsVisualProbePostFlagsFail = nil
-    modData.LWN_BanditsVisualProbePostFlagsGuard = nil
-    modData.LWN_BanditsVisualProbePostFlagsSignature = nil
-    modData.LWN_BanditsVisualProbePostFlagsWorld = nil
-    modData.LWN_BanditsVisualProbePostFlagsSquare = nil
-    modData.LWN_BanditsVisualProbePostFlagsAlpha = nil
-    modData.LWN_BanditsVisualProbePostFlagsTargetAlpha = nil
-    modData.LWN_BanditsVisualProbePostFlagsModelRegistered = nil
-    modData.LWN_BanditsVisualProbeApplied = nil
-    modData.LWN_BanditsVisualProbeDetail = nil
-    modData.LWN_BanditsVisualProbeStage = nil
-    modData.LWN_BanditsVisualProbeNetEffect = nil
-    modData.LWN_BanditsFirstBuildLane = nil
-    modData.LWN_BanditsFirstBuildLaneSource = nil
-    modData.LWN_BanditsFirstBuildLaneMode = nil
-    modData.LWN_BanditsFirstBuildLaneFlags = nil
-    modData.LWN_BanditsFirstBuildLaneStage = nil
-    modData.LWN_BanditsFirstBuildLaneProbeApplied = nil
-    modData.LWN_BanditsFirstBuildLaneProbeDetail = nil
-    modData.LWN_BanditsPathEnterCount = nil
-    modData.LWN_BanditsPathLastEnter = nil
-    modData.LWN_BanditsPathLastSource = nil
-    modData.LWN_BanditsPathLastDetail = nil
-    modData.LWN_BanditsPathLastAt = nil
-    modData.LWN_BanditsPathLastNpcId = nil
-    modData.LWN_BanditsPathLastActorRef = nil
-    modData.LWN_BanditsFactoryStage = nil
-    modData.LWN_BanditsFactorySource = nil
-    modData.LWN_BanditsFactoryDetail = nil
-    modData.LWN_BanditsFactoryAt = nil
-    modData.LWN_BanditsFactoryCount = nil
-    modData.LWN_BanditsPathResetReason = tostring(reason or "unknown")
-    modData.LWN_BanditsPathResetAt = worldAgeHours()
+    modData.LWN_ShellVisualProbeCheckpointStage = nil
+    modData.LWN_ShellVisualProbeCheckpointSource = nil
+    modData.LWN_ShellVisualProbeCheckpointDetail = nil
+    modData.LWN_ShellVisualProbeCheckpointAt = nil
+    modData.LWN_ShellVisualProbeCheckpointRole = nil
+    modData.LWN_ShellVisualProbeCheckpointFail = nil
+    modData.LWN_ShellVisualProbeCheckpointGuard = nil
+    modData.LWN_ShellVisualProbeCheckpointSignature = nil
+    modData.LWN_ShellVisualProbeCheckpointWorld = nil
+    modData.LWN_ShellVisualProbeCheckpointSquare = nil
+    modData.LWN_ShellVisualProbeCheckpointAlpha = nil
+    modData.LWN_ShellVisualProbeCheckpointTargetAlpha = nil
+    modData.LWN_ShellVisualProbeCheckpointModelRegistered = nil
+    modData.LWN_ShellVisualProbePostFlagsStage = nil
+    modData.LWN_ShellVisualProbePostFlagsRole = nil
+    modData.LWN_ShellVisualProbePostFlagsFail = nil
+    modData.LWN_ShellVisualProbePostFlagsGuard = nil
+    modData.LWN_ShellVisualProbePostFlagsSignature = nil
+    modData.LWN_ShellVisualProbePostFlagsWorld = nil
+    modData.LWN_ShellVisualProbePostFlagsSquare = nil
+    modData.LWN_ShellVisualProbePostFlagsAlpha = nil
+    modData.LWN_ShellVisualProbePostFlagsTargetAlpha = nil
+    modData.LWN_ShellVisualProbePostFlagsModelRegistered = nil
+    modData.LWN_ShellVisualProbeApplied = nil
+    modData.LWN_ShellVisualProbeDetail = nil
+    modData.LWN_ShellVisualProbeStage = nil
+    modData.LWN_ShellVisualProbeNetEffect = nil
+    modData.LWN_ShellFirstBuildLane = nil
+    modData.LWN_ShellFirstBuildLaneSource = nil
+    modData.LWN_ShellFirstBuildLaneMode = nil
+    modData.LWN_ShellFirstBuildLaneFlags = nil
+    modData.LWN_ShellFirstBuildLaneStage = nil
+    modData.LWN_ShellFirstBuildLaneProbeApplied = nil
+    modData.LWN_ShellFirstBuildLaneProbeDetail = nil
+    modData.LWN_ShellProbePathEnterCount = nil
+    modData.LWN_ShellProbePathLastEnter = nil
+    modData.LWN_ShellProbePathLastSource = nil
+    modData.LWN_ShellProbePathLastDetail = nil
+    modData.LWN_ShellProbePathLastAt = nil
+    modData.LWN_ShellProbePathLastNpcId = nil
+    modData.LWN_ShellProbePathLastActorRef = nil
+    modData.LWN_ShellVisualFactoryStage = nil
+    modData.LWN_ShellVisualFactorySource = nil
+    modData.LWN_ShellVisualFactoryDetail = nil
+    modData.LWN_ShellVisualFactoryAt = nil
+    modData.LWN_ShellVisualFactoryCount = nil
+    modData.LWN_ShellProbePathResetReason = tostring(reason or "unknown")
+    modData.LWN_ShellProbePathResetAt = worldAgeHours()
 
     print(string.format(
-        "[LWN][BanditsPath] reset reason=%s | npcId=%s | objectRef=%s",
+        "[LWN][ShellProbePath] reset reason=%s | npcId=%s | objectRef=%s",
         tostring(reason or "unknown"),
         tostring(modData.LWN_NpcId or record and record.id or "nil"),
         tostring(actor)
@@ -1688,7 +1742,7 @@ local function clearBanditsObservationState(record, actor, reason)
     return true
 end
 
-local function logBanditsPathEntry(record, actor, entry, source, detail)
+local function logShellProbePathEntry(record, actor, entry, source, detail)
     if not actor then
         return false
     end
@@ -1696,18 +1750,18 @@ local function logBanditsPathEntry(record, actor, entry, source, detail)
     local modData = protectedCall(actor, "getModData")
     local count = nil
     if modData then
-        count = (tonumber(modData.LWN_BanditsPathEnterCount) or 0) + 1
-        modData.LWN_BanditsPathEnterCount = count
-        modData.LWN_BanditsPathLastEnter = tostring(entry or "unknown")
-        modData.LWN_BanditsPathLastSource = tostring(source or "unknown")
-        modData.LWN_BanditsPathLastDetail = tostring(detail or "none")
-        modData.LWN_BanditsPathLastAt = worldAgeHours()
-        modData.LWN_BanditsPathLastNpcId = modData.LWN_NpcId or record and record.id or nil
-        modData.LWN_BanditsPathLastActorRef = tostring(actor)
+        count = (tonumber(modData.LWN_ShellProbePathEnterCount) or 0) + 1
+        modData.LWN_ShellProbePathEnterCount = count
+        modData.LWN_ShellProbePathLastEnter = tostring(entry or "unknown")
+        modData.LWN_ShellProbePathLastSource = tostring(source or "unknown")
+        modData.LWN_ShellProbePathLastDetail = tostring(detail or "none")
+        modData.LWN_ShellProbePathLastAt = worldAgeHours()
+        modData.LWN_ShellProbePathLastNpcId = modData.LWN_NpcId or record and record.id or nil
+        modData.LWN_ShellProbePathLastActorRef = tostring(actor)
     end
 
     print(string.format(
-        "[LWN][BanditsPath] enter=%s | source=%s | npcId=%s | objectRef=%s | count=%s | detail=%s",
+        "[LWN][ShellProbePath] enter=%s | source=%s | npcId=%s | objectRef=%s | count=%s | detail=%s",
         tostring(entry or "unknown"),
         tostring(source or "unknown"),
         tostring(modData and modData.LWN_NpcId or record and record.id or "nil"),
@@ -1718,7 +1772,7 @@ local function logBanditsPathEntry(record, actor, entry, source, detail)
     return true
 end
 
-local function stampBanditsProbeCheckpoint(record, actor, stage, source)
+local function stampShellProbeCheckpoint(record, actor, stage, source)
     if not (actor and LWN.ActorFactory) then
         return nil
     end
@@ -1762,37 +1816,37 @@ local function stampBanditsProbeCheckpoint(record, actor, stage, source)
     )
 
     if modData then
-        modData.LWN_BanditsVisualProbeCheckpointStage = stageText
-        modData.LWN_BanditsVisualProbeCheckpointSource = tostring(source or "CarrierIsoZombie.bandits_probe_checkpoint")
-        modData.LWN_BanditsVisualProbeCheckpointDetail = detail
-        modData.LWN_BanditsVisualProbeCheckpointAt = worldAgeHours()
-        modData.LWN_BanditsVisualProbeCheckpointRole = role
-        modData.LWN_BanditsVisualProbeCheckpointFail = fail
-        modData.LWN_BanditsVisualProbeCheckpointGuard = guard
-        modData.LWN_BanditsVisualProbeCheckpointSignature = signature
-        modData.LWN_BanditsVisualProbeCheckpointWorld = checkpointWorld == true
-        modData.LWN_BanditsVisualProbeCheckpointSquare = checkpointSquare == true
-        modData.LWN_BanditsVisualProbeCheckpointAlpha = checkpointAlpha
-        modData.LWN_BanditsVisualProbeCheckpointTargetAlpha = checkpointTargetAlpha
-        modData.LWN_BanditsVisualProbeCheckpointModelRegistered = checkpointModelRegistered
+        modData.LWN_ShellVisualProbeCheckpointStage = stageText
+        modData.LWN_ShellVisualProbeCheckpointSource = tostring(source or "CarrierIsoZombie.shell_probe_checkpoint")
+        modData.LWN_ShellVisualProbeCheckpointDetail = detail
+        modData.LWN_ShellVisualProbeCheckpointAt = worldAgeHours()
+        modData.LWN_ShellVisualProbeCheckpointRole = role
+        modData.LWN_ShellVisualProbeCheckpointFail = fail
+        modData.LWN_ShellVisualProbeCheckpointGuard = guard
+        modData.LWN_ShellVisualProbeCheckpointSignature = signature
+        modData.LWN_ShellVisualProbeCheckpointWorld = checkpointWorld == true
+        modData.LWN_ShellVisualProbeCheckpointSquare = checkpointSquare == true
+        modData.LWN_ShellVisualProbeCheckpointAlpha = checkpointAlpha
+        modData.LWN_ShellVisualProbeCheckpointTargetAlpha = checkpointTargetAlpha
+        modData.LWN_ShellVisualProbeCheckpointModelRegistered = checkpointModelRegistered
         if isPostBuildCheckpoint then
-            modData.LWN_BanditsVisualProbePostFlagsStage = stageText
-            modData.LWN_BanditsVisualProbePostFlagsRole = role
-            modData.LWN_BanditsVisualProbePostFlagsFail = fail
-            modData.LWN_BanditsVisualProbePostFlagsGuard = guard
-            modData.LWN_BanditsVisualProbePostFlagsSignature = signature
-            modData.LWN_BanditsVisualProbePostFlagsWorld = checkpointWorld == true
-            modData.LWN_BanditsVisualProbePostFlagsSquare = checkpointSquare == true
-            modData.LWN_BanditsVisualProbePostFlagsAlpha = checkpointAlpha
-            modData.LWN_BanditsVisualProbePostFlagsTargetAlpha = checkpointTargetAlpha
-            modData.LWN_BanditsVisualProbePostFlagsModelRegistered = checkpointModelRegistered
+            modData.LWN_ShellVisualProbePostFlagsStage = stageText
+            modData.LWN_ShellVisualProbePostFlagsRole = role
+            modData.LWN_ShellVisualProbePostFlagsFail = fail
+            modData.LWN_ShellVisualProbePostFlagsGuard = guard
+            modData.LWN_ShellVisualProbePostFlagsSignature = signature
+            modData.LWN_ShellVisualProbePostFlagsWorld = checkpointWorld == true
+            modData.LWN_ShellVisualProbePostFlagsSquare = checkpointSquare == true
+            modData.LWN_ShellVisualProbePostFlagsAlpha = checkpointAlpha
+            modData.LWN_ShellVisualProbePostFlagsTargetAlpha = checkpointTargetAlpha
+            modData.LWN_ShellVisualProbePostFlagsModelRegistered = checkpointModelRegistered
         end
     end
 
     local checkpointLine = string.format(
-        "[LWN][BanditsCheckpoint] stage=%s | source=%s | npcId=%s | objectRef=%s | role=%s | fail=%s | guard=%s | world=%s | square=%s | alpha=%s | targetAlpha=%s | modelRegistered=%s | descOk=%s | visualOk=%s | skinOk=%s | wornOk=%s | itemVisualOk=%s | overwritten=%s | sig=%s",
+        "[LWN][ShellProbeCheckpoint] stage=%s | source=%s | npcId=%s | objectRef=%s | role=%s | fail=%s | guard=%s | world=%s | square=%s | alpha=%s | targetAlpha=%s | modelRegistered=%s | descOk=%s | visualOk=%s | skinOk=%s | wornOk=%s | itemVisualOk=%s | overwritten=%s | sig=%s",
         tostring(stageText),
-        tostring(source or "CarrierIsoZombie.bandits_probe_checkpoint"),
+        tostring(source or "CarrierIsoZombie.shell_probe_checkpoint"),
         tostring(checkpointNpcId or "nil"),
         tostring(checkpointRef or "nil"),
         tostring(role or "nil"),
@@ -1813,58 +1867,58 @@ local function stampBanditsProbeCheckpoint(record, actor, stage, source)
     )
 
     print(checkpointLine)
-    trace("bandits_probe_" .. tostring(stageText), record, string.format(
+    trace("shell_probe_" .. tostring(stageText), record, string.format(
         "source=%s %s",
-        tostring(source or "CarrierIsoZombie.bandits_probe_checkpoint"),
+        tostring(source or "CarrierIsoZombie.shell_probe_checkpoint"),
         tostring(detail)
     ))
     return truth, presentation, detail
 end
 
-local function runBanditsFirstBuild(record, actor, descriptor, profile, stageLabel, rebuildSource)
+local function runShellFirstBuild(record, actor, descriptor, profile, stageLabel, rebuildSource)
     local modData = protectedCall(actor, "getModData")
     local probeApplied = false
-    local probeDetail = "bandits_first_probe_unavailable"
+    local probeDetail = "shell_first_probe_unavailable"
 
-    logBanditsPathEntry(record, actor, "runBanditsFirstBuild", rebuildSource, string.format("stage=%s descriptor=%s profile=%s", tostring(stageLabel), tostring(descriptor ~= nil), tostring(profile or "nil")))
-    stampBanditsProbeCheckpoint(record, actor, stageLabel .. "_pre_direct_probe", rebuildSource .. ".bandits_pre_direct_probe")
+    logShellProbePathEntry(record, actor, "runShellFirstBuild", rebuildSource, string.format("stage=%s descriptor=%s profile=%s", tostring(stageLabel), tostring(descriptor ~= nil), tostring(profile or "nil")))
+    stampShellProbeCheckpoint(record, actor, stageLabel .. "_pre_direct_probe", rebuildSource .. ".shell_pre_direct_probe")
 
-    if ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE == true
+    if ISOZOMBIE_SHELL_DIRECT_VISUAL_PROBE == true
         and isMinimalDummyRecord(record)
         and LWN.ActorFactory
-        and LWN.ActorFactory.applyBanditsStyleVisualProbe
+        and LWN.ActorFactory.applyManagedShellVisualProbe
     then
-        probeApplied, probeDetail = LWN.ActorFactory.applyBanditsStyleVisualProbe(
+        probeApplied, probeDetail = LWN.ActorFactory.applyManagedShellVisualProbe(
             record,
             actor,
             descriptor,
             {
-                source = rebuildSource .. ".bandits_visual_probe",
+                source = rebuildSource .. ".shell_visual_probe",
             }
         )
         if modData then
-            modData.LWN_BanditsVisualProbeDetail = probeDetail
-            modData.LWN_BanditsVisualProbeStage = rebuildSource .. ".bandits_visual_probe"
-            modData.LWN_BanditsFirstBuildLane = true
-            modData.LWN_BanditsFirstBuildLaneStage = stageLabel
-            modData.LWN_BanditsFirstBuildLaneProbeApplied = probeApplied == true
-            modData.LWN_BanditsFirstBuildLaneProbeDetail = probeDetail
+            modData.LWN_ShellVisualProbeDetail = probeDetail
+            modData.LWN_ShellVisualProbeStage = rebuildSource .. ".shell_visual_probe"
+            modData.LWN_ShellFirstBuildLane = true
+            modData.LWN_ShellFirstBuildLaneStage = stageLabel
+            modData.LWN_ShellFirstBuildLaneProbeApplied = probeApplied == true
+            modData.LWN_ShellFirstBuildLaneProbeDetail = probeDetail
         end
-        stampBanditsProbeCheckpoint(record, actor, stageLabel .. "_post_direct_probe", rebuildSource .. ".bandits_visual_probe")
-        stampBanditsProbeCheckpoint(record, actor, stageLabel .. "_after_probe_refresh", rebuildSource .. ".bandits_visual_probe")
+        stampShellProbeCheckpoint(record, actor, stageLabel .. "_post_direct_probe", rebuildSource .. ".shell_visual_probe")
+        stampShellProbeCheckpoint(record, actor, stageLabel .. "_after_probe_refresh", rebuildSource .. ".shell_visual_probe")
     end
 
     local appearanceDetail = normalizeAppearanceDetail(nil, {
         applied = probeApplied == true,
-        experiment = "isozombie_bandits_stage1_visual_pass",
-        reuse = "bandits_stage1_direct_visual_pass",
-        bridgeMode = modData and modData.LWN_BanditsVisualProbeBridge or "none",
-        descriptorMode = probeApplied == true and "bandits_stage1_functional_pass" or "bandits_stage1_skipped",
-        descriptorSource = descriptor and "bandits_stage1_seeded_descriptor" or "bandits_stage1_descriptor_missing",
+        experiment = "isozombie_shell_stage1_visual_pass",
+        reuse = "shell_stage1_direct_visual_pass",
+        bridgeMode = modData and modData.LWN_ShellVisualProbeBridge or "none",
+        descriptorMode = probeApplied == true and "shell_stage1_functional_pass" or "shell_stage1_skipped",
+        descriptorSource = descriptor and "shell_stage1_seeded_descriptor" or "shell_stage1_descriptor_missing",
         stage = stageLabel,
         status = probeApplied == true and "applied" or "skipped",
         profile = profile,
-        mode = "bandits_first_build_lane",
+        mode = "shell_first_build_lane",
     })
 
     return appearanceDetail, probeApplied == true, probeDetail
@@ -1880,10 +1934,10 @@ local function buildInitialDummyAppearance(record, actor, source)
     local appearanceDetail = nil
     local initialDetail = nil
     local rebuildSource = source or "CarrierIsoZombie.buildInitialDummyAppearance"
-    local banditsFirst = ISOZOMBIE_BANDITS_FIRST_BUILD_LANE == true and isMinimalDummyRecord(record)
+    local shellFirst = ISOZOMBIE_SHELL_FIRST_BUILD_LANE == true and isMinimalDummyRecord(record)
 
-    clearBanditsObservationState(record, actor, rebuildSource .. ".begin")
-    logBanditsPathEntry(record, actor, "buildInitialDummyAppearance", rebuildSource, string.format("banditsFirst=%s descriptor=%s", tostring(banditsFirst == true), tostring(descriptor ~= nil)))
+    clearShellObservationState(record, actor, rebuildSource .. ".begin")
+    logShellProbePathEntry(record, actor, "buildInitialDummyAppearance", rebuildSource, string.format("shellFirst=%s descriptor=%s", tostring(shellFirst == true), tostring(descriptor ~= nil)))
 
     if LWN.ShellHumanizer and LWN.ShellHumanizer.applyInitial then
         descriptor, initialDetail = LWN.ShellHumanizer.applyInitial(record, actor, {
@@ -1891,13 +1945,13 @@ local function buildInitialDummyAppearance(record, actor, source)
             profile = profile,
             force = true,
         })
-        if banditsFirst == true then
-            stampBanditsProbeCheckpoint(record, actor, "bandits_first_after_apply_initial", rebuildSource .. ".initial")
+        if shellFirst == true then
+            stampShellProbeCheckpoint(record, actor, "shell_first_after_apply_initial", rebuildSource .. ".initial")
         end
     end
 
-    if banditsFirst ~= true then
-        logBanditsPathEntry(record, actor, "buildInitialDummyAppearance.non_bandits", rebuildSource, "using_standard_dummy_rebuild")
+    if shellFirst ~= true then
+        logShellProbePathEntry(record, actor, "buildInitialDummyAppearance.standard", rebuildSource, "using_standard_dummy_rebuild")
         if LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
             descriptor, appearanceDetail = LWN.ShellHumanizer.maintain(record, actor, {
                 source = rebuildSource .. ".reapply",
@@ -1919,42 +1973,42 @@ local function buildInitialDummyAppearance(record, actor, source)
             appearanceDetail = initialDetail
         end
 
-        if ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE == true
+        if ISOZOMBIE_SHELL_DIRECT_VISUAL_PROBE == true
             and isMinimalDummyRecord(record)
             and LWN.ActorFactory
-            and LWN.ActorFactory.applyBanditsStyleVisualProbe
+            and LWN.ActorFactory.applyManagedShellVisualProbe
         then
-            local _probeApplied, probeDetail = LWN.ActorFactory.applyBanditsStyleVisualProbe(
+            local _probeApplied, probeDetail = LWN.ActorFactory.applyManagedShellVisualProbe(
                 record,
                 actor,
                 descriptor,
                 {
-                    source = rebuildSource .. ".bandits_visual_probe",
+                    source = rebuildSource .. ".shell_visual_probe",
                 }
             )
             local modData = protectedCall(actor, "getModData")
             if modData then
-                modData.LWN_BanditsVisualProbeDetail = probeDetail
-                modData.LWN_BanditsVisualProbeStage = rebuildSource .. ".bandits_visual_probe"
+                modData.LWN_ShellVisualProbeDetail = probeDetail
+                modData.LWN_ShellVisualProbeStage = rebuildSource .. ".shell_visual_probe"
             end
-            stampBanditsProbeCheckpoint(record, actor, "after_probe_refresh", rebuildSource .. ".bandits_visual_probe")
+            stampShellProbeCheckpoint(record, actor, "after_probe_refresh", rebuildSource .. ".shell_visual_probe")
         end
     else
-        logBanditsPathEntry(record, actor, "buildInitialDummyAppearance.bandits_first", rebuildSource, "enter_bandits_first_branch")
+        logShellProbePathEntry(record, actor, "buildInitialDummyAppearance.shell_first", rebuildSource, "enter_shell_first_branch")
         if descriptor == nil and LWN.ActorFactory and LWN.ActorFactory.buildDescriptor then
             descriptor, _ = LWN.ActorFactory.buildDescriptor(record)
         end
-        appearanceDetail = select(1, runBanditsFirstBuild(record, actor, descriptor, profile, "bandits_first_initial_build", rebuildSource))
+        appearanceDetail = select(1, runShellFirstBuild(record, actor, descriptor, profile, "shell_first_initial_build", rebuildSource))
     end
 
-    if banditsFirst == true then
-        stampBanditsProbeCheckpoint(record, actor, "bandits_first_before_min_flags", rebuildSource .. ".pre_min_flags")
+    if shellFirst == true then
+        stampShellProbeCheckpoint(record, actor, "shell_first_before_min_flags", rebuildSource .. ".pre_min_flags")
     end
     applyBasicZombieCarrierFlags(record, actor, {
-        banditsFirstDummyMinFlags = banditsFirst == true,
+        shellFirstDummyMinFlags = shellFirst == true,
         source = rebuildSource .. ".post_build_flags",
     }, descriptor, appearanceDetail)
-    stampBanditsProbeCheckpoint(record, actor, banditsFirst == true and "bandits_first_after_min_flags" or "after_basic_flags", rebuildSource .. ".post_basic_flags")
+    stampShellProbeCheckpoint(record, actor, shellFirst == true and "shell_first_after_min_flags" or "after_basic_flags", rebuildSource .. ".post_basic_flags")
     local ok, detail = probeHumanizationState(record, actor, appearanceDetail, rebuildSource .. ".probe")
     trace(ok and "dummy_appearance_locked" or "dummy_appearance_failed", record, string.format(
         "source=%s detail=%s",
@@ -1977,13 +2031,13 @@ local function runPostRuntimeSettleRebuild(record, actor, source)
     local rebuildSource = source or "CarrierIsoZombie.runtimeSettleRebuild"
     local descriptor = protectedCall(actor, "getDescriptor")
     local appearanceDetail = nil
-    local banditsFirst = ISOZOMBIE_BANDITS_FIRST_BUILD_LANE == true and isMinimalDummyRecord(record)
+    local shellFirst = ISOZOMBIE_SHELL_FIRST_BUILD_LANE == true and isMinimalDummyRecord(record)
 
-    clearBanditsObservationState(record, actor, rebuildSource .. ".begin")
-    logBanditsPathEntry(record, actor, "runPostRuntimeSettleRebuild", rebuildSource, string.format("banditsFirst=%s descriptor=%s", tostring(banditsFirst == true), tostring(descriptor ~= nil)))
+    clearShellObservationState(record, actor, rebuildSource .. ".begin")
+    logShellProbePathEntry(record, actor, "runPostRuntimeSettleRebuild", rebuildSource, string.format("shellFirst=%s descriptor=%s", tostring(shellFirst == true), tostring(descriptor ~= nil)))
 
-    if banditsFirst ~= true then
-        logBanditsPathEntry(record, actor, "runPostRuntimeSettleRebuild.non_bandits", rebuildSource, "using_standard_post_settle_rebuild")
+    if shellFirst ~= true then
+        logShellProbePathEntry(record, actor, "runPostRuntimeSettleRebuild.standard", rebuildSource, "using_standard_post_settle_rebuild")
         if LWN.ShellHumanizer and LWN.ShellHumanizer.maintain then
             descriptor, appearanceDetail = LWN.ShellHumanizer.maintain(record, actor, {
                 source = rebuildSource,
@@ -2001,50 +2055,50 @@ local function runPostRuntimeSettleRebuild(record, actor, source)
             })
         end
 
-        if ISOZOMBIE_BANDITS_DIRECT_VISUAL_PROBE == true
+        if ISOZOMBIE_SHELL_DIRECT_VISUAL_PROBE == true
             and isMinimalDummyRecord(record)
             and LWN.ActorFactory
-            and LWN.ActorFactory.applyBanditsStyleVisualProbe
+            and LWN.ActorFactory.applyManagedShellVisualProbe
         then
-            local _probeApplied, probeDetail = LWN.ActorFactory.applyBanditsStyleVisualProbe(
+            local _probeApplied, probeDetail = LWN.ActorFactory.applyManagedShellVisualProbe(
                 record,
                 actor,
                 descriptor,
                 {
-                    source = rebuildSource .. ".bandits_visual_probe",
+                    source = rebuildSource .. ".shell_visual_probe",
                 }
             )
             local modData = protectedCall(actor, "getModData")
             if modData then
-                modData.LWN_BanditsVisualProbeDetail = probeDetail
-                modData.LWN_BanditsVisualProbeStage = rebuildSource .. ".bandits_visual_probe"
+                modData.LWN_ShellVisualProbeDetail = probeDetail
+                modData.LWN_ShellVisualProbeStage = rebuildSource .. ".shell_visual_probe"
             end
-            stampBanditsProbeCheckpoint(record, actor, "post_runtime_settle_after_probe", rebuildSource .. ".bandits_visual_probe")
+            stampShellProbeCheckpoint(record, actor, "post_runtime_settle_after_probe", rebuildSource .. ".shell_visual_probe")
         end
     else
-        logBanditsPathEntry(record, actor, "runPostRuntimeSettleRebuild.bandits_first", rebuildSource, "enter_bandits_first_post_settle_branch")
+        logShellProbePathEntry(record, actor, "runPostRuntimeSettleRebuild.shell_first", rebuildSource, "enter_shell_first_post_settle_branch")
         if descriptor == nil and LWN.ShellHumanizer and LWN.ShellHumanizer.applyInitial then
             descriptor, _ = LWN.ShellHumanizer.applyInitial(record, actor, {
                 source = rebuildSource .. ".initial_seed",
                 profile = profile,
                 force = true,
             })
-            stampBanditsProbeCheckpoint(record, actor, "bandits_first_post_runtime_settle_after_apply_initial", rebuildSource .. ".initial_seed")
+            stampShellProbeCheckpoint(record, actor, "shell_first_post_runtime_settle_after_apply_initial", rebuildSource .. ".initial_seed")
         end
         if descriptor == nil and LWN.ActorFactory and LWN.ActorFactory.buildDescriptor then
             descriptor, _ = LWN.ActorFactory.buildDescriptor(record)
         end
-        appearanceDetail = select(1, runBanditsFirstBuild(record, actor, descriptor, profile, "bandits_first_post_runtime_settle_build", rebuildSource))
+        appearanceDetail = select(1, runShellFirstBuild(record, actor, descriptor, profile, "shell_first_post_runtime_settle_build", rebuildSource))
     end
 
-    if banditsFirst == true then
-        stampBanditsProbeCheckpoint(record, actor, "bandits_first_post_runtime_settle_before_min_flags", rebuildSource .. ".pre_min_flags")
+    if shellFirst == true then
+        stampShellProbeCheckpoint(record, actor, "shell_first_post_runtime_settle_before_min_flags", rebuildSource .. ".pre_min_flags")
     end
     applyBasicZombieCarrierFlags(record, actor, {
-        banditsFirstDummyMinFlags = banditsFirst == true,
+        shellFirstDummyMinFlags = shellFirst == true,
         source = rebuildSource .. ".post_build_flags",
     }, descriptor, appearanceDetail)
-    stampBanditsProbeCheckpoint(record, actor, banditsFirst == true and "bandits_first_post_runtime_settle_after_min_flags" or "post_runtime_settle_after_basic_flags", rebuildSource .. ".post_basic_flags")
+    stampShellProbeCheckpoint(record, actor, shellFirst == true and "shell_first_post_runtime_settle_after_min_flags" or "post_runtime_settle_after_basic_flags", rebuildSource .. ".post_basic_flags")
     local ok, detail = probeHumanizationState(record, actor, appearanceDetail, rebuildSource .. ".probe")
 
     local modData = protectedCall(actor, "getModData")
@@ -2196,7 +2250,7 @@ function Carrier.spawn(record, options)
     local humanizationDetail = nil
 
     if isMinimalDummyRecord(record) then
-        logBanditsPathEntry(record, actor, "Carrier.spawn.initial_dummy_callsite", "CarrierIsoZombie.spawn", "before_buildInitialDummyAppearance")
+        logShellProbePathEntry(record, actor, "Carrier.spawn.initial_dummy_callsite", "CarrierIsoZombie.spawn", "before_buildInitialDummyAppearance")
         _, appearanceDetail, humanizationOk, humanizationDetail = buildInitialDummyAppearance(record, actor, "CarrierIsoZombie.spawn.initial_dummy")
         appearanceEligible = humanizationOk == true
         appearanceGateDetail = humanizationDetail
@@ -2296,7 +2350,7 @@ function Carrier.sync(record, handle, options)
     local humanizationOk = false
     local humanizationDetail = nil
     if isMinimalDummyRecord(record) and record.dummy and (record.dummy.appearanceLocked ~= true or record.dummy.appearanceRebuildPending == true) then
-        logBanditsPathEntry(record, actor, "Carrier.sync.rebuild_callsite", "CarrierIsoZombie.sync", string.format("appearanceLocked=%s rebuildPending=%s", tostring(record.dummy and record.dummy.appearanceLocked == true), tostring(record.dummy and record.dummy.appearanceRebuildPending == true)))
+        logShellProbePathEntry(record, actor, "Carrier.sync.rebuild_callsite", "CarrierIsoZombie.sync", string.format("appearanceLocked=%s rebuildPending=%s", tostring(record.dummy and record.dummy.appearanceLocked == true), tostring(record.dummy and record.dummy.appearanceRebuildPending == true)))
         _, appearanceDetail, humanizationOk, humanizationDetail = rebuildDummyAppearance(record, actor, "CarrierIsoZombie.sync.rebuild")
         appearanceEligible = humanizationOk == true
         appearanceGateDetail = humanizationDetail
@@ -2363,7 +2417,7 @@ function Carrier.sync(record, handle, options)
 
     if wasSettlePending == true and handle.runtime.runtimeSettleRebuildDone ~= true then
         local _settleDescriptor
-        logBanditsPathEntry(record, actor, "Carrier.sync.post_runtime_settle_callsite", "CarrierIsoZombie.sync", string.format("wasSettlePending=%s runtimeSettleRebuildDone=%s", tostring(wasSettlePending == true), tostring(handle.runtime.runtimeSettleRebuildDone == true)))
+        logShellProbePathEntry(record, actor, "Carrier.sync.post_runtime_settle_callsite", "CarrierIsoZombie.sync", string.format("wasSettlePending=%s runtimeSettleRebuildDone=%s", tostring(wasSettlePending == true), tostring(handle.runtime.runtimeSettleRebuildDone == true)))
         _settleDescriptor, appearanceDetail, humanizationOk, humanizationDetail = runPostRuntimeSettleRebuild(
             record,
             actor,
@@ -2434,6 +2488,752 @@ function Carrier.sync(record, handle, options)
     }
 end
 
+local function movementBaseSpeeds(actor)
+    local modData = protectedCall(actor, "getModData")
+    if not modData then return DEFAULT_WALK_SPEED, DEFAULT_RUN_SPEED end
+    if tonumber(modData.LWN_BaseWalkSpeed) == nil then
+        modData.LWN_BaseWalkSpeed = tonumber(protectedCall(actor, "getVariableFloat", "WalkSpeed", DEFAULT_WALK_SPEED))
+            or DEFAULT_WALK_SPEED
+    end
+    if tonumber(modData.LWN_BaseRunSpeed) == nil then
+        modData.LWN_BaseRunSpeed = tonumber(protectedCall(actor, "getVariableFloat", "RunSpeed", DEFAULT_RUN_SPEED))
+            or DEFAULT_RUN_SPEED
+    end
+    return tonumber(modData.LWN_BaseWalkSpeed) or DEFAULT_WALK_SPEED,
+        tonumber(modData.LWN_BaseRunSpeed) or DEFAULT_RUN_SPEED
+end
+
+local function applyMovementProfile(actor, profile)
+    if not actor or not profile then return end
+    local baseWalkSpeed, baseRunSpeed = movementBaseSpeeds(actor)
+    protectedCall(actor, "setVariable", "WalkSpeed", baseWalkSpeed * (profile.walkMultiplier or 1))
+    protectedCall(actor, "setVariable", "RunSpeed", baseRunSpeed * (profile.runMultiplier or 1))
+    protectedCall(actor, "setVariable", "LWNWalkType", profile.walkType)
+    protectedCall(actor, "setWalkType", profile.walkType)
+    protectedCall(actor, "setCanWalk", true)
+    protectedCall(actor, "setUseless", false)
+end
+
+local function movementBumpForProfile(profile)
+    local walkType = profile and profile.walkType or "Walk"
+    if walkType == "Run" then return "IdleToRun" end
+    if walkType == "Walk" or walkType == "SneakWalk" then return "IdleToWalk" end
+    return nil
+end
+
+local function stopActorMotion(actor, options)
+    options = options or {}
+    if not actor then return end
+    local pf = protectedCall(actor, "getPathFindBehavior2")
+    protectedCall(pf, "cancel")
+    protectedCall(pf, "reset")
+    protectedCall(actor, "setPath2", nil)
+    protectedCall(actor, "setMoving", false)
+    if options.clearTarget == true then
+        protectedCall(actor, "setTarget", nil)
+        protectedCall(actor, "setLastTargettedBy", nil)
+    end
+    if options.stopActions == true then
+        protectedCall(actor, "StopAllActionQueue")
+    end
+end
+
+local function startPathTo(actor, x, y, z, profile)
+    if not actor or x == nil or y == nil or z == nil then return false, "invalid_path_target" end
+    protectedCall(actor, "setCanWalk", true)
+    protectedCall(actor, "setUseless", false)
+    protectedCall(actor, "setTarget", nil)
+    protectedCall(actor, "setTargetSeenTime", 0)
+    protectedCall(actor, "setLastTargettedBy", nil)
+    protectedCall(actor, "setAttackedBy", nil)
+    protectedCall(actor, "clearAggroList")
+    protectedCall(actor, "faceLocation", x, y)
+    local bump = movementBumpForProfile(profile)
+    if bump then
+        protectedCall(actor, "setBumpType", bump)
+    end
+    protectedCall(actor, "setPath2", nil)
+    local pf = protectedCall(actor, "getPathFindBehavior2")
+    if pf and pf.pathToLocation then
+        protectedCall(pf, "reset")
+        protectedCall(pf, "cancel")
+        protectedCall(actor, "setPath2", nil)
+        local ok = pcall(pf.pathToLocation, pf, x, y, z)
+        if ok then
+            -- Keep the pathfinder state in its own behavior object. Leaving path2
+            -- populated on an IsoZombie can trap it in WalkTowardState without
+            -- actual displacement.
+            protectedCall(pf, "cancel")
+            protectedCall(actor, "setPath2", nil)
+            return true, "pf:pathToLocation"
+        end
+    end
+    if actor.pathToLocationF then
+        local ok = pcall(actor.pathToLocationF, actor, x, y, z)
+        protectedCall(actor, "setPath2", nil)
+        if ok then return true, "actor:pathToLocationF" end
+    end
+    if actor.pathToLocation then
+        local ok = pcall(actor.pathToLocation, actor, x, y, z)
+        protectedCall(actor, "setPath2", nil)
+        if ok then return true, "actor:pathToLocation" end
+    end
+    return false, "path_start_unavailable"
+end
+
+local function behaviorResultName(result)
+    if result == nil then return "Working" end
+    if BehaviorResult then
+        if result == BehaviorResult.Failed then return "Failed" end
+        if result == BehaviorResult.Succeeded then return "Succeeded" end
+    end
+    return tostring(result)
+end
+
+local function tickPathfinder(actor)
+    local pf = protectedCall(actor, "getPathFindBehavior2")
+    if not pf then return "Missing" end
+    if not pf.update then return "MissingUpdate" end
+    local ok, result = pcall(pf.update, pf)
+    if ok then return behaviorResultName(result) end
+    return "Error"
+end
+
+local function distanceTo(actor, x, y)
+    local ax = tonumber(protectedCall(actor, "getX") or x) or x
+    local ay = tonumber(protectedCall(actor, "getY") or y) or y
+    local dx, dy = ax - x, ay - y
+    return math.sqrt(dx * dx + dy * dy), ax, ay
+end
+
+local function isOrdinaryZombieActor(actor)
+    if not actor or not instanceof or not instanceof(actor, "IsoZombie") then return false end
+    if protectedCall(actor, "isDead") == true then return false end
+    if protectedCall(actor, "isAlive") == false then return false end
+    if (tonumber(protectedCall(actor, "getHealth")) or 1) <= 0 then return false end
+    local modData = protectedCall(actor, "getModData")
+    return not (modData and (modData.LWN_NpcId ~= nil or modData.LWN_LastNpcId ~= nil or modData.LWN_ManagedShellContract == true))
+end
+
+local function resolveAttackTarget(actor, intent)
+    local data = intent and intent.data or {}
+    if isOrdinaryZombieActor(data.target) then return data.target end
+    local cell = getCell and getCell() or nil
+    if not cell then return nil end
+    local tx = math.floor(tonumber(data.targetX or protectedCall(actor, "getX") or 0) or 0)
+    local ty = math.floor(tonumber(data.targetY or protectedCall(actor, "getY") or 0) or 0)
+    local tz = math.floor(tonumber(data.targetZ or protectedCall(actor, "getZ") or 0) or 0)
+    local best, bestD = nil, math.huge
+    for y = ty - 1, ty + 1 do
+        for x = tx - 1, tx + 1 do
+            local square = cell:getGridSquare(x, y, tz)
+            local objects = square and protectedCall(square, "getMovingObjects") or nil
+            if objects and objects.size and objects.get then
+                for i = 0, objects:size() - 1 do
+                    local obj = objects:get(i)
+                    if isOrdinaryZombieActor(obj) then
+                        local d = distanceTo(actor, tonumber(protectedCall(obj, "getX") or x) or x, tonumber(protectedCall(obj, "getY") or y) or y)
+                        if d < bestD then
+                            best, bestD = obj, d
+                        end
+                    end
+                end
+            end
+        end
+    end
+    data.target = best
+    intent.data = data
+    return best
+end
+
+local function updateFollowHeading(player, follow, px, py)
+    local dx = follow.lastPlayerX and (px - follow.lastPlayerX) or 0
+    local dy = follow.lastPlayerY and (py - follow.lastPlayerY) or 0
+    local distance = math.sqrt(dx * dx + dy * dy)
+    if follow.lastPlayerX == nil or follow.lastPlayerY == nil then
+        follow.lastPlayerX = px
+        follow.lastPlayerY = py
+    end
+    if distance >= FOLLOW_HEADING_EPSILON then
+        follow.headingX = dx / distance
+        follow.headingY = dy / distance
+        follow.headingSource = "player_motion"
+        follow.lastPlayerX = px
+        follow.lastPlayerY = py
+    elseif follow.headingX == nil or follow.headingY == nil then
+        local direction = protectedCall(player, "getForwardDirection")
+        local fx = tonumber(protectedCall(direction, "getX") or 0) or 0
+        local fy = tonumber(protectedCall(direction, "getY") or 0) or 0
+        local length = math.sqrt(fx * fx + fy * fy)
+        if length > 0.001 then
+            follow.headingX = fx / length
+            follow.headingY = fy / length
+            follow.headingSource = "initial_facing"
+        else
+            follow.headingX = 0
+            follow.headingY = 1
+            follow.headingSource = "fallback_north"
+        end
+    end
+    return follow.headingX, follow.headingY
+end
+
+local function updateFollowMode(follow, playerDistance)
+    local catchup = follow.catchup == true
+    if catchup then
+        catchup = playerDistance > FOLLOW_CATCHUP_EXIT_DISTANCE
+    else
+        catchup = playerDistance >= FOLLOW_CATCHUP_ENTER_DISTANCE
+    end
+    follow.catchup = catchup
+    if not catchup then return "formation" end
+    if playerDistance >= FOLLOW_HARD_CATCHUP_DISTANCE then return "hard_catchup" end
+    return "catchup"
+end
+
+local function followTarget(player, record, follow, px, py, pz, playerDistance)
+    local fx, fy = updateFollowHeading(player, follow, px, py)
+    local slot = tonumber(record and record.companion and record.companion.squadSlot) or 1
+    local mode = updateFollowMode(follow, playerDistance)
+    if mode ~= "formation" then
+        return px - fx * FOLLOW_CATCHUP_OFFSET, py - fy * FOLLOW_CATCHUP_OFFSET, pz, slot, mode
+    end
+    local formation = FOLLOW_FORMATION[slot] or { back = FOLLOW_OFFSET, side = 0 }
+    local lateralX, lateralY = -fy, fx
+    return px - fx * formation.back + lateralX * formation.side,
+        py - fy * formation.back + lateralY * formation.side,
+        pz, slot, mode
+end
+
+local function followLocomotion(player)
+    local sneaking = protectedCall(player, "isSneaking") == true
+    local sprinting = protectedCall(player, "isSprinting") == true
+    local running = protectedCall(player, "isRunning") == true
+    if sneaking and (running or sprinting) then
+        return "crouch_run", FOLLOW_LOCOMOTION.crouch_run, sneaking, running, sprinting
+    end
+    if sneaking then return "crouch_walk", FOLLOW_LOCOMOTION.crouch_walk, sneaking, running, sprinting end
+    if sprinting then return "sprint", FOLLOW_LOCOMOTION.sprint, sneaking, running, sprinting end
+    if running then return "run", FOLLOW_LOCOMOTION.run, sneaking, running, sprinting end
+    return "walk", FOLLOW_LOCOMOTION.walk, sneaking, running, sprinting
+end
+
+local function rememberMoveResult(handle, move, status, reason, distance)
+    if not handle then return end
+    handle.runtime = handle.runtime or {}
+    handle.runtime.lastMove = {
+        status = status,
+        reason = reason,
+        distance = distance,
+        atMs = nowMs(),
+        attempts = move and move.attempts or nil,
+        cycles = move and move.pathCycles or nil,
+    }
+end
+
+local function tickMoveTo(record, handle, intent)
+    local actor = handle and handle.actor or nil
+    if not actor then
+        return { handled = true, failed = true, status = "failed", reason = "actor_missing" }
+    end
+    if record and record.combat and record.combat.state == "engaged" then
+        return { handled = true, status = "combat", reason = record.combat.reason or "combat_interrupt" }
+    end
+    local data = intent.data or {}
+    local tx, ty, tz = tonumber(data.x), tonumber(data.y), tonumber(data.z)
+    if not tx or not ty or not tz then
+        return { handled = true, failed = true, status = "failed", reason = "invalid_destination" }
+    end
+    handle.runtime = handle.runtime or {}
+    local move = handle.runtime.move
+    if not move or move.intent ~= intent then
+        stopActorMotion(actor, { clearTarget = true })
+        move = { intent = intent, attempts = 1, pathCycles = 0, lastProgressAtMs = nowMs(), bestDistance = math.huge }
+        handle.runtime.move = move
+        handle.runtime.follow = nil
+    end
+    applyMovementProfile(actor, FOLLOW_LOCOMOTION.walk)
+    local distance = distanceTo(actor, tx, ty)
+    if distance <= MOVE_ARRIVAL_DISTANCE then
+        stopActorMotion(actor, { clearTarget = true })
+        rememberMoveResult(handle, move, "arrived", "lwn_distance_threshold", distance)
+        handle.runtime.move = nil
+        return { handled = true, done = true, status = "arrived", reason = "lwn_distance_threshold", distance = distance }
+    end
+    local now = nowMs()
+    if distance < move.bestDistance - MOVE_PROGRESS_EPSILON then
+        move.bestDistance = distance
+        move.lastProgressAtMs = now
+    elseif now - move.lastProgressAtMs >= MOVE_STALL_MS then
+        if move.attempts >= MOVE_MAX_ATTEMPTS then
+            stopActorMotion(actor, { clearTarget = true })
+            rememberMoveResult(handle, move, "failed", "lwn_no_progress_after_3_attempts", distance)
+            handle.runtime.move = nil
+            return { handled = true, failed = true, status = "failed", reason = "lwn_no_progress_after_3_attempts", distance = distance }
+        end
+        stopActorMotion(actor, { clearTarget = true })
+        move.started = false
+        move.attempts = move.attempts + 1
+        move.lastProgressAtMs = now
+        move.bestDistance = distance
+        if LWN.Log and LWN.Log.warn then
+            LWN.Log.warn("Movement", "move_retry", {
+                npcId = record and record.id,
+                source = "isozombie",
+                status = "retry",
+                reason = "no_progress_5s",
+                distance = string.format("%.2f", distance),
+                count = move.attempts,
+            })
+        end
+    end
+    if move.started ~= true then
+        clearCombatIntent(actor, { stopActions = false, clearPath = false })
+        local ok, method = startPathTo(actor, tx, ty, tz, FOLLOW_LOCOMOTION.walk)
+        if not ok then
+            handle.runtime.move = nil
+            return { handled = true, failed = true, status = "failed", reason = method or "path_start_failed" }
+        end
+        move.started = true
+        move.pathMethod = method
+        move.pathCycles = move.pathCycles + 1
+    end
+    local pathResult = tickPathfinder(actor)
+    if pathResult == "Failed" or pathResult == "Error" or pathResult == "Missing" then
+        move.started = false
+    end
+    return {
+        handled = true,
+        status = "pathing",
+        reason = "lwn_move_active",
+        distance = distance,
+        attempts = move.attempts,
+        taskCycles = move.pathCycles,
+    }
+end
+
+local function tickFollowPlayer(record, handle, intent)
+    local actor = handle and handle.actor or nil
+    if not actor then
+        return { handled = true, failed = true, status = "failed", reason = "actor_missing" }
+    end
+    if record and record.combat and record.combat.state == "engaged" then
+        return { handled = true, status = "combat", reason = record.combat.reason or "combat_interrupt" }
+    end
+    local player = getSpecificPlayer and getSpecificPlayer(0) or (getPlayer and getPlayer()) or nil
+    if not player then
+        return { handled = true, failed = true, status = "failed", reason = "follow_player_missing" }
+    end
+    handle.runtime = handle.runtime or {}
+    local follow = handle.runtime.follow
+    if not follow or follow.intent ~= intent then
+        stopActorMotion(actor, { clearTarget = true })
+        follow = {
+            intent = intent,
+            pathCycles = 0,
+            repaths = 0,
+            lastProgressAtMs = nowMs(),
+            lastX = tonumber(protectedCall(actor, "getX") or 0) or 0,
+            lastY = tonumber(protectedCall(actor, "getY") or 0) or 0,
+        }
+        handle.runtime.follow = follow
+        handle.runtime.move = nil
+    end
+    local ax = tonumber(protectedCall(actor, "getX") or 0) or 0
+    local ay = tonumber(protectedCall(actor, "getY") or 0) or 0
+    local px = tonumber(protectedCall(player, "getX") or ax) or ax
+    local py = tonumber(protectedCall(player, "getY") or ay) or ay
+    local pz = tonumber(protectedCall(player, "getZ") or 0) or 0
+    local playerDistance = math.sqrt((ax - px) ^ 2 + (ay - py) ^ 2)
+    local tx, ty, tz, formationSlot, followMode = followTarget(player, record, follow, px, py, pz, playerDistance)
+    local targetDistance = math.sqrt((ax - tx) ^ 2 + (ay - ty) ^ 2)
+    local movementMode, profile, playerSneaking, playerRunning, playerSprinting = followLocomotion(player)
+    if followMode == "hard_catchup" then
+        movementMode, profile = "sprint", FOLLOW_LOCOMOTION.sprint
+    elseif followMode == "catchup" and movementMode ~= "sprint" then
+        movementMode, profile = "run", FOLLOW_LOCOMOTION.run
+    end
+    applyMovementProfile(actor, profile)
+    clearCombatIntent(actor, { stopActions = false, clearPath = false })
+    local now = nowMs()
+    local moved = math.sqrt((ax - follow.lastX) ^ 2 + (ay - follow.lastY) ^ 2)
+    if targetDistance > FOLLOW_ARRIVAL_DISTANCE and moved < MOVE_PROGRESS_EPSILON and now - follow.lastProgressAtMs >= MOVE_STALL_MS then
+        stopActorMotion(actor, { clearTarget = true })
+        follow.started = false
+        follow.repaths = follow.repaths + 1
+        follow.lastProgressAtMs = now
+        if LWN.Log and LWN.Log.warn then
+            LWN.Log.warn("Movement", "follow_repath", {
+                npcId = record and record.id,
+                source = "isozombie",
+                status = "repath",
+                reason = "follow_no_progress_5s",
+                distance = string.format("%.2f", playerDistance),
+                count = follow.repaths,
+            })
+        end
+    elseif moved >= MOVE_PROGRESS_EPSILON or targetDistance <= FOLLOW_ARRIVAL_DISTANCE then
+        follow.lastX, follow.lastY = ax, ay
+        follow.lastProgressAtMs = now
+    end
+    local targetShift = follow.targetX and math.sqrt((tx - follow.targetX) ^ 2 + (ty - follow.targetY) ^ 2) or math.huge
+    local styleChanged = follow.movementMode ~= nil and follow.movementMode ~= movementMode
+    local canRetarget = follow.lastPathAtMs == nil or now - follow.lastPathAtMs >= FOLLOW_RETARGET_MS
+    if targetDistance <= FOLLOW_ARRIVAL_DISTANCE then
+        stopActorMotion(actor, { clearTarget = true })
+        follow.started = false
+    elseif follow.started ~= true or (canRetarget and (styleChanged or targetShift >= FOLLOW_RETARGET_DISTANCE)) then
+        stopActorMotion(actor, { clearTarget = true })
+        local ok = startPathTo(actor, tx, ty, tz, profile)
+        if ok then
+            follow.started = true
+            follow.pathCycles = follow.pathCycles + 1
+            follow.targetX, follow.targetY, follow.targetZ = tx, ty, tz
+            follow.lastPathAtMs = now
+        end
+    end
+    if follow.started == true then
+        local pathResult = tickPathfinder(actor)
+        if pathResult == "Failed" or pathResult == "Error" or pathResult == "Missing" then
+            follow.started = false
+        end
+    end
+    follow.movementMode = movementMode
+    follow.walkType = profile.walkType
+    follow.playerSneaking = playerSneaking
+    follow.playerRunning = playerRunning
+    follow.playerSprinting = playerSprinting
+    follow.playerDistance = playerDistance
+    follow.targetDistance = targetDistance
+    follow.followMode = followMode
+    follow.formationSlot = formationSlot
+    return {
+        handled = true,
+        status = "following",
+        reason = targetDistance <= FOLLOW_ARRIVAL_DISTANCE and "follow_holding_trailing_position" or "follow_trailing_player",
+        distance = playerDistance,
+        walkType = profile.walkType,
+        taskCycles = follow.pathCycles,
+    }
+end
+
+local function tickAttackMelee(record, handle, intent)
+    local actor = handle and handle.actor or nil
+    if not actor then
+        return { handled = true, failed = true, status = "failed", reason = "actor_missing" }
+    end
+    local target = resolveAttackTarget(actor, intent)
+    if not target then
+        return { handled = true, done = true, status = "done", reason = "target_lost" }
+    end
+    handle.runtime = handle.runtime or {}
+    local attack = handle.runtime.attack
+    if not attack or attack.intent ~= intent then
+        attack = { intent = intent, startedAtMs = nowMs(), attempts = 0, pathCycles = 0, lastAttackAtMs = 0 }
+        handle.runtime.attack = attack
+    end
+    protectedCall(actor, "setCanWalk", true)
+    protectedCall(actor, "setUseless", false)
+    protectedCall(actor, "setVariable", "NoLungeAttack", false)
+    protectedCall(actor, "setTarget", target)
+    local tx = tonumber(protectedCall(target, "getX") or 0) or 0
+    local ty = tonumber(protectedCall(target, "getY") or 0) or 0
+    local tz = tonumber(protectedCall(target, "getZ") or 0) or 0
+    local distance = distanceTo(actor, tx, ty)
+    if distance > ATTACK_RANGE then
+        applyMovementProfile(actor, FOLLOW_LOCOMOTION.run)
+        local targetShift = attack.targetX and math.sqrt((tx - attack.targetX) ^ 2 + (ty - attack.targetY) ^ 2) or math.huge
+        if attack.pathStarted ~= true or targetShift >= ATTACK_REPATH_DISTANCE then
+            stopActorMotion(actor, { clearTarget = false })
+            local ok = startPathTo(actor, tx, ty, tz, FOLLOW_LOCOMOTION.run)
+            if ok then
+                attack.pathStarted = true
+                attack.pathCycles = attack.pathCycles + 1
+                attack.targetX, attack.targetY, attack.targetZ = tx, ty, tz
+            end
+        end
+        if attack.pathStarted == true then
+            local pathResult = tickPathfinder(actor)
+            if pathResult == "Failed" or pathResult == "Error" or pathResult == "Missing" then
+                attack.pathStarted = false
+            end
+        end
+        if nowMs() - attack.startedAtMs > ATTACK_TIMEOUT_MS then
+            stopActorMotion(actor, { clearTarget = true })
+            handle.runtime.attack = nil
+            return { handled = true, failed = true, status = "failed", reason = "attack_timeout", distance = distance }
+        end
+        return { handled = true, status = "closing", reason = "attack_move_to_target", distance = distance }
+    end
+    stopActorMotion(actor, { clearTarget = false })
+    protectedCall(actor, "faceThisObject", target)
+    local now = nowMs()
+    if now - (tonumber(attack.lastAttackAtMs) or 0) >= ATTACK_RETRY_MS then
+        attack.lastAttackAtMs = now
+        attack.attempts = attack.attempts + 1
+        if actor.AttemptAttack then
+            pcall(actor.AttemptAttack, actor, 1.0)
+        elseif actor.DoAttack then
+            pcall(actor.DoAttack, actor, 1.0)
+        else
+            handle.runtime.attack = nil
+            return { handled = true, failed = true, status = "failed", reason = "attack_api_missing" }
+        end
+        if LWN.Log and LWN.Log.info then
+            LWN.Log.info("Combat", "attack_attempt", {
+                npcId = record and record.id,
+                source = "isozombie",
+                status = "attacking",
+                reason = record and record.combat and record.combat.reason or "attack_melee",
+                count = attack.attempts,
+                distance = string.format("%.2f", distance),
+                target = tostring(target),
+            }, { rateKey = tostring(record and record.id or "unknown") .. ":attack_attempt", rateMs = 1000 })
+        end
+    end
+    if not isOrdinaryZombieActor(target) then
+        handle.runtime.attack = nil
+        protectedCall(actor, "setTarget", nil)
+        return { handled = true, done = true, status = "done", reason = "target_dead" }
+    end
+    if now - attack.startedAtMs > ATTACK_TIMEOUT_MS then
+        handle.runtime.attack = nil
+        return { handled = true, failed = true, status = "failed", reason = "attack_timeout", distance = distance }
+    end
+    return { handled = true, status = "attacking", reason = "attack_melee", distance = distance, attempts = attack.attempts }
+end
+
+function Carrier.cancelIntent(record, handle, intent, reason)
+    local actor = handle and handle.actor or nil
+    if actor then
+        stopActorMotion(actor, { clearTarget = true, stopActions = false })
+    end
+    if handle and handle.runtime then
+        rememberMoveResult(handle, handle.runtime.move or handle.runtime.follow, "cancelled", reason or "intent_cancelled", nil)
+        handle.runtime.move = nil
+        handle.runtime.follow = nil
+        handle.runtime.attack = nil
+    end
+    if LWN.Log and LWN.Log.info then
+        LWN.Log.info("CommandRuntime", "carrier_intent_cancelled", {
+            npcId = record and record.id,
+            source = "isozombie",
+            intent = intent and intent.kind,
+            reason = reason or "intent_cancelled",
+            status = "cancelled",
+        })
+    end
+    return { ok = true, detail = reason or "intent_cancelled" }
+end
+
+function Carrier.tickIntent(record, handle, intent)
+    if not intent then return { handled = false } end
+    if intent.kind == "move_to" then
+        return tickMoveTo(record, handle, intent)
+    end
+    if intent.kind == "follow_player" then
+        return tickFollowPlayer(record, handle, intent)
+    end
+    if intent.kind == "attack_melee" then
+        return tickAttackMelee(record, handle, intent)
+    end
+    return { handled = false }
+end
+
+local function isPlayerAttacker(attacker)
+    return attacker
+        and instanceof
+        and instanceof(attacker, "IsoPlayer")
+        and protectedCall(attacker, "isNPC") ~= true
+end
+
+local function recordForActor(actor)
+    local modData = protectedCall(actor, "getModData")
+    local npcId = modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or nil
+    return npcId and LWN.PopulationStore and LWN.PopulationStore.getNPC
+        and LWN.PopulationStore.getNPC(npcId) or nil
+end
+
+local function friendlyRecordForActor(actor)
+    local record = recordForActor(actor)
+    if not record then return nil end
+    if LWN.PopulationStore and LWN.PopulationStore.isAlive and LWN.PopulationStore.isAlive(record) ~= true then
+        return nil
+    end
+    local policy = LWN.Social and LWN.Social.relationshipCombatPolicy
+        and LWN.Social.relationshipCombatPolicy(record) or nil
+    if not policy or policy.allowPlayerAttack == true then return nil end
+    return record
+end
+
+local function actorDeathLike(actor)
+    if not actor then return true end
+    if protectedCall(actor, "isDead") == true then return true end
+    if protectedCall(actor, "isAlive") == false then return true end
+    if (tonumber(protectedCall(actor, "getHealth")) or 1) <= 0 then return true end
+    return false
+end
+
+local function syncHealth(record, actor, source)
+    if not record or not actor then return nil end
+    local health = tonumber(protectedCall(actor, "getHealth") or record.stats and record.stats.health or 0) or 0
+    record.stats = record.stats or {}
+    record.stats.health = health
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_LastHealthSync = source or "CarrierIsoZombie.syncHealth"
+        modData.LWN_LastHealthSyncAt = worldAgeHours()
+        modData.LWN_LastHealth = health
+    end
+    if health <= 0 and LWN.EmbodimentManager and LWN.EmbodimentManager.noteDeath then
+        LWN.EmbodimentManager.noteDeath(record, actor, source or "CarrierIsoZombie.health_zero", "health_zero")
+    end
+    return health
+end
+
+local function beginFriendlyFireProtection(record, actor, source)
+    local recordHealth = tonumber(record and record.stats and record.stats.health)
+    local actorHealth = tonumber(protectedCall(actor, "getHealth"))
+    local health = recordHealth and recordHealth > 0 and recordHealth or actorHealth or 1
+    protectedCall(actor, "setAvoidDamage", true)
+    protectedCall(actor, "setGodMod", false)
+    protectedCall(actor, "setInvulnerable", false)
+    protectedCall(actor, "setHealth", health)
+    Carrier.PendingHitRepairs[record.id] = {
+        actor = actor,
+        health = health,
+        source = source or "friendly_fire",
+        remainingTicks = 3,
+    }
+    return health
+end
+
+function Carrier.onHitZombie(actor, attacker)
+    if LWN.Combat and LWN.Combat.notePlayerAttack then
+        LWN.Combat.notePlayerAttack(actor, attacker)
+    end
+    local record = friendlyRecordForActor(actor)
+    if not record then return end
+    if isPlayerAttacker(attacker) then
+        local restoreHealth = beginFriendlyFireProtection(record, actor, "on_hit_zombie")
+        protectedCall(actor, "setHealth", restoreHealth)
+        protectedCall(actor, "setKnockedDown", false)
+        protectedCall(actor, "setOnFloor", false)
+        protectedCall(actor, "setFallOnFront", false)
+        if LWN.Log and LWN.Log.warn then
+            LWN.Log.warn("Combat", "friendly_hit_suppressed", {
+                npcId = record.id,
+                actor = tostring(actor),
+                target = tostring(attacker),
+                health = string.format("%.2f", restoreHealth),
+                reason = "player_hit_blocked",
+                source = "isozombie",
+            })
+        end
+        return
+    end
+    if isOrdinaryZombieActor(attacker) then
+        if LWN.Combat and LWN.Combat.noteSquadHit then
+            LWN.Combat.noteSquadHit(record, attacker)
+        end
+        local health = syncHealth(record, actor, "zombie_hit") or 0
+        if LWN.Log and LWN.Log.warn then
+            LWN.Log.warn("Combat", "zombie_damage_accepted", {
+                npcId = record.id,
+                actor = tostring(actor),
+                target = tostring(attacker),
+                health = string.format("%.2f", health),
+                reason = "zombie_hit",
+                source = "isozombie",
+            })
+        end
+    end
+end
+
+function Carrier.onWeaponHitCharacter(attacker, actor)
+    if LWN.Combat and LWN.Combat.notePlayerAttack then
+        LWN.Combat.notePlayerAttack(actor, attacker)
+    end
+    local record = friendlyRecordForActor(actor)
+    if not record or not isPlayerAttacker(attacker) then return end
+    local restoreHealth = beginFriendlyFireProtection(record, actor, "on_weapon_hit_character")
+    protectedCall(actor, "setHealth", restoreHealth)
+    if LWN.Log and LWN.Log.warn then
+        LWN.Log.warn("Combat", "friendly_weapon_hit_suppressed", {
+            npcId = record.id,
+            actor = tostring(actor),
+            target = tostring(attacker),
+            health = string.format("%.2f", restoreHealth),
+            reason = "player_weapon_hit_blocked",
+            source = "isozombie",
+        })
+    end
+    return false
+end
+
+local function tickPendingHitRepairs()
+    for npcId, repair in pairs(Carrier.PendingHitRepairs) do
+        local actor = repair and repair.actor or nil
+        local record = LWN.PopulationStore and LWN.PopulationStore.getNPC
+            and LWN.PopulationStore.getNPC(npcId) or nil
+        if not record
+            or (LWN.PopulationStore.isAlive and LWN.PopulationStore.isAlive(record) ~= true)
+            or actorDeathLike(actor)
+        then
+            Carrier.PendingHitRepairs[npcId] = nil
+        else
+            local restoreHealth = tonumber(repair.health) or tonumber(record.stats and record.stats.health) or 1
+            if restoreHealth > 0 then
+                protectedCall(actor, "setHealth", restoreHealth)
+            end
+            protectedCall(actor, "setKnockedDown", false)
+            protectedCall(actor, "setOnFloor", false)
+            protectedCall(actor, "setFallOnFront", false)
+            protectedCall(actor, "setAlwaysKnockedDown", false)
+            repair.remainingTicks = (tonumber(repair.remainingTicks) or 1) - 1
+            if repair.remainingTicks <= 0 then
+                protectedCall(actor, "setAvoidDamage", false)
+                syncHealth(record, actor, "friendly_fire_repair_complete")
+                Carrier.PendingHitRepairs[npcId] = nil
+                if LWN.Log and LWN.Log.info then
+                    LWN.Log.info("Combat", "friendly_hit_repair_complete", {
+                        npcId = npcId,
+                        actor = tostring(actor),
+                        health = string.format("%.2f", tonumber(protectedCall(actor, "getHealth") or restoreHealth) or 0),
+                        reason = repair.source,
+                        source = "isozombie",
+                    })
+                end
+            end
+        end
+    end
+end
+
+function Carrier.tick()
+    tickPendingHitRepairs()
+end
+
+function Carrier.getDebugState(record, handle)
+    local actor = handle and handle.actor or nil
+    local modData = protectedCall(actor, "getModData")
+    local runtime = handle and handle.runtime or {}
+    local move = runtime and (runtime.move or runtime.follow or runtime.attack) or nil
+    return {
+        source = "isozombie",
+        target = protectedCall(actor, "getTarget") ~= nil,
+        task = modData and modData.LWN_ActiveTask or nil,
+        combatTask = record and record.combat and record.combat.state == "engaged" and "attack_melee" or nil,
+        moveAttempt = move and move.attempts or nil,
+        moveCycle = move and (move.pathCycles or move.cycles) or nil,
+        moveStatus = runtime and runtime.lastMove and runtime.lastMove.status or nil,
+        moveReason = runtime and runtime.lastMove and runtime.lastMove.reason or nil,
+        moveDistance = runtime and runtime.lastMove and runtime.lastMove.distance or nil,
+        followMode = runtime and runtime.follow and runtime.follow.followMode or nil,
+        followDistance = runtime and runtime.follow and runtime.follow.playerDistance or nil,
+        walkType = protectedCall(actor, "getVariableString", "LWNWalkType") or protectedCall(actor, "getWalkType"),
+    }
+end
+
 function Carrier.retire(record, handle, options)
     record = ensureRecordShape(record)
     local actor = handle and handle.actor or nil
@@ -2449,4 +3249,24 @@ end
 
 function Carrier.getActor(handle)
     return handle and handle.actor or nil
+end
+
+if Events and Events.OnHitZombie then
+    if Carrier._onHitZombieHandler then
+        Events.OnHitZombie.Remove(Carrier._onHitZombieHandler)
+    end
+    Carrier._onHitZombieHandler = function(actor, attacker)
+        Carrier.onHitZombie(actor, attacker)
+    end
+    Events.OnHitZombie.Add(Carrier._onHitZombieHandler)
+end
+
+if Events and Events.OnWeaponHitCharacter then
+    if Carrier._onWeaponHitCharacterHandler then
+        Events.OnWeaponHitCharacter.Remove(Carrier._onWeaponHitCharacterHandler)
+    end
+    Carrier._onWeaponHitCharacterHandler = function(attacker, actor)
+        return Carrier.onWeaponHitCharacter(attacker, actor)
+    end
+    Events.OnWeaponHitCharacter.Add(Carrier._onWeaponHitCharacterHandler)
 end

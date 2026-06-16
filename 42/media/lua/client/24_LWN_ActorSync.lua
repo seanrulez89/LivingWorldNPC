@@ -158,7 +158,7 @@ local function getCarrierKind(record, actor)
 end
 
 local function isZombieShellCarrier(kind)
-    return kind == "isozombie" or kind == "bandits"
+    return kind == "isozombie"
 end
 
 traceStage = function(stage, record, actor, extra)

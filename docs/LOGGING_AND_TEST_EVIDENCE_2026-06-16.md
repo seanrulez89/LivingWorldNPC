@@ -89,22 +89,22 @@ Covered now:
 
 - test menu actions and squad spawn readiness/failure
 - embodiment stage changes, cleanup state, death latch changes
-- Bandits spawn request, async bind, timeout, retire, actor removal, death detect
+- managed `IsoZombie` spawn, sync, retire, actor removal, and death detect
 - command issue, queue replacement, command state changes, and cancellation
 - right-click move/follow/wait, stance changes, behavior guideline changes
 - item-context transfer/equip requests from inventory or world items, existing
   item equip, declared equipment sync, and missing-real-item cleanup
 - combat engagement changes, team defense signals, friendly hit suppression,
   zombie damage acceptance, friendly-hit repair, health sync, unexpected
-  auto-heal blocking, and Bandits auto-medical task blocking
-- follow locomotion/mode changes, combat pause/resume, stale Bandits task
-  cleanup, move task creation, retries, arrival, and failure
+  auto-heal blocking, and friendly-damage repair
+- follow locomotion/mode changes, combat pause/resume, managed path cleanup,
+  move task creation, retries, arrival, and failure
 - relationship stage and team pressure changes
 
 Not covered yet:
 
 - body-part wounds, infection, and treatment state
-- detailed animation graph state beyond Bandits walk type and movement mode
+- detailed animation graph state beyond `LWNWalkType` and movement mode
 - long-term autonomous behavior choice scoring
 - full persisted export of the ring buffer outside ModData/console
 

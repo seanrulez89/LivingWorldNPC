@@ -322,7 +322,7 @@ local function isManagedActor(obj)
 
     local modData = protectedCall(obj, "getModData")
     local carrierKind = modData and modData.LWN_CarrierKind or nil
-    if carrierKind == "isozombie" or carrierKind == "bandits" then
+    if carrierKind == "isozombie" then
         return protectedCall(obj, "isZombie") == true
             and (protectedCall(obj, "getCurrentSquare") or protectedCall(obj, "getSquare")) ~= nil
             and protectedCall(obj, "getStats") ~= nil
@@ -337,7 +337,7 @@ local function isIsoZombieCarrierActor(actor)
     if not actor then return false end
 
     local modData = protectedCall(actor, "getModData")
-    if modData and (modData.LWN_CarrierKind == "isozombie" or modData.LWN_CarrierKind == "bandits") then
+    if modData and modData.LWN_CarrierKind == "isozombie" then
         return true
     end
 
@@ -1246,8 +1246,8 @@ local function classifyPresentationTransitionCause(previousStage, previousRole, 
         end
     elseif string.find(tostring(checkpointStage), "refresh_presentation", 1, true) then
         cause = modelRegistered and "refresh_model_checkpoint" or "refresh_before_model_registration"
-    elseif string.find(tostring(checkpointStage), "bandits", 1, true) then
-        cause = "bandits_probe_checkpoint"
+    elseif string.find(tostring(checkpointStage), "shell", 1, true) then
+        cause = "shell_probe_checkpoint"
     end
 
     if currentRole == "reanimated_zombie" and previousRole ~= currentRole then
@@ -1257,8 +1257,8 @@ local function classifyPresentationTransitionCause(previousStage, previousRole, 
             cause = "zombie_role_after_alpha_repair"
         elseif string.find(tostring(checkpointStage), "refresh_presentation", 1, true) then
             cause = "zombie_role_after_refresh"
-        elseif string.find(tostring(checkpointStage), "bandits", 1, true) then
-            cause = "zombie_role_after_bandits_probe"
+        elseif string.find(tostring(checkpointStage), "shell", 1, true) then
+            cause = "zombie_role_after_shell_probe"
         else
             cause = "zombie_role_transition"
         end
@@ -1272,8 +1272,8 @@ local function classifyPresentationTransitionCause(previousStage, previousRole, 
                 cause = "fail_role_zombie_after_alpha_repair"
             elseif string.find(tostring(checkpointStage), "refresh_presentation", 1, true) then
                 cause = "fail_role_zombie_after_refresh"
-            elseif string.find(tostring(checkpointStage), "bandits", 1, true) then
-                cause = "fail_role_zombie_after_bandits_probe"
+            elseif string.find(tostring(checkpointStage), "shell", 1, true) then
+                cause = "fail_role_zombie_after_shell_probe"
             else
                 cause = "fail_role_zombie_transition"
             end
@@ -1941,22 +1941,22 @@ local function logInfo(message, record, actor, extra)
     end
 end
 
-local function logBanditsFactory(stage, record, actor, source, detail)
+local function logShellVisualFactory(stage, record, actor, source, detail)
     local modData = actor and protectedCall(actor, "getModData") or nil
     if modData then
-        modData.LWN_BanditsFactoryStage = tostring(stage or "unknown")
-        modData.LWN_BanditsFactorySource = tostring(source or "unknown")
-        modData.LWN_BanditsFactoryDetail = tostring(detail or "none")
-        modData.LWN_BanditsFactoryAt = worldAgeHours()
-        modData.LWN_BanditsFactoryCount = (tonumber(modData.LWN_BanditsFactoryCount) or 0) + 1
+        modData.LWN_ShellVisualFactoryStage = tostring(stage or "unknown")
+        modData.LWN_ShellVisualFactorySource = tostring(source or "unknown")
+        modData.LWN_ShellVisualFactoryDetail = tostring(detail or "none")
+        modData.LWN_ShellVisualFactoryAt = worldAgeHours()
+        modData.LWN_ShellVisualFactoryCount = (tonumber(modData.LWN_ShellVisualFactoryCount) or 0) + 1
     end
     print(string.format(
-        "[LWN][BanditsFactory] stage=%s | source=%s | npcId=%s | objectRef=%s | count=%s | detail=%s",
+        "[LWN][ShellVisualFactory] stage=%s | source=%s | npcId=%s | objectRef=%s | count=%s | detail=%s",
         safeText(stage),
         safeText(source),
         safeText(modData and (modData.LWN_NpcId or modData.LWN_LastNpcId) or record and record.id or nil),
         safeText(objectRef(actor)),
-        safeText(modData and modData.LWN_BanditsFactoryCount or nil),
+        safeText(modData and modData.LWN_ShellVisualFactoryCount or nil),
         safeText(detail)
     ))
 end
@@ -2731,8 +2731,8 @@ local function setBaselineHumanVisual(record, actor, desc)
             protectedCall(visual, "setSkinTextureIndex", 0)
         end
 
-        -- BanditsCreator explicitly flips gender and seeds a baseline body visual
-        -- on every preview IsoPlayer. World actors need the same nudge when the
+        -- The preview-style path explicitly flips gender and seeds a baseline body visual.
+        -- World actors need the same nudge when the
         -- descriptor path alone doesn't materialize a mesh.
         if female then
             protectedCall(visual, "removeBodyVisualFromItemType", "Base.M_Hair_Stubble")
@@ -2838,13 +2838,21 @@ local function addAndWearItem(actor, fullType)
 end
 
 local function ensureVisibleClothing(actor)
-    if protectedCall(actor, "getClothingItem_Torso") and protectedCall(actor, "getClothingItem_Legs") then
+    local wornItems = safeActorWornItems(actor)
+    if protectedCall(actor, "getClothingItem_Torso")
+        and protectedCall(actor, "getClothingItem_Legs")
+        and safeSize(wornItems) > 0
+    then
         return
     end
 
     protectedCall(actor, "dressInRandomOutfit")
 
-    if protectedCall(actor, "getClothingItem_Torso") and protectedCall(actor, "getClothingItem_Legs") then
+    wornItems = safeActorWornItems(actor)
+    if protectedCall(actor, "getClothingItem_Torso")
+        and protectedCall(actor, "getClothingItem_Legs")
+        and safeSize(wornItems) > 0
+    then
         protectedCall(actor, "onWornItemsChanged")
         refreshModelManager(actor, "random_outfit")
         return
@@ -2922,14 +2930,48 @@ local function bridgeWornItemsToItemVisuals(actor)
     return result
 end
 
-local function ensurePrimaryWeapon(actor, fullType)
-    if not fullType then return nil end
+local function actorInventoryItemFullType(item)
+    return item and (protectedCall(item, "getFullType") or protectedCall(item, "getType")) or nil
+end
+
+local function findExistingActorInventoryItem(actor, fullType)
+    if not (actor and fullType) then return nil end
 
     local inv = protectedCall(actor, "getInventory")
     if not inv then return nil end
 
-    local item = inv:AddItem(fullType)
-    if not item then return nil end
+    local items = protectedCall(inv, "getItems")
+    local size = tonumber(protectedCall(items, "size")) or 0
+    for i = 0, size - 1 do
+        local item = protectedCall(items, "get", i)
+        if actorInventoryItemFullType(item) == fullType then
+            return item
+        end
+    end
+    return nil
+end
+
+local function ensurePrimaryWeapon(actor, fullType, record)
+    if not fullType then return nil end
+
+    local item = findExistingActorInventoryItem(actor, fullType)
+    if not item then
+        local modData = protectedCall(actor, "getModData")
+        if modData then
+            modData.LWN_LoadoutPrimaryWeaponMissing = fullType
+            modData.LWN_LoadoutPrimaryWeaponMissingReason = "existing_item_required"
+            modData.LWN_LoadoutPrimaryWeaponMissingAt = worldAgeHours()
+        end
+        if LWN.Log and LWN.Log.warn then
+            LWN.Log.warn("Inventory", "loadout_primary_missing_existing_item", {
+                npcId = record and record.id,
+                item = fullType,
+                source = "ActorFactory.ensurePrimaryWeapon",
+                detail = "existing_item_required",
+            })
+        end
+        return nil
+    end
 
     protectedCall(actor, "setPrimaryHandItem", item)
     if protectedCall(item, "isRequiresEquippedBothHands") or protectedCall(item, "isTwoHandWeapon") then
@@ -3611,7 +3653,7 @@ local function seedLoadoutItems(record, actor)
         and record.inventory.equipment.primaryWeapon
         or nil
 
-    ensurePrimaryWeapon(actor, primaryWeapon)
+    ensurePrimaryWeapon(actor, primaryWeapon, record)
 end
 
 function Factory.applyLoadout(record, actor, descriptor)
@@ -3635,7 +3677,7 @@ function Factory.applyLoadout(record, actor, descriptor)
     touchPresentationStage(record, "ready", "applyLoadout", true)
 end
 
-local function classifyBanditsProbeNetEffect(beforeAppearance, directAppearance, afterAppearance, bridge)
+local function classifyShellProbeNetEffect(beforeAppearance, directAppearance, afterAppearance, bridge)
     local beforeSignature = appearanceSignature(beforeAppearance)
     local directSignature = appearanceSignature(directAppearance)
     local afterSignature = appearanceSignature(afterAppearance)
@@ -3664,14 +3706,14 @@ local function classifyBanditsProbeNetEffect(beforeAppearance, directAppearance,
     return "ambiguous"
 end
 
-function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options)
+function Factory.applyManagedShellVisualProbe(record, actor, descriptor, options)
     if not actor then
-        print("[LWN][BanditsFactory] stage=applyBanditsStyleVisualProbe.actor_nil | source=applyBanditsStyleVisualProbe | npcId=nil | objectRef=nil | count=nil | detail=actor=nil")
+        print("[LWN][ShellVisualFactory] stage=applyManagedShellVisualProbe.actor_nil | source=applyManagedShellVisualProbe | npcId=nil | objectRef=nil | count=nil | detail=actor=nil")
         return false, "actor=nil"
     end
 
     local modData = protectedCall(actor, "getModData")
-    local probeSource = options and options.source or "applyBanditsStyleVisualProbe"
+    local probeSource = options and options.source or "applyManagedShellVisualProbe"
     local beforeAppearance = appearanceSnapshot(actor)
     local beforeSignature = appearanceSignature(beforeAppearance)
     local desc = descriptor or protectedCall(actor, "getDescriptor")
@@ -3682,15 +3724,15 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
     end
     if not desc then
         if modData then
-            modData.LWN_BanditsVisualProbe = true
-            modData.LWN_BanditsVisualProbeApplied = false
-            modData.LWN_BanditsVisualProbeSource = probeSource
-            modData.LWN_BanditsVisualProbeAt = worldAgeHours()
-            modData.LWN_BanditsVisualProbeNetEffect = "descriptor_missing"
-            modData.LWN_BanditsVisualProbeDescriptorMode = "descriptor_missing"
+            modData.LWN_ShellVisualProbe = true
+            modData.LWN_ShellVisualProbeApplied = false
+            modData.LWN_ShellVisualProbeSource = probeSource
+            modData.LWN_ShellVisualProbeAt = worldAgeHours()
+            modData.LWN_ShellVisualProbeNetEffect = "descriptor_missing"
+            modData.LWN_ShellVisualProbeDescriptorMode = "descriptor_missing"
         end
-        logBanditsFactory(
-            "applyBanditsStyleVisualProbe.descriptor_missing",
+        logShellVisualFactory(
+            "applyManagedShellVisualProbe.descriptor_missing",
             record,
             actor,
             probeSource,
@@ -3704,8 +3746,8 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
     local itemVisuals = safeActorItemVisuals(actor)
     local wornItems = safeActorWornItems(actor)
 
-    logBanditsFactory(
-        "applyBanditsStyleVisualProbe.enter",
+    logShellVisualFactory(
+        "applyManagedShellVisualProbe.enter",
         record,
         actor,
         probeSource,
@@ -3730,7 +3772,7 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
     applyFemaleFlags(actor, record and record.identity and record.identity.female == true)
     protectedCall(actor, "setHealth", record and record.stats and record.stats.health or protectedCall(actor, "getHealth"))
 
-    local activeDescriptor, preBind = materializeDescriptorVisual(record or {}, actor, desc, "bandits_stage1_pre_clothing", {
+    local activeDescriptor, preBind = materializeDescriptorVisual(record or {}, actor, desc, "shell_stage1_pre_clothing", {
         dressup = true,
         initSpriteParts = true,
     })
@@ -3760,14 +3802,14 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
     end
 
     ensureVisibleClothing(actor)
-    local finalizedDescriptor, finalized = materializeDescriptorVisual(record or {}, actor, activeDescriptor, "bandits_stage1_post_clothing", {
+    local finalizedDescriptor, finalized = materializeDescriptorVisual(record or {}, actor, activeDescriptor, "shell_stage1_post_clothing", {
         dressup = false,
         initSpriteParts = true,
     })
     local directAppearance = appearanceSnapshot(actor)
     local directSignature = appearanceSignature(directAppearance)
-    logBanditsFactory(
-        "applyBanditsStyleVisualProbe.after_direct_copy",
+    logShellVisualFactory(
+        "applyManagedShellVisualProbe.after_direct_copy",
         record,
         actor,
         probeSource,
@@ -3788,8 +3830,8 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
     )
 
     local bridge = bridgeWornItemsToItemVisuals(actor)
-    logBanditsFactory(
-        "applyBanditsStyleVisualProbe.after_bridge",
+    logShellVisualFactory(
+        "applyManagedShellVisualProbe.after_bridge",
         record,
         actor,
         probeSource,
@@ -3799,10 +3841,10 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
     refreshActorPresentation(actor)
     local afterAppearance = appearanceSnapshot(actor)
     local afterSignature = appearanceSignature(afterAppearance)
-    local netEffect = classifyBanditsProbeNetEffect(beforeAppearance, directAppearance, afterAppearance, bridge)
+    local netEffect = classifyShellProbeNetEffect(beforeAppearance, directAppearance, afterAppearance, bridge)
     stampAppearanceDiff(record, actor, probeSource, beforeAppearance, afterAppearance)
-    logBanditsFactory(
-        "applyBanditsStyleVisualProbe.after_refresh",
+    logShellVisualFactory(
+        "applyManagedShellVisualProbe.after_refresh",
         record,
         actor,
         probeSource,
@@ -3819,26 +3861,26 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
     )
 
     if modData then
-        modData.LWN_BanditsVisualProbe = true
-        modData.LWN_BanditsVisualProbeApplied = true
-        modData.LWN_BanditsVisualProbeSource = probeSource
-        modData.LWN_BanditsVisualProbeAt = worldAgeHours()
-        modData.LWN_BanditsVisualProbeBridge = bridge and bridge.mode or "none"
-        modData.LWN_BanditsVisualProbeDescriptorMode = descriptorMode
-        modData.LWN_BanditsVisualProbeBeforeSignature = beforeSignature
-        modData.LWN_BanditsVisualProbeDirectSignature = directSignature
-        modData.LWN_BanditsVisualProbeAfterSignature = afterSignature
-        modData.LWN_BanditsVisualProbeDirectRole = directAppearance and directAppearance.role or nil
-        modData.LWN_BanditsVisualProbeAfterRole = afterAppearance and afterAppearance.role or nil
-        modData.LWN_BanditsVisualProbeDirectItemVisuals = directAppearance and directAppearance.itemVisuals or nil
-        modData.LWN_BanditsVisualProbeDirectWornItems = directAppearance and directAppearance.wornItems or nil
-        modData.LWN_BanditsVisualProbeAfterItemVisuals = afterAppearance and afterAppearance.itemVisuals or nil
-        modData.LWN_BanditsVisualProbeAfterWornItems = afterAppearance and afterAppearance.wornItems or nil
-        modData.LWN_BanditsVisualProbeNetEffect = netEffect
+        modData.LWN_ShellVisualProbe = true
+        modData.LWN_ShellVisualProbeApplied = true
+        modData.LWN_ShellVisualProbeSource = probeSource
+        modData.LWN_ShellVisualProbeAt = worldAgeHours()
+        modData.LWN_ShellVisualProbeBridge = bridge and bridge.mode or "none"
+        modData.LWN_ShellVisualProbeDescriptorMode = descriptorMode
+        modData.LWN_ShellVisualProbeBeforeSignature = beforeSignature
+        modData.LWN_ShellVisualProbeDirectSignature = directSignature
+        modData.LWN_ShellVisualProbeAfterSignature = afterSignature
+        modData.LWN_ShellVisualProbeDirectRole = directAppearance and directAppearance.role or nil
+        modData.LWN_ShellVisualProbeAfterRole = afterAppearance and afterAppearance.role or nil
+        modData.LWN_ShellVisualProbeDirectItemVisuals = directAppearance and directAppearance.itemVisuals or nil
+        modData.LWN_ShellVisualProbeDirectWornItems = directAppearance and directAppearance.wornItems or nil
+        modData.LWN_ShellVisualProbeAfterItemVisuals = afterAppearance and afterAppearance.itemVisuals or nil
+        modData.LWN_ShellVisualProbeAfterWornItems = afterAppearance and afterAppearance.wornItems or nil
+        modData.LWN_ShellVisualProbeNetEffect = netEffect
     end
 
-    logBanditsFactory(
-        "applyBanditsStyleVisualProbe.ready",
+    logShellVisualFactory(
+        "applyManagedShellVisualProbe.ready",
         record,
         actor,
         probeSource,
@@ -3855,7 +3897,7 @@ function Factory.applyBanditsStyleVisualProbe(record, actor, descriptor, options
     )
 
     return true, string.format(
-        "bandits_stage1_visual_pass descriptorMode=%s before=%s direct=%s after=%s bridge=%s effect=%s",
+        "shell_stage1_visual_pass descriptorMode=%s before=%s direct=%s after=%s bridge=%s effect=%s",
         tostring(descriptorMode),
         tostring(beforeSignature),
         tostring(directSignature),
