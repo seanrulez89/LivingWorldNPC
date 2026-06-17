@@ -30,7 +30,7 @@
   for real player/world item transfer or explicit debug-only grants.
 
 ## Domain ownership
-- Use `docs/DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md` as the current
+- Use `docs/current/DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md` as the current
   workstream and shared-contract rulebook.
 - Main integration authority stays in this thread/agent unless the user
   explicitly delegates a narrow subtask.

@@ -9,7 +9,7 @@
 ## 현재 대체 기준
 
 현재 구현과 테스트 기준은
-`docs/MANAGED_ISOZOMBIE_INDEPENDENCE_2026-06-16.md`가 우선한다.
+`docs/current/MANAGED_ISOZOMBIE_INDEPENDENCE_2026-06-16.md`가 우선한다.
 
 - 활성 companion carrier는 `isozombie`다.
 - Bandits brain, task, cache, `AreEnemies`, `ApplyVisuals` wrapper는 현재

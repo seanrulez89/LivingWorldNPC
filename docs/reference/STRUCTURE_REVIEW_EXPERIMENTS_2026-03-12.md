@@ -5,9 +5,9 @@ Rule: 이번 문서는 "해결 보고"가 아니라 "판정 가능한 실험 묶
 
 Related inputs:
 
-- `docs/OFFICIAL_BUILD42_API_AUDIT_2026-03-12.md`
-- `docs/LWN_BUILD42_DECISION_MATRIX_2026-03-12.md`
-- `docs/WORK_NOTES_2026-03-11.md`
+- `docs/reference/OFFICIAL_BUILD42_API_AUDIT_2026-03-12.md`
+- `docs/reference/LWN_BUILD42_DECISION_MATRIX_2026-03-12.md`
+- `docs/work-notes/WORK_NOTES_2026-03-11.md`
 - `LWN_SP_TESTING.md`
 
 ## 연결 지도

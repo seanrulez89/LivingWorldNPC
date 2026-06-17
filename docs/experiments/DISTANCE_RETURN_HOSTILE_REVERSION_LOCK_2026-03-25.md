@@ -20,12 +20,12 @@ It is **live shell behavior authority + object/record separation after recovery/
 
 ## Reference context used in this pass
 
-- `docs/BUILD42_ISOZOMBIE_NPC_WEB_MEMO_2026-03-20.md`
+- `docs/reference/BUILD42_ISOZOMBIE_NPC_WEB_MEMO_2026-03-20.md`
   - zombie behavior control is distributed (no single-flag fix)
   - `setTargetSeenTime`, useful/useless, fake-dead/crawler posture controls are relevant
-- `docs/REFERENCE_CORPUS_ISOZOMBIE_AUDIT_2026-03-20.md`
+- `docs/reference/REFERENCE_CORPUS_ISOZOMBIE_AUDIT_2026-03-20.md`
   - Bandits-style shell suppression uses bundled controls (`NoLungeTarget`, `setNoTeeth`, walk-type, voice/audio handling)
-- `docs/LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
+- `docs/reference/LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
   - this is an illusion-maintenance / continuity-control problem, not one-shot conversion
 
 ---

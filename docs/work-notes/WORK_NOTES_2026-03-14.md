@@ -32,10 +32,10 @@ This file is for work performed on 2026-03-14 only.
   - the current highest-priority blocker
   - the strongest current unverified hypothesis
   - the recommended next manual experiment order
-  - `docs/TEST_LOG_HISTORY.md` as recommended reading
+  - `docs/testing/TEST_LOG_HISTORY.md` as recommended reading
 - Updated `docs/README.md` to surface the current blocker/next-spike guidance and include this new dated work-notes file.
 - Updated `AGENTS.md` wording so the repo root guidance is tooling/agent-neutral instead of Codex-specific.
-- Updated `docs/GIT_WORKFLOW_2026-03-11.md` wording so the workflow rule reads as a general project rule rather than a Codex-only one.
+- Updated `docs/workflow/GIT_WORKFLOW_2026-03-11.md` wording so the workflow rule reads as a general project rule rather than a Codex-only one.
 
 ## 2026-03-14 IsoPlayer hardening pass
 - Performed a direct code pass focused on whether the current `IsoPlayer` route deserves one more serious attempt before abandonment.
@@ -48,7 +48,7 @@ This file is for work performed on 2026-03-14 only.
   - `./scripts/validate-wsl.sh`
   - `luac -p` passed for all changed Lua files
 - New document:
-  - `docs/ISO_PLAYER_HARDENING_2026-03-14.md`
+  - `docs/experiments/ISO_PLAYER_HARDENING_2026-03-14.md`
 
 ## 2026-03-14 cleanup NPE hardening pass
 - Investigated the post-delete crash observed after debug-removing a live embodied NPC.
@@ -65,7 +65,7 @@ This file is for work performed on 2026-03-14 only.
 - Validation performed:
   - `./scripts/validate-wsl.sh`
 - New document:
-  - `docs/CLEANUP_NPE_HARDENING_2026-03-14.md`
+  - `docs/experiments/CLEANUP_NPE_HARDENING_2026-03-14.md`
 
 ## 2026-03-14 debug delete combat guard pass
 - Simplified the operator contract for debug deletion after combat-time delete continued crashing even with deferred cleanup hardening.
@@ -81,7 +81,7 @@ This file is for work performed on 2026-03-14 only.
   - `debug_delete` now bypasses deferred cleanup in `ActorFactory.cleanupActor()`
   - `DebugTools.deleteNpcById()` now blocks combat-time delete and emits a user-facing reason
 - New document:
-  - `docs/DEBUG_DELETE_COMBAT_GUARD_2026-03-14.md`
+  - `docs/experiments/DEBUG_DELETE_COMBAT_GUARD_2026-03-14.md`
 
 ## 2026-03-14 log quality tuning pass
 - Applied a small log-only cleanup pass after delete behavior stabilized.
@@ -92,7 +92,7 @@ This file is for work performed on 2026-03-14 only.
   - reduce noise
   - preserve the more meaningful cleanup traces
 - New document:
-  - `docs/LOG_QUALITY_TUNING_2026-03-14.md`
+  - `docs/testing/LOG_QUALITY_TUNING_2026-03-14.md`
 
 ## 2026-03-14 IsoPlayer exit planning pass
 - Wrote a migration-oriented architecture note for the post-`IsoPlayer` phase.
@@ -103,7 +103,7 @@ This file is for work performed on 2026-03-14 only.
   - evaluate `IsoZombie` as a more engine-native visible-world carrier spike if human-carrier support remains weak
   - prefer a long-term carrier-adapter boundary so embodiment can change without rewriting simulation state
 - New document:
-  - `docs/ISOPLAYER_EXIT_PLAN_2026-03-14.md`
+  - `docs/plans/ISOPLAYER_EXIT_PLAN_2026-03-14.md`
 
 ## 2026-03-14 carrier adapter draft pass
 - Added the first adapter boundary intended to separate canonical NPC state from embodied world-carrier choice.
@@ -116,7 +116,7 @@ This file is for work performed on 2026-03-14 only.
   - this is a structural bridge, not a full migration yet
   - current embodiment logic still largely runs through legacy paths, but the repo now has a concrete place to move spawn/sync/retire behavior into
 - New document:
-  - `docs/CARRIER_ADAPTER_DRAFT_2026-03-14.md`
+  - `docs/plans/CARRIER_ADAPTER_DRAFT_2026-03-14.md`
 
 ## 2026-03-14 carrier adapter migration pass
 - Performed the first real routing pass from direct legacy actor calls into the carrier adapter.
@@ -128,7 +128,7 @@ This file is for work performed on 2026-03-14 only.
   - event-hook sync path now prefers adapter sync
   - debug wipe fallback now prefers adapter retire
 - New document:
-  - `docs/CARRIER_ADAPTER_MIGRATION_PASS_2026-03-14.md`
+  - `docs/experiments/CARRIER_ADAPTER_MIGRATION_PASS_2026-03-14.md`
 - Important scope note:
   - this is still not the full migration
   - legacy `ActorFactory` / `ActorSync` still sit behind the current `isoplayer` carrier implementation
@@ -145,7 +145,7 @@ This file is for work performed on 2026-03-14 only.
   - try `SurvivorFactory.InstansiateInCell(...)`
   - then several `IsoSurvivor.new(...)` signatures
 - New document:
-  - `docs/CARRIER_ISOSURVIVOR_SPIKE_2026-03-14.md`
+  - `docs/experiments/CARRIER_ISOSURVIVOR_SPIKE_2026-03-14.md`
 
 ## 2026-03-14 IsoSurvivor reject cleanup follow-up
 - Applied a tiny follow-up patch after reviewing the remaining `IsoSurvivor` reject-path error.
@@ -158,14 +158,14 @@ This file is for work performed on 2026-03-14 only.
 ## 2026-03-14 IsoZombie spike planning
 - Wrote the next carrier experiment plan targeting `IsoZombie` as a more engine-native visible-world carrier candidate.
 - New document:
-  - `docs/CARRIER_ISOZOMBIE_SPIKE_PLAN_2026-03-14.md`
+  - `docs/plans/CARRIER_ISOZOMBIE_SPIKE_PLAN_2026-03-14.md`
 
 ## 2026-03-14 carrier experiment result consolidation
 - Confirmed current standing after live testing:
   - `IsoPlayer` still spawns and deletes stably enough to test, but remains transparent while alive
   - `IsoSurvivor` no longer crashes the game after reject-path hardening, but still fails as a runtime-ready carrier and is blocked before embodiment proceeds
 - Wrote a consolidated result summary and verdict document:
-  - `docs/CARRIER_EXPERIMENT_RESULTS_2026-03-14.md`
+  - `docs/experiments/CARRIER_EXPERIMENT_RESULTS_2026-03-14.md`
 - Current practical direction:
   - keep the adapter/canonical architecture
   - stop treating `IsoSurvivor` as the likely next carrier
@@ -182,7 +182,7 @@ This file is for work performed on 2026-03-14 only.
 - Important implementation choice:
   - used `addZombiesInOutfit(...)` rather than guessing a low-level `IsoZombie.new(...)` path, because the goal is a world-ready visible actor proof-of-life
 - New document:
-  - `docs/CARRIER_ISOZOMBIE_SPIKE_IMPL_2026-03-14.md`
+  - `docs/experiments/CARRIER_ISOZOMBIE_SPIKE_IMPL_2026-03-14.md`
 
 ## 2026-03-14 IsoZombie resolve hardening pass
 - After the first visible `IsoZombie` proof-of-life result, the next blocker turned out to be actor continuity rather than spawn viability.
@@ -192,7 +192,7 @@ This file is for work performed on 2026-03-14 only.
   - on-tick logic can recover from the carrier handle if normal actor resolution briefly fails
   - `Embody.getUsableActorByNpcId()` now respects carrier usability before older managed-actor assumptions
 - New document:
-  - `docs/CARRIER_ISOZOMBIE_RESOLVE_HARDENING_2026-03-14.md`
+  - `docs/experiments/CARRIER_ISOZOMBIE_RESOLVE_HARDENING_2026-03-14.md`
 
 ## 2026-03-14 IsoZombie sync/UI branching pass
 - After `IsoZombie` finally stayed visible in-world, the main blockers shifted to sync and interaction layers.
@@ -200,7 +200,7 @@ This file is for work performed on 2026-03-14 only.
   - `ActorSync.enforceEmbodiedFlags()` now branches for `carrierKind == isozombie` and skips human/player-specific setters like `setNPC()` that were causing repeated NPEs
   - context-menu targeting now distinguishes ordinary zombies from `LWN`-managed zombie carriers and can allow the managed carrier through the targetable-NPC path
 - New document:
-  - `docs/CARRIER_ISOZOMBIE_SYNC_UI_BRANCHING_2026-03-14.md`
+  - `docs/experiments/CARRIER_ISOZOMBIE_SYNC_UI_BRANCHING_2026-03-14.md`
 
 ## 2026-03-14 IsoZombie managed-target finalization
 - After `IsoZombie` became visible, persistent, and error-light, the remaining blocker for interaction was the final managed-actor check.
@@ -209,7 +209,7 @@ This file is for work performed on 2026-03-14 only.
   - managed zombie carriers are no longer required to satisfy human body/inventory assumptions just to be considered valid managed actors
   - context-target rejection reason for managed zombies is now more specific when they still fail finalization
 - New document:
-  - `docs/CARRIER_ISOZOMBIE_MANAGED_TARGET_FINALIZATION_2026-03-14.md`
+  - `docs/experiments/CARRIER_ISOZOMBIE_MANAGED_TARGET_FINALIZATION_2026-03-14.md`
 
 ## 2026-03-14 IsoZombie success consolidation
 - Confirmed the first genuinely successful `IsoZombie` shell result:
@@ -219,7 +219,7 @@ This file is for work performed on 2026-03-14 only.
   - delete safe
   - no major runtime errors in the latest stable test
 - New document:
-  - `docs/CARRIER_ISOZOMBIE_SUCCESS_RESULT_2026-03-14.md`
+  - `docs/experiments/CARRIER_ISOZOMBIE_SUCCESS_RESULT_2026-03-14.md`
 
 ## 2026-03-14 trust-gated hostility groundwork
 - Added the first relationship-driven combat policy helper instead of hardcoding permanent friendliness or permanent hostility.
@@ -230,7 +230,7 @@ This file is for work performed on 2026-03-14 only.
   - this is policy groundwork only
   - it does not yet fully control every engine-level player attack or hostile-targeting decision
 - New document:
-  - `docs/CARRIER_ISOZOMBIE_TRUST_HOSTILITY_2026-03-14.md`
+  - `docs/experiments/CARRIER_ISOZOMBIE_TRUST_HOSTILITY_2026-03-14.md`
 
 ## 2026-03-14 IsoZombie hostility exploration pass
 - Extended the trust-gated hostility groundwork into the carrier shell itself.
@@ -252,7 +252,7 @@ This file is for work performed on 2026-03-14 only.
   - this still does not guarantee final engine-level suppression of player direct attacks against friendly shells
   - that requires a narrower control point later
 - New document:
-  - `docs/CARRIER_ISOZOMBIE_HOSTILITY_EXPLORATION_2026-03-14.md`
+  - `docs/experiments/CARRIER_ISOZOMBIE_HOSTILITY_EXPLORATION_2026-03-14.md`
 
 ## 2026-03-14 friendly-shell attack suppression probe
 - Added a narrow follow-up probe for friendly-shell damage suppression using a reference-backed control point.
@@ -262,12 +262,12 @@ This file is for work performed on 2026-03-14 only.
 - Important reason for this approach:
   - it is much easier to reason about and revert than trying to intercept every player attack path immediately
 - New document:
-  - `docs/CARRIER_ISOZOMBIE_FRIENDLY_ATTACK_SUPPRESSION_2026-03-14.md`
+  - `docs/experiments/CARRIER_ISOZOMBIE_FRIENDLY_ATTACK_SUPPRESSION_2026-03-14.md`
 
 ## 2026-03-14 next-session handoff consolidation
 - Added a dedicated restart/handoff document so next-week work can resume without re-deriving the current state.
 - New document:
-  - `docs/NEXT_SESSION_HANDOFF_2026-03-14.md`
+  - `docs/handoffs/NEXT_SESSION_HANDOFF_2026-03-14.md`
 - Most important practical reminders captured there:
   - resume from branch `spike/isozombie`
   - `IsoZombie` is currently the strongest carrier candidate

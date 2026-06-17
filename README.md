@@ -86,12 +86,15 @@ bash scripts/bootstrap-lua-mac.sh
 Start here if you want context:
 
 - `docs/README.md`
-- `docs/DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md`
-- `docs/MANAGED_ISOZOMBIE_INDEPENDENCE_2026-06-16.md`
-- `docs/COMPANION_SQUAD_COMBAT_FOUNDATION_PLAN_2026-06-14.md` historical only
-- `docs/BANDITS_CONTROLLED_NPC_IMPLEMENTATION_2026-06-13.md` historical only
-- `docs/TEST_LOG_HISTORY.md`
-- `docs/REFERENCE_MODS_LOCAL_CODE_REVIEW_2026-06-13.md`
+- `docs/current/DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md`
+- `docs/current/MANAGED_ISOZOMBIE_INDEPENDENCE_2026-06-16.md`
+- `docs/current/MANAGED_ISOZOMBIE_API_VERIFICATION_2026-06-17.md`
+- `docs/current/WORK_SUMMARY_2026-06-17_INDEPENDENT_MANAGED_ISOZOMBIE.md`
+- `docs/current/LOGGING_AND_TEST_EVIDENCE_2026-06-16.md`
+- `docs/retired-bandits/COMPANION_SQUAD_COMBAT_FOUNDATION_PLAN_2026-06-14.md` historical only
+- `docs/retired-bandits/BANDITS_CONTROLLED_NPC_IMPLEMENTATION_2026-06-13.md` historical only
+- `docs/testing/TEST_LOG_HISTORY.md`
+- `docs/reference/REFERENCE_MODS_LOCAL_CODE_REVIEW_2026-06-13.md`
 
 ## License / publishing note
 

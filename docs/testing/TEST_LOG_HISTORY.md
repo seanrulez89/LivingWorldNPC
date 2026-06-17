@@ -73,7 +73,7 @@ For every new test cycle, append a new section using this structure:
 
 ### Code or document changes that followed
 - a new late-session structural patch was prepared to create a **Bandits-first build lane** for the minimal dummy path.
-- documentation was added in `docs/BANDITS_FIRST_BUILD_LANE_2026-03-29.md` so the next session does not confuse the checkpoint patch with the later structural pivot.
+- documentation was added in `docs/retired-bandits/BANDITS_FIRST_BUILD_LANE_2026-03-29.md` so the next session does not confuse the checkpoint patch with the later structural pivot.
 
 ### Next thing to verify
 - whether the new Bandits-first build lane changes the final post-flags role away from `reanimated_zombie`.
@@ -249,7 +249,7 @@ For every new test cycle, append a new section using this structure:
 
 ### Code or document changes that followed
 - 이번 턴은 런타임 코드 수정 없이, 최신 로그 분석 결과를 문서에만 반영했다.
-- `docs/WORK_NOTES_2026-03-11.md`에 최신 테스트 기준 남은 1순위와 후속 개선 포인트를 추가했다.
+- `docs/work-notes/WORK_NOTES_2026-03-11.md`에 최신 테스트 기준 남은 1순위와 후속 개선 포인트를 추가했다.
 
 ### Next thing to verify
 - alive 상태의 `IsoPlayer` embodied actor가 실제 render/model registration에 올라가는지 별도 trace를 추가해 확인한다.
@@ -346,12 +346,12 @@ For every new test cycle, append a new section using this structure:
 - `d90b005` blocked neutralized combat churn and added real appearance diff logging
 - `9305213` applied a Bandits-inspired persistent illusion package (voice prefix, walk type, no-lunge, hit-reaction guard, emitter suppression)
 - research synthesis was also expanded today across:
-  - `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
-  - `LWN_ISOZOMBIE_CLEANUP_TRIAGE_2026-03-21.md`
-  - `REFERENCE_CORPUS_ISOZOMBIE_AUDIT_2026-03-20.md`
-  - `BUILD42_ISOZOMBIE_NPC_WEB_MEMO_2026-03-20.md`
-  - `BUILD41_78_JAVADOC_SKEPTICAL_AUDIT_FOR_BUILD42_ISOZOMBIE_SHELL_2026-03-20.md`
-  - `PZWIKI_BUILD42_ISOZOMBIE_SHELL_REVIEW_2026-03-20.md`
+  - `docs/reference/LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
+  - `docs/reference/LWN_ISOZOMBIE_CLEANUP_TRIAGE_2026-03-21.md`
+  - `docs/reference/REFERENCE_CORPUS_ISOZOMBIE_AUDIT_2026-03-20.md`
+  - `docs/reference/BUILD42_ISOZOMBIE_NPC_WEB_MEMO_2026-03-20.md`
+  - `docs/reference/BUILD41_78_JAVADOC_SKEPTICAL_AUDIT_FOR_BUILD42_ISOZOMBIE_SHELL_2026-03-20.md`
+  - `docs/reference/PZWIKI_BUILD42_ISOZOMBIE_SHELL_REVIEW_2026-03-20.md`
 
 ### Next thing to verify
 - split humanization into an explicit first-apply phase versus later maintenance reassertion, so the first forced state change is no longer the moment where the shell visibly "changes clothes"
@@ -420,7 +420,7 @@ For every new test cycle, append a new section using this structure:
 - forced hold-position/friendly harness posture for the test shell
 - added identity-lock-aware maintenance behavior so test maintenance does not eagerly behave like re-randomization
 - expanded debug output with test harness metadata and locked signature reporting
-- documented the new test lane in `TEST_IDENTITY_HARNESS_2026-03-25.md`
+- documented the new test lane in `docs/testing/TEST_IDENTITY_HARNESS_2026-03-25.md`
 
 ### Next thing to verify
 - spawn a sterile test NPC and confirm the area is visibly cleaner of ordinary zombies
@@ -452,7 +452,7 @@ For every new test cycle, append a new section using this structure:
 - enforced quarantine again during embodied ticks so action/combat drift is less able to re-wild the shell
 - broadened actor recovery signals to include last known id / harness label / carrier-handle identity
 - preserved hidden alive records' last known position for continuity and future recovery
-- documented the pass in `QUARANTINE_TETHER_HARDENING_2026-03-25.md`
+- documented the pass in `docs/experiments/QUARANTINE_TETHER_HARDENING_2026-03-25.md`
 
 ### Next thing to verify
 - confirm spawn-time zombie audio leak is reduced by the new emergency quarantine path
@@ -480,7 +480,7 @@ For every new test cycle, append a new section using this structure:
 - added stronger recovery-time re-neutralization in the event layer
 - made quarantined shells skip normal goal/action progression more aggressively
 - blocked hostile forcing via debug policy tools while quarantine is active by default
-- documented the pass in `BEHAVIOR_AUTHORITY_LOCK_2026-03-25.md`
+- documented the pass in `docs/experiments/BEHAVIOR_AUTHORITY_LOCK_2026-03-25.md`
 
 ### Next thing to verify
 - confirm distance-return no longer restores obvious hostile pursuit/attack under quarantine
@@ -512,7 +512,7 @@ For every new test cycle, append a new section using this structure:
 - nearby ordinary-zombie cleanup now preserves any zombie-like object with LWN identity markers, not just currently managed actors
 - added `Dump Nearby Zombie-like Objects` so tests can inspect every nearby zombie-like body and its LWN markers/cleanup-candidate status
 - changed identity-lock maintenance to avoid blindly refreshing presentation when a locked shell is already in mismatch, recording `maintenance_identity_lock_restore_pending` instead
-- documented the pass in `APPEARANCE_LOCK_RESTORE_AND_CENSUS_2026-03-25.md`
+- documented the pass in `docs/experiments/APPEARANCE_LOCK_RESTORE_AND_CENSUS_2026-03-25.md`
 
 ### Next thing to verify
 - force the same hostile→friendly-style policy sequence and see whether appearance now stabilizes earlier
@@ -537,7 +537,7 @@ For every new test cycle, append a new section using this structure:
 - hardened actor_lost path to salvage likely live shell actor references before cleanup finalization
 - strengthened debug nearby-zombie cleanup to preserve objects bound to live records, not just objects with obvious LWN markers
 - expanded debug telemetry with attack-lock fields
-- documented consolidation in `DISTANCE_RETURN_HOSTILE_REVERSION_LOCK_2026-03-25.md`
+- documented consolidation in `docs/experiments/DISTANCE_RETURN_HOSTILE_REVERSION_LOCK_2026-03-25.md`
 
 ### Next thing to verify
 - after distance-return, confirm whether attack starts before attack-lock expiry
@@ -559,7 +559,7 @@ For every new test cycle, append a new section using this structure:
   - continue again after return -> return-phase dumps + zombie census + last actor failure
 - added explicit in-game prompt messages telling the human what to observe and when to move away / return
 - tracked the automation scenario by concrete `npcId` instead of relying purely on repeated nearest-target clicking
-- documented the workflow in `MANUAL_ASSISTED_AUTOMATED_TEST_RUNNER_2026-03-25.md`
+- documented the workflow in `docs/testing/MANUAL_ASSISTED_AUTOMATED_TEST_RUNNER_2026-03-25.md`
 
 ### Next thing to verify
 - confirm the automated sequence targets the intended test NPC consistently across all three phases
@@ -835,8 +835,8 @@ For every new test cycle, append a new section using this structure:
 
 ### Code or document changes that followed
 - documented the retest and current interpretation in:
-  - `docs/MINIMAL_DUMMY_MOVE_IDLE_HANDOFF_RETEST_2026-03-28.md`
-  - `docs/NEXT_SESSION_HANDOFF_2026-03-28.md`
+  - `docs/experiments/MINIMAL_DUMMY_MOVE_IDLE_HANDOFF_RETEST_2026-03-28.md`
+  - `docs/handoffs/NEXT_SESSION_HANDOFF_2026-03-28.md`
 
 ### Next thing to verify
 - keep `TEST 01~03` as the main validation lane
@@ -881,7 +881,7 @@ For every new test cycle, append a new section using this structure:
   - test whether `PresentationGuard`, zombie-coded role truth, or post-refresh overwrite is the final blocker
 
 ### Main planning doc added
-- `docs/OUR_APPROACH_FIRST_EXPERIMENT_PLAN_BEFORE_BANDITS_ADOPTION_2026-03-28.md`
+- `docs/retired-bandits/OUR_APPROACH_FIRST_EXPERIMENT_PLAN_BEFORE_BANDITS_ADOPTION_2026-03-28.md`
 
 ### Main practical takeaway
 - the immediate goal is **not** “become more like Bandits”
@@ -916,7 +916,7 @@ For every new test cycle, append a new section using this structure:
 4. only after appearance truth improves, run dedicated locomotion-readability tests
 
 ### Main new planning document added
-- `docs/END_OF_DAY_STRATEGY_AND_EXPERIMENT_ORDER_2026-03-28.md`
+- `docs/work-notes/END_OF_DAY_STRATEGY_AND_EXPERIMENT_ORDER_2026-03-28.md`
 
 ### Why this matters
 - the branch now has enough stability to support real causal learning
@@ -985,7 +985,7 @@ For every new test cycle, append a new section using this structure:
   - `cfd19d0` — `Let IsoSurvivor settle before rejecting`
   - `cfe0829` — `Skip unsupported visual APIs for IsoSurvivor`
 - Detailed same-day synthesis was preserved in:
-  - `docs/EXPERIMENT_REPORT_2026-03-29_ISOZOMBIE_ISOSURVIVOR.md`
+  - `docs/experiments/EXPERIMENT_REPORT_2026-03-29_ISOZOMBIE_ISOSURVIVOR.md`
 
 ### Next thing to verify
 - Disable / quarantine the `IsoSurvivor` debug test rail so future sessions do not casually re-trigger the engine crash path.
@@ -1080,8 +1080,8 @@ For every new test cycle, append a new section using this structure:
 - `acfe3f0` — `Trace IsoPlayer sprite slots before model add`
 - `ce88dbe` — `Use minimal IsoPlayer materialization call set`
 - End-of-day synthesis preserved in:
-  - `docs/EXPERIMENT_REPORT_2026-03-29_FULL_DAY_FINAL.md`
-  - updated `docs/NEXT_SESSION_HANDOFF_2026-03-29.md`
+  - `docs/experiments/EXPERIMENT_REPORT_2026-03-29_FULL_DAY_FINAL.md`
+  - updated `docs/handoffs/NEXT_SESSION_HANDOFF_2026-03-29.md`
 
 ### Next thing to verify
 - Do not restart next session by repeating the same plain `IsoZombie` / `IsoSurvivor` / unchanged `IsoPlayer` probes.
@@ -1127,7 +1127,7 @@ For every new test cycle, append a new section using this structure:
 - `14d0cb6` — `Track appearance overwrite cadence for dummy lane`
 - `7e65017` — `Add runtime-settle alive reset experiment`
 - documented package conclusion in:
-  - `docs/LAST_LWN_EXPERIMENT_PACKAGE_BEFORE_BANDITS_2026-03-29.md`
+  - `docs/retired-bandits/LAST_LWN_EXPERIMENT_PACKAGE_BEFORE_BANDITS_2026-03-29.md`
 
 ### Next thing to verify
 - If continuing `IsoZombie` work, avoid repeating these exact three experiments without a genuinely new mechanism.

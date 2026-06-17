@@ -95,8 +95,8 @@ Success is visual: the fresh actor must look human, even briefly. A mechanically
 
 ## Best source documents
 
-1. `docs/NEXT_SESSION_HANDOFF_2026-04-05.md`
-2. `docs/BANDITS_FIRST_BUILD_LANE_2026-03-29.md`
-3. `docs/CODE_AUDIT_2026-04-04.md`
-4. `docs/TEST_LOG_HISTORY.md`
+1. `docs/handoffs/NEXT_SESSION_HANDOFF_2026-04-05.md`
+2. `docs/retired-bandits/BANDITS_FIRST_BUILD_LANE_2026-03-29.md`
+3. `docs/reference/CODE_AUDIT_2026-04-04.md`
+4. `docs/testing/TEST_LOG_HISTORY.md`
 5. `LWN_SP_TESTING.md`

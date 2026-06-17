@@ -1,212 +1,106 @@
 # Docs Index
 
-This directory contains research notes, audits, workflow references, and experiment summaries for LivingWorldNPC.
+This directory keeps LivingWorldNPC design notes, research, test evidence, and
+historical experiment records. The docs are now grouped by purpose so current
+runtime guidance is not mixed with older investigation notes.
 
-## Current June 2026 foundation
+## Layout
 
-These documents supersede the March/April `IsoZombie` blocker notes for current
-development. Older documents remain useful historical research. The active test
-path is now LWN's own managed `IsoZombie` carrier with LWN-owned canonical state;
-Bandits-related notes are retained only as external reference and retired
-implementation history.
+| Folder | Count | Purpose |
+| --- | ---: | --- |
+| `current/` | 6 | Active June 2026 decisions, contracts, logging rules, and independent managed `IsoZombie` carrier notes. |
+| `reference/` | 20 | API audits, source maps, reference-mod reviews, and Build 42 research. |
+| `experiments/` | 36 | Historical implementation experiments and result notes. |
+| `handoffs/` | 10 | Restart context and next-session handoff files. |
+| `testing/` | 5 | Test history, manual test workflow, and test harness notes. |
+| `work-notes/` | 7 | Dated running notes and end-of-day summaries. |
+| `workflow/` | 3 | Git, branch, and local environment workflow notes. |
+| `plans/` | 7 | Historical plan documents and spike plans. |
+| `retired-bandits/` | 7 | Retired Bandits-backed plans and investigations. Preserved only as external reference/history. |
 
-- `DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md`
-  - current domain ownership, shared runtime contracts, and sub-agent work rules
-    for combat, status, inventory, personal history, and autonomous-feeling
-    behavior
-- `MANAGED_ISOZOMBIE_INDEPENDENCE_2026-06-16.md`
-  - current independence decision: default companions run through LWN's own
-    managed `IsoZombie` carrier, not an external NPC runtime
-- `LONG_TERM_NPC_VISION_2026-06-16.md`
-  - long-term design vision for player-like survivors, relationships,
-    narrative, gifts, betrayal, autonomous behavior guidelines, and vehicles
-- `LOGGING_AND_TEST_EVIDENCE_2026-06-16.md`
-  - current structured logging guide, console filtering commands, and manual
-    test evidence conventions
-- `COMPANION_SQUAD_COMBAT_FOUNDATION_PLAN_2026-06-14.md`
-  - retired Bandits-backed squad combat plan; useful for intent/policy history,
-    not as the current runtime design
-- `BANDITS_CONTROLLED_NPC_IMPLEMENTATION_2026-06-13.md`
-  - retired Bandits-backed controlled NPC implementation note
-- `BANDITS_FRIENDLY_DAMAGE_AND_RESPAWN_FAILURE_INVESTIGATION_2026-06-13.md`
-  - retired investigation of the former external-carrier damage/respawn failure
-- `REFERENCE_MODS_LOCAL_CODE_REVIEW_2026-06-13.md`
-  - local code review of reference mods downloaded through Steam
-- `WORKING_CONTEXT_2026-06-13.md`
-  - retired restart context from the June 2026 external-carrier experiment
+Root-level docs outside this folder are limited to project-facing files such as
+`README.md`, `AGENTS.md`, `LWN_SP_TDD.md`, and `LWN_SP_TESTING.md`.
 
-## Historical fresh synthesis / triage
+## Start Here
 
-The following March/April notes are preserved for research context. They may
-mention Bandits-led or Bandits-style experiments, but they are not current
-runtime instructions for the June 2026 independent carrier path.
+Read these first for the current project state:
 
-- `NEXT_SESSION_HANDOFF_2026-04-05.md`
-  - hard scope reset for the current branch: ignore return/recovery/walking for now, focus only on whether spawn-time Bandits-led build work can make the NPC read as human for even 1 second
-- `NEXT_SESSION_HANDOFF_2026-03-26.md`
-  - restart guide for the new movement-capable non-hostile shell pass: what landed, how the shell-mode split now works, and what to verify next in-game
-- `MOVEMENT_CAPABLE_NON_HOSTILE_SHELL_2026-03-26.md`
-  - implementation note for the new commandable non-hostile `IsoZombie` shell mode, record-side destination command state, and the numbered `TEST 01` to `TEST 04` automation flow
-- `NEXT_SESSION_HANDOFF_2026-03-25.md`
-  - end-of-day handoff for the branch after all 2026-03-25 runtime hardening/test work: what improved, what is still broken, and the recommended next-session priority order
-- `MANUAL_ASSISTED_AUTOMATED_TEST_RUNNER_2026-03-25.md`
-  - documents the new semi-automated debug workflow: scripted spawn/policy/dump phases, human observation prompts, and tracked test-state continuation across a distance-return loop
-- `DISTANCE_RETURN_HOSTILE_REVERSION_LOCK_2026-03-25.md`
-  - consolidates the latest hardening around return-path hostile reversion: recovery attack-quarantine windows, actor-lost salvage, bound-shell cleanup protection, and attack-lock telemetry
-- `POSTURE_IDLE_ANIM_EXPERIMENT_2026-03-25.md`
-  - documents the new anti-hunch experiment for `IsoZombie` shells: idle animator reset, animation-variable clearing, walk-type restamping, and posture telemetry
-- `APPEARANCE_LOCK_RESTORE_AND_CENSUS_2026-03-25.md`
-  - explains the next hardening step after split-body suspicion: conservative identity-lock mismatch handling, stricter cleanup protection for LWN-marked objects, and a nearby zombie-like census debug tool
-- `BEHAVIOR_AUTHORITY_LOCK_2026-03-25.md`
-  - explains the next hardening step after appearance stabilization: recovery-time hard re-neutralization, quarantine-side action suppression, and stronger behavior-authority locking for managed shells
-- `QUARANTINE_TETHER_HARDENING_2026-03-25.md`
-  - explains the next hardening step after identity collapse: spawn quarantine, stronger tick-side quarantine enforcement, actor recovery/tethering, and hidden-state last-known-position preservation
-- `TEST_IDENTITY_HARNESS_2026-03-25.md`
-  - rationale and implementation notes for the sterile test-lane harness: debug shell labeling, nearby world cleanup, hold-position policy override, and identity-lock-aware maintenance
-- `INITIAL_HUMANIZATION_SPLIT_IMPLEMENTATION_2026-03-24.md`
-  - implementation note for the first major structural split between spawn-time initial humanization and sync-time maintenance, including the new `ShellHumanizer` module and an in-game validation order
-- `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
-  - new master synthesis of the March 20 IsoZombie research set, including:
-    - executive verdict
-    - supported vs speculative boundaries
-    - Build 41 lessons vs Build 42 distrust points
-    - what the best reference mods actually prove
-    - why the problem is really human perception / illusion maintenance
-    - the current strongest architecture for `spike/isozombie`
-    - a phased, practical next-session experiment roadmap
-- `LWN_ISOZOMBIE_CLEANUP_TRIAGE_2026-03-21.md`
-  - conservative cleanup candidate review of the current codebase, grouped into:
-    - high-confidence safe-to-remove soon
-    - likely removable but confirm first
-    - suspicious but should not be removed yet
-- `LWN_BANDITS_1TO1_MINIMAL_COMPONENT_MAP_2026-03-21.md`
-  - historical external-reference structure map, useful only for comparing
-    missing orchestration concepts in an `IsoZombie` shell architecture
+- `current/DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md`
+  - active domain ownership, shared runtime contracts, and sub-agent work rules
+- `current/MANAGED_ISOZOMBIE_INDEPENDENCE_2026-06-16.md`
+  - current decision that default companions run through LWN's own managed
+    `IsoZombie` carrier
+- `current/MANAGED_ISOZOMBIE_API_VERIFICATION_2026-06-17.md`
+  - local JDK/`javap` verification and the confirmed vanilla/Bandits animation
+    contract difference
+- `current/WORK_SUMMARY_2026-06-17_INDEPENDENT_MANAGED_ISOZOMBIE.md`
+  - detailed summary of the independent carrier repair milestone
+- `current/LOGGING_AND_TEST_EVIDENCE_2026-06-16.md`
+  - current structured logging and manual test evidence guide
+- `current/LONG_TERM_NPC_VISION_2026-06-16.md`
+  - long-term design direction for player-like NPCs, relationships, narrative,
+    autonomy, gifts, betrayal, and vehicles
 
-## Historical March/April blocker notes
+## Current Test Evidence
 
-- These notes document the older `IsoZombie` shell investigation. They are no
-  longer the current test-path verdict.
-- For current branch-level judgment, start with the June 2026 foundation section
-  above.
-- The March/April immediate goal was spawn-time human appearance on an
-  `IsoZombie` shell. The current path has returned to an LWN-managed
-  `IsoZombie` carrier with LWN canonical state and command/combat execution
-  owned in-tree.
-- for older strategic background, `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md` is still useful historical context
-- the notes below are the 2026-03-20 session snapshot and are useful as historical context, not as the latest final verdict
-- at that time, the active carrier direction was `IsoZombie`, not `IsoPlayer`
-- the hybrid appearance experiment then ran on the live `IsoZombie` shell, but
-  still rendered through zombie presentation (`reanimated_zombie`, zombie body
-  skin)
-- relationship policy had started affecting live behavior in that line of
-  research: `hostile` could provoke pursuit/attack intent, while `friendly` /
-  `neutral` still suffered from movement-churn / partial-neutralization issues
-- the March 20 snapshot's most immediate technical blocker was a repeatable Java-side exception during relationship/trust sync:
-  - `NullPointerException: Cannot assign field "isNpc" because "this.player" is null`
-  - current code has since added zombie-carrier guards around those human-only setters; the master reference covers the newer architecture verdict
-- then-recommended manual experiments / fixes:
-  1. strengthen non-hostile movement suppression and trace the repeated `retreat` / deferred movement churn
-  2. probe the zombie presentation pipeline itself rather than only descriptor/human-visual shaping
-  3. keep validating shell identity continuity and UI framing rather than treating the problem as purely visual
+- `testing/TEST_LOG_HISTORY.md`
+  - append-only historical in-game test chain
+- `current/LOGGING_AND_TEST_EVIDENCE_2026-06-16.md`
+  - how to collect and read current structured logs
 
-## Start here
+## Current Reference Baseline
 
-- `ISO_PLAYER_HARDENING_2026-03-14.md`
-  - concrete code-level hardening pass for the current `IsoPlayer` route and what result should trigger abandonment
-- `CLEANUP_NPE_HARDENING_2026-03-14.md`
-  - safety hardening for live `IsoPlayer` debug cleanup after a `getCurrentSquare()==nil` crash during deletion
-- `DEBUG_DELETE_COMBAT_GUARD_2026-03-14.md`
-  - simplified delete contract: block debug delete during combat, allow immediate delete only outside combat
-- `LOG_QUALITY_TUNING_2026-03-14.md`
-  - small trace-noise cleanup for death waiting and trivial detached-self leftover snapshots
-- `ISOPLAYER_EXIT_PLAN_2026-03-14.md`
-  - what to keep, what to discard, and which carrier experiments to run after retiring `IsoPlayer`
-- `CARRIER_ADAPTER_DRAFT_2026-03-14.md`
-  - first adapter boundary draft plus the initial runtime-handle bridge for future carrier migration
-- `CARRIER_ADAPTER_MIGRATION_PASS_2026-03-14.md`
-  - first real spawn/sync/retire routing pass from legacy actor calls into the adapter
-- `CARRIER_ISOSURVIVOR_SPIKE_2026-03-14.md`
-  - proof-of-life `IsoSurvivor` carrier experiment, including constructor fallback strategy and test path
-- `CARRIER_ISOZOMBIE_SPIKE_PLAN_2026-03-14.md`
-  - planning document for the next embodied carrier experiment using `IsoZombie`
-- `CARRIER_EXPERIMENT_RESULTS_2026-03-14.md`
-  - consolidated result summary for the `IsoPlayer` and `IsoSurvivor` experiments, plus the current next-step verdict
-- `CARRIER_ISOZOMBIE_SPIKE_IMPL_2026-03-14.md`
-  - first implementation pass for the `IsoZombie` proof-of-life carrier experiment
-- `CARRIER_ISOZOMBIE_RESOLVE_HARDENING_2026-03-14.md`
-  - hardening pass for `IsoZombie` continuity: longer grace, carrier-aware resolve, and recovery from the carrier handle
-- `CARRIER_ISOZOMBIE_SYNC_UI_BRANCHING_2026-03-14.md`
-  - carrier-aware sync and UI targeting changes for `IsoZombie`, removing human-only setter assumptions and allowing managed zombie carriers through context targeting
-- `CARRIER_ISOZOMBIE_MANAGED_TARGET_FINALIZATION_2026-03-14.md`
-  - final managed-actor/targetability adjustment so `IsoZombie` carriers are no longer judged by human runtime-core rules
-- `CARRIER_ISOZOMBIE_SUCCESS_RESULT_2026-03-14.md`
-  - confirms the first successful visible, persistent, interactive `IsoZombie` shell result
-- `CARRIER_ISOZOMBIE_TRUST_HOSTILITY_2026-03-14.md`
-  - relationship-driven hostility policy groundwork for `IsoZombie`, preserving future betrayal design instead of hardcoding permanent safety
-- `CARRIER_ISOZOMBIE_HOSTILITY_EXPLORATION_2026-03-14.md`
-  - careful first pass applying relationship policy directly to zombie shell posture and hostile activation attempts
-- `CARRIER_ISOZOMBIE_FRIENDLY_ATTACK_SUPPRESSION_2026-03-14.md`
-  - minimal friendly-shell suppression test using `setGodMod(true)` only when policy disallows player attack
-- `WORK_NOTES_2026-03-20.md`
-  - running technical narrative for the March 20-21 `IsoZombie` spike, including debug forcing, hybrid appearance work, churn suppression, appearance diff logging, and the first persistent illusion package
-- `NEXT_SESSION_HANDOFF_2026-03-21.md`
-  - the detailed end-of-day restart guide after the March 21 spike, including commit sequence, what actually improved, what still reads zombie, and the recommended next code priorities
-- `NEXT_SESSION_HANDOFF_2026-03-14.md`
-  - earlier practical restart guide from the first visible `IsoZombie` success stage; useful historical context but superseded by the March 21 handoff
-- `ARCHITECTURE_VERDICT_2026-03-13.md`
-  - final judgment on whether the current architecture is still worth pushing
-- `INGAME_TEST_CHECKLIST_2026-03-13.md`
-  - must-run scenarios for the next in-game verdict pass
-- `LWN_BUILD42_DECISION_MATRIX_2026-03-12.md`
-  - condensed decision aid for what to trust, question, or test next
-- `STRUCTURE_REVIEW_EXPERIMENTS_2026-03-12.md`
-  - grouped experiment results for structure-level questions
-- `OFFICIAL_BUILD42_API_AUDIT_2026-03-12.md`
-  - comparison between current LWN patterns and official Build 42 API/lifecycle expectations
+- `reference/REFERENCE_MODS_LOCAL_CODE_REVIEW_2026-06-13.md`
+  - local review of Steam-downloaded reference mods
+- `reference/LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
+  - older but still useful master synthesis of the `IsoZombie` shell problem
+- `reference/LWN_BUILD42_DECISION_MATRIX_2026-03-12.md`
+  - compact Build 42 decision matrix
+- `reference/OFFICIAL_BUILD42_API_AUDIT_2026-03-12.md`
+  - official API/lifecycle audit
 
-## Build 42 knowledge / source mapping
+## Historical Material
 
-- `BUILD42_MODDING_KNOWLEDGE_MAP_2026-03-12.md`
-  - broad topic map of official Build 42 modding knowledge
-- `BUILD42_MODDING_SOURCE_REGISTER_2026-03-12.md`
-  - source register with official vs supporting references
+The March and April documents are preserved because they contain useful
+debugging evidence and rationale. They are not current runtime instructions.
 
-## Reference-study documents
+Important historical groups:
 
-- `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
-  - consolidated strategic reference that supersedes the need to read the four March 20 IsoZombie research docs separately before the next session
-- `LWN_ISOZOMBIE_CLEANUP_TRIAGE_2026-03-21.md`
-  - current cleanup/removal triage for stale carrier paths, legacy stubs, and risky human-first assumptions
-- `REFERENCE_CORPUS_ISOZOMBIE_AUDIT_2026-03-20.md`
-  - full-corpus rescan focused on `IsoZombie` NPC-shell embodiment, human-presentation tricks, lifecycle patterns, and Build 41 -> 42 portability clues
-- `BUILD42_ISOZOMBIE_NPC_WEB_MEMO_2026-03-20.md`
-  - official Build 42 docs + web-context memo focused on supported `IsoZombie` shell boundaries and Build 42 pooling risk
-- `BUILD41_78_JAVADOC_SKEPTICAL_AUDIT_FOR_BUILD42_ISOZOMBIE_SHELL_2026-03-20.md`
-  - skeptical read of Build 41.78 javadocs as a concept map, not as Build 42 implementation truth
-- `PZWIKI_BUILD42_ISOZOMBIE_SHELL_REVIEW_2026-03-20.md`
-  - wiki-driven review of the broader Build 42 modding lanes, especially UI/animation/audio/perception implications for a zombie-shell NPC
-- `REFERENCE_STUDY_2026-03-11.md`
-- `REFERENCE_STUDY_2026-03-12_BUILD41_LESSONS.md`
-- `LUA_FLOW_AUDIT_2026-03-11.md`
-- `REFERENCE_MODS_DEEP_ANALYSIS.txt` (repo root)
+- `experiments/`
+  - implementation experiments, many of which are superseded by the current
+    independent managed carrier path
+- `handoffs/`
+  - session restart notes; useful for reconstructing timeline, not for current
+    architecture decisions
+- `retired-bandits/`
+  - retired Bandits-backed implementation plans and investigations
 
-These documents summarize what was learned from reference mods and how those lessons may or may not apply to Build 42.
+## Bandits Boundary
 
-## Workflow / process docs
+Bandits-related documents are historical/reference material only.
 
-- `GIT_WORKFLOW_2026-03-11.md`
-  - git hygiene, validation workflow, snapshot-commit rule
-- `WORK_NOTES_2026-03-11.md`, `WORK_NOTES_2026-03-13.md`, `WORK_NOTES_2026-03-14.md`, `WORK_NOTES_2026-03-20.md`, ...
-  - date-matched work notes; each file should only contain work from its own date
-- `TEST_LOG_HISTORY.md`
-  - append-only in-game test history linking observation -> logs -> lesson -> fix -> next check
-- `CODEX_LOCAL_ENVIRONMENT_ACTIONS.md`
-  - local environment setup/actions used during development
+Current rules:
 
-## Reading guidance
+- default runtime must not require Bandits2
+- do not copy Bandits code or assets
+- use reference-mod findings only as engineering evidence
+- if an idea is adopted, reimplement it inside LWN with LWN-owned files,
+  contracts, and validation
 
-- If you want the quickest overview, start with the decision matrix.
-- If you want the current go/no-go judgment after the large refactor pass, read the architecture verdict and in-game checklist next.
-- If you want the detailed reasoning behind it, read the structure review and official API audit next.
-- If you want raw ongoing findings, read the work notes.
+## Path Policy
+
+When adding new documentation:
+
+- current active decisions go in `current/`
+- test procedures or evidence go in `testing/`
+- reference/API/source research goes in `reference/`
+- dated running notes go in `work-notes/`
+- one-off experiments go in `experiments/`
+- restart handoffs go in `handoffs/`
+- branch/tooling process notes go in `workflow/`
+- retired external-runtime or Bandits-specific notes go in `retired-bandits/`
+- use `plans/` only for a plan that is not yet implemented or is preserved as a
+  plan artifact
+
+Do not add new dated Markdown files directly under `docs/` unless they are
+indexes.

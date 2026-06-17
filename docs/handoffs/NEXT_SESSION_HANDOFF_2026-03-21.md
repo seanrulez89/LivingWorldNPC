@@ -76,8 +76,8 @@ Treat this as the current default assumption until disproven.
 
 Created and committed major docs-only synthesis work:
 
-- `LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
-- `LWN_ISOZOMBIE_CLEANUP_TRIAGE_2026-03-21.md`
+- `docs/reference/LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
+- `docs/reference/LWN_ISOZOMBIE_CLEANUP_TRIAGE_2026-03-21.md`
 - plus the March 20 research docs from local corpus / web / B41 javadocs / PZwiki
 
 These documents established the session's central conclusion:
@@ -380,10 +380,10 @@ A strong next-session manual test would be:
 
 ## Files most worth reading before touching code next time
 
-1. `docs/LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
-2. `docs/LWN_ISOZOMBIE_CLEANUP_TRIAGE_2026-03-21.md`
-3. `docs/WORK_NOTES_2026-03-20.md`
-4. `docs/TEST_LOG_HISTORY.md`
+1. `docs/reference/LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
+2. `docs/reference/LWN_ISOZOMBIE_CLEANUP_TRIAGE_2026-03-21.md`
+3. `docs/work-notes/WORK_NOTES_2026-03-20.md`
+4. `docs/testing/TEST_LOG_HISTORY.md`
 5. `42/media/lua/client/35_LWN_Carrier_IsoZombie.lua`
 6. `42/media/lua/client/90_LWN_EventAdapter.lua`
 7. `42/media/lua/client/23_LWN_ActorFactory.lua`

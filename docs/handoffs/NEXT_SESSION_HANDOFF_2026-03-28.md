@@ -151,7 +151,7 @@ The current consensus is now more specific than a generic “appearance investig
 Before gradually adopting Bandits-style direct visual stamping, the project should first exhaust the meaningful remaining experiment space inside the current LWN approach. The reason is simple: the branch has finally become stable enough that appearance can be isolated as its own problem, and the team should extract the maximum possible learning from the current hybrid/descriptor pipeline before introducing a second visual strategy.
 
 Primary planning document:
-- `docs/OUR_APPROACH_FIRST_EXPERIMENT_PLAN_BEFORE_BANDITS_ADOPTION_2026-03-28.md`
+- `docs/retired-bandits/OUR_APPROACH_FIRST_EXPERIMENT_PLAN_BEFORE_BANDITS_ADOPTION_2026-03-28.md`
 
 ### 1. Patch Plan 1 — appearance forensics / failure taxonomy
 
@@ -208,8 +208,8 @@ Operational rule:
 - if a patch simultaneously changes appearance method, timing, guard behavior, and locomotion cues, the evidence becomes muddy and should be rejected as a main validation step
 
 Planning docs:
-- `docs/OUR_APPROACH_FIRST_EXPERIMENT_PLAN_BEFORE_BANDITS_ADOPTION_2026-03-28.md`
-- `docs/END_OF_DAY_STRATEGY_AND_EXPERIMENT_ORDER_2026-03-28.md`
+- `docs/retired-bandits/OUR_APPROACH_FIRST_EXPERIMENT_PLAN_BEFORE_BANDITS_ADOPTION_2026-03-28.md`
+- `docs/work-notes/END_OF_DAY_STRATEGY_AND_EXPERIMENT_ORDER_2026-03-28.md`
 
 ## What not to do first next time
 
@@ -222,8 +222,8 @@ Planning docs:
 
 1. Start on `spike/minimal-neutral-dummy`
 2. Re-read:
-   - `docs/MINIMAL_DUMMY_MOVE_IDLE_HANDOFF_RETEST_2026-03-28.md`
-   - `docs/TEST_LOG_HISTORY.md` (latest entry)
+   - `docs/experiments/MINIMAL_DUMMY_MOVE_IDLE_HANDOFF_RETEST_2026-03-28.md`
+   - `docs/testing/TEST_LOG_HISTORY.md` (latest entry)
 3. Focus on appearance truth / zombie-body fail investigation
 4. Re-run only `TEST 01~03`
 5. If appearance materially improves, only then revisit broader recovery / TEST 04 planning
