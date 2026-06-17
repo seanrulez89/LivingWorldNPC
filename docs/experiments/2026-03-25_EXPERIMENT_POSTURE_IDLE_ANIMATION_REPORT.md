@@ -23,11 +23,11 @@ Even with better clothes and quieter audio, that posture heavily collapses the h
 
 This pass was informed by:
 
-- `docs/reference/PZWIKI_BUILD42_ISOZOMBIE_SHELL_REVIEW_2026-03-20.md`
+- `docs/reference/2026-03-20_REFERENCE_PZWIKI_BUILD42_ISOZOMBIE_SHELL_REVIEW.md`
   - explicitly calls out idle hunch / tension posture as a high-signal zombie tell
-- `docs/retired-bandits/LWN_BANDITS_1TO1_MINIMAL_COMPONENT_MAP_2026-03-21.md`
+- `docs/retired-bandits/2026-03-21_BANDITS_RETIRED_LWN_1TO1_COMPONENT_MAP.md`
   - identifies idle posture / turn behavior as a first-class profile dimension
-- `docs/reference/REFERENCE_CORPUS_ISOZOMBIE_AUDIT_2026-03-20.md`
+- `docs/reference/2026-03-20_REFERENCE_ISOZOMBIE_CORPUS_AUDIT.md`
   - confirms Bandits uses zombie-shell suppression variables like `NoLungeTarget`, `Walk`, and `ZombieHitReaction`
 - `reference_mods/1905148104/mods/Superb-Survivors/.../SuperSurvivor.lua`
   - shows a human-NPC-side `setIdleAnimatorState()` plus animation variable clearing pattern for unsticking/returning to a cleaner idle state

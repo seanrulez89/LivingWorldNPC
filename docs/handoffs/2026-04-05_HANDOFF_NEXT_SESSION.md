@@ -129,10 +129,10 @@ That means these are **out of scope unless they directly affect first-second app
 
 Read these in this order:
 
-1. `docs/handoffs/NEXT_SESSION_HANDOFF_2026-04-05.md`
-2. `docs/retired-bandits/BANDITS_FIRST_BUILD_LANE_2026-03-29.md`
-3. `docs/reference/CODE_AUDIT_2026-04-04.md`
-4. `docs/testing/TEST_LOG_HISTORY.md` — but only the entries relevant to **spawn-time appearance**, not the return/recovery detour
+1. `docs/handoffs/2026-04-05_HANDOFF_NEXT_SESSION.md`
+2. `docs/retired-bandits/2026-03-29_BANDITS_RETIRED_FIRST_BUILD_LANE.md`
+3. `docs/reference/2026-04-04_CODE_LUA_RUNTIME_AUDIT.md`
+4. `docs/testing/2026-03-13_TESTING_LOG_HISTORY.md` — but only the entries relevant to **spawn-time appearance**, not the return/recovery detour
 
 ## Where to start in code next session
 

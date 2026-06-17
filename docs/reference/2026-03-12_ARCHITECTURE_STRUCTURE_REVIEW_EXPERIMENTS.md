@@ -5,10 +5,10 @@ Rule: 이번 문서는 "해결 보고"가 아니라 "판정 가능한 실험 묶
 
 Related inputs:
 
-- `docs/reference/OFFICIAL_BUILD42_API_AUDIT_2026-03-12.md`
-- `docs/reference/LWN_BUILD42_DECISION_MATRIX_2026-03-12.md`
-- `docs/work-notes/WORK_NOTES_2026-03-11.md`
-- `LWN_SP_TESTING.md`
+- `docs/reference/2026-03-12_API_OFFICIAL_BUILD42_AUDIT.md`
+- `docs/reference/2026-03-12_ARCHITECTURE_BUILD42_DECISION_MATRIX.md`
+- `docs/work-notes/2026-03-11_WORK_NOTES_DAILY_LOG.md`
+- `docs/testing/2026-03-10_TESTING_LOCAL_DEBUG_GUIDE.md`
 
 ## 연결 지도
 

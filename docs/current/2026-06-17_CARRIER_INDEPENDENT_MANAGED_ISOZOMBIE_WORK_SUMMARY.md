@@ -69,7 +69,7 @@ The important finding:
 Detailed API evidence is recorded in:
 
 ```text
-docs/current/MANAGED_ISOZOMBIE_API_VERIFICATION_2026-06-17.md
+docs/current/2026-06-17_CARRIER_MANAGED_ISOZOMBIE_API_VERIFICATION.md
 ```
 
 ## Implementation Summary

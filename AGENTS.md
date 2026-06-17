@@ -30,7 +30,7 @@
   for real player/world item transfer or explicit debug-only grants.
 
 ## Domain ownership
-- Use `docs/current/DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md` as the current
+- Use `docs/current/2026-06-16_ARCHITECTURE_DOMAIN_WORKSTREAMS_AND_CONTRACTS_POLICY.md` as the current
   workstream and shared-contract rulebook.
 - Main integration authority stays in this thread/agent unless the user
   explicitly delegates a narrow subtask.
@@ -40,12 +40,21 @@
   shared-contract surfaces; avoid broad edits across several of them in one
   unplanned change.
 
+## Documentation
+- Use `docs/workflow/2026-06-17_DOCS_NAMING_AND_REFERENCE_POLICY.md` when
+  creating, moving, or renaming Markdown documents.
+- Keep `README.md`, `AGENTS.md`, and `docs/README.md` at their conventional
+  paths unless the user explicitly asks to change repository conventions.
+- New non-index documentation should use
+  `YYYY-MM-DD_DOMAIN_TOPIC_DOCROLE.md`.
+
 ## When editing code
 - Preserve file-by-file module boundaries.
 - Avoid speculative engine hooks. If an event or API is uncertain, add a TODO note and keep the hook isolated.
 - When a Project Zomboid Java API or animation contract is uncertain, verify it
   against the local game install with `javap` or local media files before
-  coding. Record important findings in `docs/`.
+  coding. Record important findings in `docs/` using the documentation naming
+  policy.
 - Keep debug tooling available in development builds.
 - After touching Lua runtime code, run the local validation scripts if available.
 - Treat each meaningful coding turn as a snapshot boundary: after code changes, run validation, review `git status`, and prefer a small descriptive commit before moving to the next hypothesis.

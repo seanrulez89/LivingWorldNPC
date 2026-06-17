@@ -1,63 +1,86 @@
 # Docs Index
 
 This directory keeps LivingWorldNPC design notes, research, test evidence, and
-historical experiment records. The docs are now grouped by purpose so current
-runtime guidance is not mixed with older investigation notes.
+historical experiment records. Documents are grouped by purpose, and dated
+documents use a filename that exposes the date, domain, topic, and document role.
 
 ## Layout
 
 | Folder | Count | Purpose |
 | --- | ---: | --- |
 | `current/` | 6 | Active June 2026 decisions, contracts, logging rules, and independent managed `IsoZombie` carrier notes. |
-| `reference/` | 20 | API audits, source maps, reference-mod reviews, and Build 42 research. |
+| `reference/` | 21 | API audits, source maps, reference-mod reviews, Build 42 research, and technical design references. |
 | `experiments/` | 36 | Historical implementation experiments and result notes. |
 | `handoffs/` | 10 | Restart context and next-session handoff files. |
-| `testing/` | 5 | Test history, manual test workflow, and test harness notes. |
+| `testing/` | 6 | Test history, manual test workflow, local debug guide, and test harness notes. |
 | `work-notes/` | 7 | Dated running notes and end-of-day summaries. |
-| `workflow/` | 3 | Git, branch, and local environment workflow notes. |
+| `workflow/` | 4 | Git, branch, local environment, and documentation workflow notes. |
 | `plans/` | 7 | Historical plan documents and spike plans. |
 | `retired-bandits/` | 7 | Retired Bandits-backed plans and investigations. Preserved only as external reference/history. |
 
-Root-level docs outside this folder are limited to project-facing files such as
-`README.md`, `AGENTS.md`, `LWN_SP_TDD.md`, and `LWN_SP_TESTING.md`.
+Root-level Markdown files outside this folder are limited to project-facing
+convention files: `README.md` and `AGENTS.md`.
+
+## Naming Policy
+
+For non-index documentation, use:
+
+```text
+YYYY-MM-DD_DOMAIN_TOPIC_DOCROLE.md
+```
+
+Examples:
+
+- `current/2026-06-17_CARRIER_MANAGED_ISOZOMBIE_API_VERIFICATION.md`
+- `current/2026-06-16_LOGGING_TEST_EVIDENCE_GUIDE.md`
+- `experiments/2026-03-29_EXPERIMENT_ISOZOMBIE_ISOSURVIVOR_REPORT.md`
+
+See `workflow/2026-06-17_DOCS_NAMING_AND_REFERENCE_POLICY.md` for the full
+rules, allowed exceptions, and reference-update policy.
 
 ## Start Here
 
 Read these first for the current project state:
 
-- `current/DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md`
+- `current/2026-06-16_ARCHITECTURE_DOMAIN_WORKSTREAMS_AND_CONTRACTS_POLICY.md`
   - active domain ownership, shared runtime contracts, and sub-agent work rules
-- `current/MANAGED_ISOZOMBIE_INDEPENDENCE_2026-06-16.md`
+- `current/2026-06-16_CARRIER_MANAGED_ISOZOMBIE_INDEPENDENCE_DECISION.md`
   - current decision that default companions run through LWN's own managed
     `IsoZombie` carrier
-- `current/MANAGED_ISOZOMBIE_API_VERIFICATION_2026-06-17.md`
+- `current/2026-06-17_CARRIER_MANAGED_ISOZOMBIE_API_VERIFICATION.md`
   - local JDK/`javap` verification and the confirmed vanilla/Bandits animation
     contract difference
-- `current/WORK_SUMMARY_2026-06-17_INDEPENDENT_MANAGED_ISOZOMBIE.md`
+- `current/2026-06-17_CARRIER_INDEPENDENT_MANAGED_ISOZOMBIE_WORK_SUMMARY.md`
   - detailed summary of the independent carrier repair milestone
-- `current/LOGGING_AND_TEST_EVIDENCE_2026-06-16.md`
+- `current/2026-06-16_LOGGING_TEST_EVIDENCE_GUIDE.md`
   - current structured logging and manual test evidence guide
-- `current/LONG_TERM_NPC_VISION_2026-06-16.md`
+- `current/2026-06-16_VISION_LONG_TERM_NPC_DESIGN.md`
   - long-term design direction for player-like NPCs, relationships, narrative,
     autonomy, gifts, betrayal, and vehicles
+- `workflow/2026-06-17_DOCS_NAMING_AND_REFERENCE_POLICY.md`
+  - documentation naming and reference maintenance rules
 
 ## Current Test Evidence
 
-- `testing/TEST_LOG_HISTORY.md`
+- `testing/2026-03-13_TESTING_LOG_HISTORY.md`
   - append-only historical in-game test chain
-- `current/LOGGING_AND_TEST_EVIDENCE_2026-06-16.md`
+- `current/2026-06-16_LOGGING_TEST_EVIDENCE_GUIDE.md`
   - how to collect and read current structured logs
+- `testing/2026-03-10_TESTING_LOCAL_DEBUG_GUIDE.md`
+  - local Build 42 test and debug guide
 
 ## Current Reference Baseline
 
-- `reference/REFERENCE_MODS_LOCAL_CODE_REVIEW_2026-06-13.md`
+- `reference/2026-06-13_REFERENCE_MODS_LOCAL_CODE_REVIEW.md`
   - local review of Steam-downloaded reference mods
-- `reference/LWN_ISOZOMBIE_MASTER_REFERENCE_2026-03-21.md`
+- `reference/2026-03-21_CARRIER_ISOZOMBIE_MASTER_REFERENCE.md`
   - older but still useful master synthesis of the `IsoZombie` shell problem
-- `reference/LWN_BUILD42_DECISION_MATRIX_2026-03-12.md`
+- `reference/2026-03-12_ARCHITECTURE_BUILD42_DECISION_MATRIX.md`
   - compact Build 42 decision matrix
-- `reference/OFFICIAL_BUILD42_API_AUDIT_2026-03-12.md`
+- `reference/2026-03-12_API_OFFICIAL_BUILD42_AUDIT.md`
   - official API/lifecycle audit
+- `reference/2026-03-10_ARCHITECTURE_SINGLE_PLAYER_TECHNICAL_DESIGN.md`
+  - original single-player technical design document
 
 ## Historical Material
 
@@ -97,7 +120,7 @@ When adding new documentation:
 - dated running notes go in `work-notes/`
 - one-off experiments go in `experiments/`
 - restart handoffs go in `handoffs/`
-- branch/tooling process notes go in `workflow/`
+- branch/tooling/documentation process notes go in `workflow/`
 - retired external-runtime or Bandits-specific notes go in `retired-bandits/`
 - use `plans/` only for a plan that is not yet implemented or is preserved as a
   plan artifact

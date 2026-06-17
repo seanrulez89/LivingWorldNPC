@@ -15,11 +15,11 @@ Today’s session established a much sharper embodiment map than at session star
 ## Most important document to read first next time
 
 Read this before touching code:
-- `docs/experiments/EXPERIMENT_REPORT_2026-03-29_FULL_DAY_FINAL.md`
+- `docs/experiments/2026-03-29_EXPERIMENT_FULL_DAY_FINAL_REPORT.md`
 
 Also useful:
-- `docs/experiments/EXPERIMENT_REPORT_2026-03-29_ISOZOMBIE_ISOSURVIVOR.md`
-- `docs/testing/TEST_LOG_HISTORY.md`
+- `docs/experiments/2026-03-29_EXPERIMENT_ISOZOMBIE_ISOSURVIVOR_REPORT.md`
+- `docs/testing/2026-03-13_TESTING_LOG_HISTORY.md`
 
 ## What is settled enough that it should not be re-proved casually
 
@@ -110,7 +110,7 @@ But even after alpha-loop mitigation and create-hook fallback completion, the la
 - keep `IsoSurvivor` disabled in the debug/test rail
 - do not re-run current-path `IsoSurvivor` TEST 01B
 - do not blindly re-run the same `IsoPlayer` probe unless there is a **new model/materialization hypothesis**
-- do not casually repeat the final three pre-Bandits LWN experiments either; those are now documented in `docs/retired-bandits/LAST_LWN_EXPERIMENT_PACKAGE_BEFORE_BANDITS_2026-03-29.md`
+- do not casually repeat the final three pre-Bandits LWN experiments either; those are now documented in `docs/retired-bandits/2026-03-29_BANDITS_RETIRED_LAST_LWN_EXPERIMENT_PACKAGE_BEFORE_ADOPTION.md`
 
 ### Best current exact question
 If continuing the alt-carrier path, the next question should be:
@@ -169,13 +169,13 @@ After this handoff was first written, late-session follow-up work continued on t
    - The underlying checkpoint lines already show the post-min-flags state still landing at zombie-owned failure.
 
 Read these documents before resuming that line:
-- `docs/work-notes/END_OF_DAY_WRAPUP_2026-03-29_LATE.md`
-- `docs/retired-bandits/BANDITS_FIRST_BUILD_LANE_2026-03-29.md`
+- `docs/work-notes/2026-03-29_WORK_NOTES_LATE_END_OF_DAY_WRAPUP.md`
+- `docs/retired-bandits/2026-03-29_BANDITS_RETIRED_FIRST_BUILD_LANE.md`
 
 ## Exact next-session start order
 
-1. Read `docs/work-notes/END_OF_DAY_WRAPUP_2026-03-29_LATE.md`
-2. Read the 2026-04-04 instrumentation note appended to `docs/testing/TEST_LOG_HISTORY.md`
+1. Read `docs/work-notes/2026-03-29_WORK_NOTES_LATE_END_OF_DAY_WRAPUP.md`
+2. Read the 2026-04-04 instrumentation note appended to `docs/testing/2026-03-13_TESTING_LOG_HISTORY.md`
 3. Do **not** spend the first test proving the same old visual outcome again; use the new checkpoint/transition fields to locate the first zombie-owned transition point
 4. Then run:
    - `TEST RESET`

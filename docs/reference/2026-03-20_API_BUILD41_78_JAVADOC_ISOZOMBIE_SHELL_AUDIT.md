@@ -29,7 +29,7 @@ Targeted class pages reviewed for evidence:
 
 Local repo context referenced while interpreting this:
 
-- `docs/plans/HYBRID_ISOZOMBIE_SHELL_PLAN_2026-03-20.md`
+- `docs/plans/2026-03-20_PLAN_HYBRID_ISOZOMBIE_SHELL.md`
 - branch: `spike/isozombie`
 
 ---
@@ -309,7 +309,7 @@ Likely Build 42 interpretation:
 
 For LivingWorldNPC:
 
-- current local idea in `docs/plans/HYBRID_ISOZOMBIE_SHELL_PLAN_2026-03-20.md` lines up with this almost perfectly
+- current local idea in `docs/plans/2026-03-20_PLAN_HYBRID_ISOZOMBIE_SHELL.md` lines up with this almost perfectly
 
 ### B) `IsoZombie` may still be able to drive a human-looking model/presentation path
 

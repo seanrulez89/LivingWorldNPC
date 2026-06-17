@@ -111,7 +111,7 @@ Date: 2026-03-11
 - 이번 턴은 런타임 코드 수정 대신 `reference_mods` 재검토를 우선했다.
 - 새로 추가된 `reference_mods/3001908830/mods/PZNS_Framework`를 포함해 Bandits, BanditsWeekOne, BanditsCreator, PZNS를 다시 읽었다.
 - 별도 분석 문서:
-  - `docs/reference/REFERENCE_STUDY_2026-03-11.md`
+  - `docs/reference/2026-03-11_REFERENCE_STUDY_INITIAL_REPORT.md`
 - 현재 중간 결론:
   - Bandits는 world entity + visual rebuild에 강한 근거를 준다.
   - BanditsCreator는 preview actor 예시라서 world embodiment 근거로 오용하면 위험하다.
@@ -122,7 +122,7 @@ Date: 2026-03-11
 - 메인 저장소에서는 `reference_mods/` 원본 스냅샷을 추적하지 않고, 분석 문서만 유지한다.
 - 의미 있는 코딩 턴이 끝날 때마다 `validate-wsl` 실행 → `git status` 확인 → 작은 스냅샷 커밋 생성을 기본 운영 규칙으로 사용한다.
 - 여러 가설 실험은 한 커밋에 섞지 않고, 롤백 가능한 작은 단위로 남긴다.
-- 인게임 테스트 이후에는 결과/로그/교훈/후속 수정/다음 검증 포인트를 `docs/testing/TEST_LOG_HISTORY.md`에 시계열로 누적 기록한다.
+- 인게임 테스트 이후에는 결과/로그/교훈/후속 수정/다음 검증 포인트를 `docs/testing/2026-03-13_TESTING_LOG_HISTORY.md`에 시계열로 누적 기록한다.
 - 아직 남은 핵심 작업:
   - 인게임 재테스트 + `EmbodimentTrace` 로그 수집
   - Stage 3 최소 패치의 가설 판정
@@ -229,7 +229,7 @@ Date: 2026-03-11
 ## 2026-03-12 구조 재검토 실험 분리 메모
 - 이번 턴은 세 실험을 하나의 "구조 재검토"로 묶되, 판정 기준은 서로 섞지 않도록 나눴다.
 - 실험별 상세 정리 문서:
-  - `docs/reference/STRUCTURE_REVIEW_EXPERIMENTS_2026-03-12.md`
+  - `docs/reference/2026-03-12_ARCHITECTURE_STRUCTURE_REVIEW_EXPERIMENTS.md`
 - 실험 1:
   - `OnCreateLivingCharacter`를 기존 `OnCreateSurvivor`와 병행 바인딩해, `IsoPlayer` 생성 후 어느 훅이 실제 post-create anchor인지 비교 가능한 trace를 추가했다.
   - 핵심 stage:
@@ -307,6 +307,6 @@ Date: 2026-03-11
   - Build 42에서 human death/corpse/reanimation을 LWN이 완전한 first-class simulation으로 소유한다고 주장하지 않는다.
   - 현재 더 안전한 정의는 "canonical death state + corpse observation + ownership release"다.
 - 다음 판단은 문서가 아니라 인게임 결과로 내린다.
-  - 필수 체크리스트: `docs/testing/INGAME_TEST_CHECKLIST_2026-03-13.md`
-  - 구조 판단 문서: `docs/reference/ARCHITECTURE_VERDICT_2026-03-13.md`
+  - 필수 체크리스트: `docs/testing/2026-03-13_TESTING_INGAME_CHECKLIST.md`
+  - 구조 판단 문서: `docs/reference/2026-03-13_ARCHITECTURE_VERDICT_REFERENCE.md`
   - 그래서 이번 턴 수정은 `setSceneCulled(false)`를 제거하는 것이 아니라, `world=true` + `squarePresent=true` + `deathLike=false`인 live actor에만 제한하고 corpse/reanimated는 별도 presentation block으로 추적하는 쪽으로 좁힌다.

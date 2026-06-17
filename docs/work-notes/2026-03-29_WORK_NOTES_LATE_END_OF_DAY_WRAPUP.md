@@ -259,10 +259,10 @@ This is not the first thing to fix next session unless the console becomes unrea
 
 ### 6.1 Read these first
 In this order:
-1. `docs/work-notes/END_OF_DAY_WRAPUP_2026-03-29_LATE.md` (this document)
-2. `docs/retired-bandits/BANDITS_FIRST_BUILD_LANE_2026-03-29.md`
-3. `docs/testing/TEST_LOG_HISTORY.md`
-4. `docs/handoffs/NEXT_SESSION_HANDOFF_2026-03-29.md`
+1. `docs/work-notes/2026-03-29_WORK_NOTES_LATE_END_OF_DAY_WRAPUP.md` (this document)
+2. `docs/retired-bandits/2026-03-29_BANDITS_RETIRED_FIRST_BUILD_LANE.md`
+3. `docs/testing/2026-03-13_TESTING_LOG_HISTORY.md`
+4. `docs/handoffs/2026-03-29_HANDOFF_NEXT_SESSION.md`
 
 ### 6.2 Confirm repo state
 - branch should still be `spike/bandits-visual-probe-v1`

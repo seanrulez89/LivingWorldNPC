@@ -123,9 +123,9 @@ The next appearance question is:
 
 ## Recommended reading order next time
 
-1. `docs/work-notes/WORK_NOTES_2026-03-20.md`
-2. `docs/testing/TEST_LOG_HISTORY.md`
-3. `docs/plans/HYBRID_ISOZOMBIE_SHELL_PLAN_2026-03-20.md`
+1. `docs/work-notes/2026-03-20_WORK_NOTES_DAILY_LOG.md`
+2. `docs/testing/2026-03-13_TESTING_LOG_HISTORY.md`
+3. `docs/plans/2026-03-20_PLAN_HYBRID_ISOZOMBIE_SHELL.md`
 4. `logs/2026-03-20_02-42_DebugLog.txt`
 
 ## Bottom line

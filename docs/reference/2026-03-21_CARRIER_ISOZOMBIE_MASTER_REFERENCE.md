@@ -4,10 +4,10 @@ Date: 2026-03-21
 Branch context: `spike/isozombie`
 Scope: docs-only synthesis of the following March 20 research docs, reconciled against the current branch code:
 
-- `docs/reference/REFERENCE_CORPUS_ISOZOMBIE_AUDIT_2026-03-20.md`
-- `docs/reference/BUILD42_ISOZOMBIE_NPC_WEB_MEMO_2026-03-20.md`
-- `docs/reference/BUILD41_78_JAVADOC_SKEPTICAL_AUDIT_FOR_BUILD42_ISOZOMBIE_SHELL_2026-03-20.md`
-- `docs/reference/PZWIKI_BUILD42_ISOZOMBIE_SHELL_REVIEW_2026-03-20.md`
+- `docs/reference/2026-03-20_REFERENCE_ISOZOMBIE_CORPUS_AUDIT.md`
+- `docs/reference/2026-03-20_REFERENCE_BUILD42_ISOZOMBIE_NPC_WEB_MEMO.md`
+- `docs/reference/2026-03-20_API_BUILD41_78_JAVADOC_ISOZOMBIE_SHELL_AUDIT.md`
+- `docs/reference/2026-03-20_REFERENCE_PZWIKI_BUILD42_ISOZOMBIE_SHELL_REVIEW.md`
 
 Repo-aware runtime files reviewed while writing this:
 
@@ -54,7 +54,7 @@ The project therefore should optimize for a durable "human-perceived zombie-shel
 
 Supported by:
 
-- Bandits corpus findings in `docs/reference/REFERENCE_CORPUS_ISOZOMBIE_AUDIT_2026-03-20.md`
+- Bandits corpus findings in `docs/reference/2026-03-20_REFERENCE_ISOZOMBIE_CORPUS_AUDIT.md`
 - current LWN spawn path in `42/media/lua/client/35_LWN_Carrier_IsoZombie.lua`
 
 What this actually means:
@@ -81,8 +81,8 @@ What this actually means:
 
 Supported by:
 
-- official Build 42 docs summarized in `docs/reference/BUILD42_ISOZOMBIE_NPC_WEB_MEMO_2026-03-20.md`
-- Build 41 conceptual evidence in `docs/reference/BUILD41_78_JAVADOC_SKEPTICAL_AUDIT_FOR_BUILD42_ISOZOMBIE_SHELL_2026-03-20.md`
+- official Build 42 docs summarized in `docs/reference/2026-03-20_REFERENCE_BUILD42_ISOZOMBIE_NPC_WEB_MEMO.md`
+- Build 41 conceptual evidence in `docs/reference/2026-03-20_API_BUILD41_78_JAVADOC_ISOZOMBIE_SHELL_AUDIT.md`
 - current implementation in `23_LWN_ActorFactory.lua:applySafeAppearanceShaping(...)`
 
 What this actually means:
@@ -214,7 +214,7 @@ Practical meaning for LWN:
 
 ## Bandits proves the shell pattern, not true conversion
 
-This is the single most important reference conclusion from `docs/reference/REFERENCE_CORPUS_ISOZOMBIE_AUDIT_2026-03-20.md`.
+This is the single most important reference conclusion from `docs/reference/2026-03-20_REFERENCE_ISOZOMBIE_CORPUS_AUDIT.md`.
 
 What Bandits actually proves:
 

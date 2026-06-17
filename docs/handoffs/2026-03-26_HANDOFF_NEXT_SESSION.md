@@ -67,7 +67,7 @@ A follow-up direct patch addressed that by:
 
 See also:
 
-- `docs/experiments/DEBUG_SINGLE_SHELL_RECOVERY_2026-03-26.md`
+- `docs/experiments/2026-03-26_EXPERIMENT_DEBUG_SINGLE_SHELL_RECOVERY_REPORT.md`
 
 
 ## Follow-up locomotion patch after direct retest

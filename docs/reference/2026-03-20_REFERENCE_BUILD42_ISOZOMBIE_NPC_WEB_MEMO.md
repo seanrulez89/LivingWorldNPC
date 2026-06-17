@@ -319,10 +319,10 @@ Current repo evidence matches the web picture surprisingly well:
 
 Especially relevant local references:
 
-- `docs/plans/HYBRID_ISOZOMBIE_SHELL_PLAN_2026-03-20.md`
-- `docs/experiments/CARRIER_ISOZOMBIE_HOSTILITY_EXPLORATION_2026-03-14.md`
-- `docs/experiments/CARRIER_ISOZOMBIE_FRIENDLY_ATTACK_SUPPRESSION_2026-03-14.md`
-- `docs/reference/OFFICIAL_BUILD42_API_AUDIT_2026-03-12.md`
+- `docs/plans/2026-03-20_PLAN_HYBRID_ISOZOMBIE_SHELL.md`
+- `docs/experiments/2026-03-14_EXPERIMENT_CARRIER_ISOZOMBIE_HOSTILITY_EXPLORATION_REPORT.md`
+- `docs/experiments/2026-03-14_EXPERIMENT_CARRIER_ISOZOMBIE_FRIENDLY_ATTACK_SUPPRESSION_REPORT.md`
+- `docs/reference/2026-03-12_API_OFFICIAL_BUILD42_AUDIT.md`
 - `42/media/lua/client/23_LWN_ActorFactory.lua`
 - `42/media/lua/client/24_LWN_ActorSync.lua`
 
@@ -371,5 +371,5 @@ Supporting / semi-official:
 
 Local companion docs:
 
-- `docs/reference/OFFICIAL_BUILD42_API_AUDIT_2026-03-12.md`
-- `docs/plans/HYBRID_ISOZOMBIE_SHELL_PLAN_2026-03-20.md`
+- `docs/reference/2026-03-12_API_OFFICIAL_BUILD42_AUDIT.md`
+- `docs/plans/2026-03-20_PLAN_HYBRID_ISOZOMBIE_SHELL.md`
