@@ -226,13 +226,15 @@ Owned files:
 - `42/media/lua/client/26_LWN_UI_ContextMenu.lua`
 - `42/media/lua/client/27_LWN_NPCInteraction.lua`
 - `42/media/lua/client/27_LWN_UI_RadialMenu.lua`
+- `42/media/lua/client/28_LWN_NPCInventoryUI.lua`
 - `42/media/lua/client/28_LWN_NPCStatus.lua`
 - `42/media/lua/client/28_LWN_UI_CommandPanel.lua`
 - `42/media/lua/client/29_LWN_UI_DialogueWindow.lua`
 
 Responsibilities:
 
-- Present commands, NPC status, stance changes, and future interaction panels.
+- Present commands, NPC status, NPC inventory access, stance changes, and future
+  interaction panels.
 - Convert UI choices into public state updates or intents.
 - Never bypass command/intents for world actor behavior.
 

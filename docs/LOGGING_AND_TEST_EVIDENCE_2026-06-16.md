@@ -93,7 +93,8 @@ Covered now:
 - command issue, queue replacement, command state changes, and cancellation
 - right-click move/follow/wait, stance changes, behavior guideline changes
 - item-context transfer/equip requests from inventory or world items, existing
-  item equip, declared equipment sync, and missing-real-item cleanup
+  item equip, declared equipment sync, missing-real-item cleanup, NPC inventory
+  window open/close, and actor-inventory-to-record reconciliation
 - combat engagement changes, team defense signals, friendly hit suppression,
   zombie damage acceptance, friendly-hit repair, health sync, unexpected
   auto-heal blocking, and friendly-damage repair

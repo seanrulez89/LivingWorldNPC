@@ -37,19 +37,23 @@ local ISOZOMBIE_ROLE_GUARD_RELAX_EXPERIMENT = true
 local ISOZOMBIE_ALIVE_RESET_AFTER_RUNTIME_SETTLE = true
 local ISOZOMBIE_SHELL_DIRECT_VISUAL_PROBE = false
 local ISOZOMBIE_SHELL_FIRST_BUILD_LANE = false
+local ISOZOMBIE_APPEARANCE_REPAIR_MAX_ATTEMPTS = 5
+local ISOZOMBIE_APPEARANCE_REPAIR_INTERVAL_MS = 900
 local MOVE_STALL_MS = 5000
 local MOVE_ARRIVAL_DISTANCE = 0.75
 local MOVE_MAX_ATTEMPTS = 3
 local MOVE_PROGRESS_EPSILON = 0.05
-local FOLLOW_OFFSET = 1.20
-local FOLLOW_ARRIVAL_DISTANCE = 0.65
+local LWN_WALKTYPE_IDLE = "LWNWalk"
+local LWN_WALKTYPE_FALLBACK = "1"
+local FOLLOW_OFFSET = 0.85
+local FOLLOW_ARRIVAL_DISTANCE = 0.55
 local FOLLOW_RETARGET_DISTANCE = 0.70
 local FOLLOW_RETARGET_MS = 300
 local FOLLOW_HEADING_EPSILON = 0.08
-local FOLLOW_CATCHUP_ENTER_DISTANCE = 3.8
-local FOLLOW_CATCHUP_EXIT_DISTANCE = 2.4
-local FOLLOW_HARD_CATCHUP_DISTANCE = 7.0
-local FOLLOW_CATCHUP_OFFSET = 0.75
+local FOLLOW_CATCHUP_ENTER_DISTANCE = 3.0
+local FOLLOW_CATCHUP_EXIT_DISTANCE = 1.8
+local FOLLOW_HARD_CATCHUP_DISTANCE = 5.5
+local FOLLOW_CATCHUP_OFFSET = 0.55
 local ATTACK_RANGE = 1.25
 local ATTACK_REPATH_DISTANCE = 0.8
 local ATTACK_RETRY_MS = 650
@@ -57,16 +61,16 @@ local ATTACK_TIMEOUT_MS = 9000
 local DEFAULT_WALK_SPEED = 1.04
 local DEFAULT_RUN_SPEED = 0.72
 local FOLLOW_FORMATION = {
-    [1] = { back = 1.20, side = 0.00 },
-    [2] = { back = 1.55, side = -0.75 },
-    [3] = { back = 1.55, side = 0.75 },
+    [1] = { back = 0.85, side = 0.00 },
+    [2] = { back = 1.10, side = -0.55 },
+    [3] = { back = 1.10, side = 0.55 },
 }
 local FOLLOW_LOCOMOTION = {
-    walk = { walkType = "Walk", endurance = 0, walkMultiplier = 1.0, runMultiplier = 1.0 },
-    run = { walkType = "Run", endurance = -0.03, walkMultiplier = 1.0, runMultiplier = 1.0 },
-    sprint = { walkType = "Run", endurance = -0.06, walkMultiplier = 1.0, runMultiplier = 1.35 },
-    crouch_walk = { walkType = "SneakWalk", endurance = -0.01, walkMultiplier = 1.0, runMultiplier = 1.0 },
-    crouch_run = { walkType = "SneakWalk", endurance = -0.03, walkMultiplier = 1.35, runMultiplier = 1.0 },
+    walk = { key = "walk", walkType = "LWNWalk", fallbackWalkType = LWN_WALKTYPE_FALLBACK, endurance = 0, walkMultiplier = 1.0, runMultiplier = 1.0 },
+    run = { key = "run", walkType = "LWNRun", fallbackWalkType = "sprint1", endurance = -0.03, walkMultiplier = 1.0, runMultiplier = 1.0 },
+    sprint = { key = "sprint", walkType = "LWNSprint", fallbackWalkType = "sprint1", endurance = -0.06, walkMultiplier = 1.0, runMultiplier = 1.35 },
+    crouch_walk = { key = "crouch_walk", walkType = "LWNCrouchWalk", fallbackWalkType = LWN_WALKTYPE_FALLBACK, endurance = -0.01, walkMultiplier = 1.0, runMultiplier = 1.0 },
+    crouch_run = { key = "crouch_run", walkType = "LWNCrouchRun", fallbackWalkType = "sprint1", endurance = -0.03, walkMultiplier = 1.35, runMultiplier = 1.0 },
 }
 
 local function nowMs()
@@ -684,8 +688,8 @@ local function applyManagedShellContract(record, actor, policy, options)
     protectedCall(actor, "setVariable", "LWNManagedShell", true)
     protectedCall(actor, "setVariable", "NoLungeTarget", true)
     protectedCall(actor, "setVariable", "ZombieHitReaction", "Chainsaw")
-    protectedCall(actor, "setWalkType", "Walk")
-    protectedCall(actor, "setVariable", "LWNWalkType", "Walk")
+    protectedCall(actor, "setWalkType", LWN_WALKTYPE_IDLE)
+    protectedCall(actor, "setVariable", "LWNWalkType", LWN_WALKTYPE_IDLE)
     protectedCall(actor, "setNoTeeth", policy and policy.allowCarrierAttackPlayer ~= true)
     if options.clearEquipment == true then
         protectedCall(actor, "setPrimaryHandItem", nil)
@@ -932,8 +936,8 @@ local function scrubDummyAttackPresentation(record, actor, mode, source, options
         stopActions = mode ~= "move",
         clearPath = mode ~= "move",
     })
-    protectedCall(actor, "setWalkType", "Walk")
-    protectedCall(actor, "setVariable", "LWNWalkType", "Walk")
+    protectedCall(actor, "setWalkType", LWN_WALKTYPE_IDLE)
+    protectedCall(actor, "setVariable", "LWNWalkType", LWN_WALKTYPE_IDLE)
     protectedCall(actor, "setVariable", "LWNManagedShell", true)
 
     if mode ~= "move" then
@@ -978,8 +982,8 @@ local function forceDummyIdlePresentation(record, actor, source, options)
     protectedCall(actor, "setTarget", nil)
     protectedCall(actor, "setLastTargettedBy", nil)
     protectedCall(actor, "setDir", IsoDirections and IsoDirections.S or nil)
-    protectedCall(actor, "setWalkType", "Walk")
-    protectedCall(actor, "setVariable", "LWNWalkType", "Walk")
+    protectedCall(actor, "setWalkType", LWN_WALKTYPE_IDLE)
+    protectedCall(actor, "setVariable", "LWNWalkType", LWN_WALKTYPE_IDLE)
     protectedCall(actor, "setIdleAnimatorState")
 
     local modData = protectedCall(actor, "getModData")
@@ -1041,8 +1045,8 @@ local function applyPostureHumanization(record, actor, source, options)
     local modData = protectedCall(actor, "getModData")
     if modData then
         modData.LWN_PostureHumanization = neutralized == true
-            and "idle_anim_reset+walktype=Walk+anti_hunch_neutralized"
-            or "idle_anim_reset+walktype=Walk+anti_hunch_active"
+            and "idle_anim_reset+walktype=LWNWalk+anti_hunch_neutralized"
+            or "idle_anim_reset+walktype=LWNWalk+anti_hunch_active"
         modData.LWN_PostureHumanizationSource = source or "CarrierIsoZombie.applyPostureHumanization"
     end
 end
@@ -1182,7 +1186,7 @@ local function applyPersistentIllusionPackage(record, actor, descriptor, policy)
             and "walk_human+no_lunge+voice_notazombie+targeted_audio_mute+hitreaction_guard+posture_idle_reset"
             or "walk_human+no_lunge+voice_notazombie+targeted_audio_mute+hitreaction_guard+posture_idle_reset"
         modData.LWN_AudioHumanization = "descriptor_voiceprefix+targeted_zombie_mute"
-        modData.LWN_AnimationHumanization = "walktype=Walk+idle_anim_reset+clear_attack_vars"
+        modData.LWN_AnimationHumanization = "walktype=LWNWalk+idle_anim_reset+clear_attack_vars"
     end
 end
 
@@ -1352,8 +1356,8 @@ local function applyBasicZombieCarrierFlags(record, actor, options, descriptor, 
         modData.LWN_DummyAppearanceFailed = record and record.dummy and record.dummy.appearanceFailed == true or false
         modData.LWN_DummyAppearanceRebuildPending = record and record.dummy and record.dummy.appearanceRebuildPending == true or false
         modData.LWN_DummyAppearanceFailureCount = record and record.dummy and record.dummy.appearanceFailureCount or 0
-        modData.LWN_TestRoleGuardRelaxed = ISOZOMBIE_ROLE_GUARD_RELAX_EXPERIMENT == true and isMinimalDummyRecord(record)
-        modData.LWN_TestRoleGuardRelaxReason = ISOZOMBIE_ROLE_GUARD_RELAX_EXPERIMENT == true and isMinimalDummyRecord(record) and "minimal_dummy_role_probe" or nil
+        modData.LWN_TestRoleGuardRelaxed = ISOZOMBIE_ROLE_GUARD_RELAX_EXPERIMENT == true
+        modData.LWN_TestRoleGuardRelaxReason = ISOZOMBIE_ROLE_GUARD_RELAX_EXPERIMENT == true and "managed_isozombie_shell" or nil
     end
 
     registerManagedShell(record, actor, "CarrierIsoZombie.applyBasicZombieCarrierFlags")
@@ -1619,10 +1623,7 @@ local function probeHumanizationState(record, actor, appearanceDetail, source)
     if isMinimalDummyRecord(record) then
         ok = truth and truth.ok == true or false
     else
-        ok = humanInit == true
-            or (appearanceDetail and appearanceDetail.applied == true)
-            or (truth and truth.ok == true)
-            or strictVisualOk == true
+        ok = (truth and truth.ok == true) or strictVisualOk == true
     end
 
     if modData then
@@ -2467,6 +2468,49 @@ function Carrier.sync(record, handle, options)
         end
     end
 
+    if humanizationOk ~= true then
+        local repairAttempts = tonumber(handle.runtime.appearanceRepairAttempts) or 0
+        local repairLastAtMs = tonumber(handle.runtime.appearanceRepairLastAtMs) or 0
+        local now = nowMs()
+        if repairAttempts < ISOZOMBIE_APPEARANCE_REPAIR_MAX_ATTEMPTS
+            and repairLastAtMs + ISOZOMBIE_APPEARANCE_REPAIR_INTERVAL_MS <= now
+        then
+            repairAttempts = repairAttempts + 1
+            handle.runtime.appearanceRepairAttempts = repairAttempts
+            handle.runtime.appearanceRepairLastAtMs = now
+            trace("sync.appearance_repair_retry", record, string.format(
+                "attempt=%s/%s previous=%s",
+                tostring(repairAttempts),
+                tostring(ISOZOMBIE_APPEARANCE_REPAIR_MAX_ATTEMPTS),
+                tostring(humanizationDetail)
+            ))
+
+            local _repairDescriptor
+            _repairDescriptor, appearanceDetail, humanizationOk, humanizationDetail = runPostRuntimeSettleRebuild(
+                record,
+                actor,
+                "CarrierIsoZombie.sync.appearance_repair"
+            )
+            appearanceEligible = humanizationOk == true
+            appearanceGateDetail = humanizationDetail
+            handle.runtime.appearanceEligible = appearanceEligible == true
+            handle.runtime.appearanceEligibilityDetail = appearanceGateDetail
+            handle.runtime.appearanceExperiment = appearanceDetail and appearanceDetail.experiment or handle.runtime.appearanceExperiment
+            handle.runtime.appearanceApplied = appearanceDetail and appearanceDetail.applied == true or false
+            handle.runtime.appearanceStatus = appearanceDetail and appearanceDetail.status or nil
+            handle.runtime.appearanceStage = appearanceDetail and appearanceDetail.stage or nil
+            handle.runtime.humanizationMode = appearanceDetail and appearanceDetail.mode or nil
+            handle.runtime.humanizationProfile = appearanceDetail and appearanceDetail.profile or humanizationProfile(record)
+            handle.runtime.humanizationProbeOk = humanizationOk == true
+            handle.runtime.humanizationProbeDetail = humanizationDetail
+            handle.runtime.appearanceRepairOk = humanizationOk == true
+        end
+    else
+        handle.runtime.appearanceRepairOk = true
+        handle.runtime.appearanceRepairAttempts = 0
+        handle.runtime.appearanceRepairLastAtMs = 0
+    end
+
     local anchor = record and record.anchor or nil
     local snapToAnchor = options and options.snapToAnchor == true
     if anchor and snapToAnchor then
@@ -2506,18 +2550,46 @@ end
 local function applyMovementProfile(actor, profile)
     if not actor or not profile then return end
     local baseWalkSpeed, baseRunSpeed = movementBaseSpeeds(actor)
+    local modData = protectedCall(actor, "getModData")
+    local walkType = profile.walkType or LWN_WALKTYPE_IDLE
+    if modData and modData.LWN_UseVanillaWalkType == true and profile.fallbackWalkType then
+        walkType = profile.fallbackWalkType
+    end
     protectedCall(actor, "setVariable", "WalkSpeed", baseWalkSpeed * (profile.walkMultiplier or 1))
     protectedCall(actor, "setVariable", "RunSpeed", baseRunSpeed * (profile.runMultiplier or 1))
-    protectedCall(actor, "setVariable", "LWNWalkType", profile.walkType)
-    protectedCall(actor, "setWalkType", profile.walkType)
+    protectedCall(actor, "setVariable", "LWNLocomotion", profile.key or walkType)
+    protectedCall(actor, "setVariable", "LWNWalkType", walkType)
+    protectedCall(actor, "setWalkType", walkType)
     protectedCall(actor, "setCanWalk", true)
     protectedCall(actor, "setUseless", false)
 end
 
+local function markMovementAnimFallback(record, actor, reason)
+    local modData = protectedCall(actor, "getModData")
+    if modData and modData.LWN_UseVanillaWalkType ~= true then
+        modData.LWN_UseVanillaWalkType = true
+        modData.LWN_UseVanillaWalkTypeReason = reason or "movement_no_progress"
+        modData.LWN_UseVanillaWalkTypeAt = worldAgeHours()
+        if LWN.Log and LWN.Log.warn then
+            LWN.Log.warn("Movement", "animset_fallback", {
+                npcId = record and record.id,
+                source = "isozombie",
+                status = "fallback",
+                reason = modData.LWN_UseVanillaWalkTypeReason,
+                detail = "custom_lwn_walktype_no_progress",
+            })
+        end
+    end
+end
+
 local function movementBumpForProfile(profile)
-    local walkType = profile and profile.walkType or "Walk"
-    if walkType == "Run" then return "IdleToRun" end
-    if walkType == "Walk" or walkType == "SneakWalk" then return "IdleToWalk" end
+    local walkType = profile and profile.walkType or LWN_WALKTYPE_IDLE
+    if walkType == "LWNRun" or walkType == "LWNSprint" or walkType == "LWNCrouchRun" then
+        return "IdleToRun"
+    end
+    if walkType == "LWNWalk" or walkType == "LWNCrouchWalk" or walkType == LWN_WALKTYPE_FALLBACK then
+        return "IdleToWalk"
+    end
     return nil
 end
 
@@ -2552,31 +2624,40 @@ local function startPathTo(actor, x, y, z, profile)
     if bump then
         protectedCall(actor, "setBumpType", bump)
     end
-    protectedCall(actor, "setPath2", nil)
     local pf = protectedCall(actor, "getPathFindBehavior2")
-    if pf and pf.pathToLocation then
-        protectedCall(pf, "reset")
+    if pf and (pf.pathToLocationF or pf.pathToLocation) then
         protectedCall(pf, "cancel")
+        protectedCall(pf, "reset")
         protectedCall(actor, "setPath2", nil)
-        local ok = pcall(pf.pathToLocation, pf, x, y, z)
+        local ok = false
+        local method = "pf:pathToLocation"
+        if pf.pathToLocationF then
+            method = "pf:pathToLocationF"
+            ok = pcall(pf.pathToLocationF, pf, x, y, z)
+        else
+            ok = pcall(pf.pathToLocation, pf, x, y, z)
+        end
         if ok then
-            -- Keep the pathfinder state in its own behavior object. Leaving path2
-            -- populated on an IsoZombie can trap it in WalkTowardState without
-            -- actual displacement.
-            protectedCall(pf, "cancel")
-            protectedCall(actor, "setPath2", nil)
-            return true, "pf:pathToLocation"
+            protectedCall(actor, "setMoving", true)
+            if pf.update then
+                pcall(pf.update, pf)
+            end
+            return true, method
         end
     end
     if actor.pathToLocationF then
         local ok = pcall(actor.pathToLocationF, actor, x, y, z)
-        protectedCall(actor, "setPath2", nil)
-        if ok then return true, "actor:pathToLocationF" end
+        if ok then
+            protectedCall(actor, "setMoving", true)
+            return true, "actor:pathToLocationF"
+        end
     end
     if actor.pathToLocation then
         local ok = pcall(actor.pathToLocation, actor, x, y, z)
-        protectedCall(actor, "setPath2", nil)
-        if ok then return true, "actor:pathToLocation" end
+        if ok then
+            protectedCall(actor, "setMoving", true)
+            return true, "actor:pathToLocation"
+        end
     end
     return false, "path_start_unavailable"
 end
@@ -2765,6 +2846,7 @@ local function tickMoveTo(record, handle, intent)
         move.bestDistance = distance
         move.lastProgressAtMs = now
     elseif now - move.lastProgressAtMs >= MOVE_STALL_MS then
+        markMovementAnimFallback(record, actor, "move_no_progress")
         if move.attempts >= MOVE_MAX_ATTEMPTS then
             stopActorMotion(actor, { clearTarget = true })
             rememberMoveResult(handle, move, "failed", "lwn_no_progress_after_3_attempts", distance)
@@ -2858,6 +2940,7 @@ local function tickFollowPlayer(record, handle, intent)
     local now = nowMs()
     local moved = math.sqrt((ax - follow.lastX) ^ 2 + (ay - follow.lastY) ^ 2)
     if targetDistance > FOLLOW_ARRIVAL_DISTANCE and moved < MOVE_PROGRESS_EPSILON and now - follow.lastProgressAtMs >= MOVE_STALL_MS then
+        markMovementAnimFallback(record, actor, "follow_no_progress")
         stopActorMotion(actor, { clearTarget = true })
         follow.started = false
         follow.repaths = follow.repaths + 1

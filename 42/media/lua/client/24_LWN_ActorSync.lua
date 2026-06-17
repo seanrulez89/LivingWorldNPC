@@ -355,6 +355,9 @@ function Sync.pullActorToRecord(record, actor)
     if primary and primary.getFullType then
         record.inventory.equipment.primaryWeapon = primary:getFullType()
     end
+    if LWN.Inventory and LWN.Inventory.reconcileActorInventory then
+        LWN.Inventory.reconcileActorInventory(record, actor, "actor_sync_pull")
+    end
 
     if PerkFactory and PerkFactory.Perks then
         record.perks.Aiming = protectedCall(actor, "getPerkLevel", PerkFactory.Perks.Aiming) or record.perks.Aiming

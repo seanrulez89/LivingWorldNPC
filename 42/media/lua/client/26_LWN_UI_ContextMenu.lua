@@ -755,13 +755,13 @@ local function addItemActionSubmenu(context, player, item, sourceLabel, selected
     local rootSub = context:getNew(context)
     context:addSubMenu(rootOption, rootSub)
 
-    local transferOption = rootSub:addOption("전달", nil, nil)
+    local transferOption = rootSub:addOption("Give", nil, nil)
     local transferSub = rootSub:getNew(rootSub)
     rootSub:addSubMenu(transferOption, transferSub)
     addCompanionItemTargetOptions(transferSub, targets, item, player, false, sourceLabel or "item_context")
 
     if canRequestEquip(item) then
-        local equipOption = rootSub:addOption("착용요청", nil, nil)
+        local equipOption = rootSub:addOption("Request Equip", nil, nil)
         local equipSub = rootSub:getNew(rootSub)
         rootSub:addSubMenu(equipOption, equipSub)
         addCompanionItemTargetOptions(equipSub, targets, item, player, true, sourceLabel or "item_context")
@@ -795,7 +795,10 @@ local function addNpcInteractionSubmenu(context, player, actor, clickedSquare, c
                 actionId = action.id,
                 actor = actor,
             }, function(args)
-                LWN.NPCInteraction.invoke(args.actionId, args.actor, { source = "world_context" })
+                LWN.NPCInteraction.invoke(args.actionId, args.actor, {
+                    source = "world_context",
+                    playerNum = player and protectedCall(player, "getPlayerNum") or 0,
+                })
             end)
         end
     end

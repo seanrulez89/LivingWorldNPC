@@ -9,9 +9,9 @@ local Factory = LWN.ActorFactory
 local Store = LWN.PopulationStore
 
 local fallbackClothing = {
-    "Base.Tshirt_WhiteTINT",
-    "Base.Trousers_Denim",
-    "Base.Shoes_Random",
+    "Base.Tshirt_DefaultTEXTURE_TINT",
+    "Base.Trousers_DefaultTEXTURE",
+    "Base.Shoes_TrainerTINT",
 }
 
 local modelManager
@@ -1165,13 +1165,21 @@ local function appearanceTruthSnapshot(actor)
     local itemVisualsOk = snapshot and tonumber(snapshot.itemVisuals or 0) > 0 or false
     local hybridAppliedOk = modData and modData.LWN_HybridAppearanceApplied == true or false
     local role = presentation and presentation.presentationRole or snapshot and snapshot.role or nil
-    local presentationRoleOk = role ~= "reanimated_zombie" and role ~= "death_like_actor"
+    local managedIsoZombieShell = modData
+        and modData.LWN_TestRoleGuardRelaxed == true
+        and modData.LWN_CarrierKind == "isozombie"
+        or false
+    local presentationRoleOk = role ~= "death_like_actor"
+        and (managedIsoZombieShell == true or role ~= "reanimated_zombie")
     local strictVisualOk = descriptorOk
         and humanVisualOk
         and skinOk
         and (wornItemsOk or itemVisualsOk)
         and hybridAppliedOk
     local guardBlocked = presentationRestoreBlockedReason(actor, presentation, "probe")
+    if managedIsoZombieShell == true and guardBlocked == "zombie_or_reanimated" then
+        guardBlocked = nil
+    end
     local signature = appearanceSignature(snapshot)
     local lastAppliedSignature = modData and modData.LWN_AppearanceSignature or nil
     local overwrittenAfterRefresh = false
@@ -2727,9 +2735,13 @@ local function setBaselineHumanVisual(record, actor, desc)
     local visual = protectedCall(actor, "getHumanVisual")
     if visual then
         local skin = getSkinTexture(visual)
-        if not skin or tostring(skin) == "" then
+        local skinText = tostring(skin or "")
+        if skinText == "" or not (skinText:find("^FemaleBody") or skinText:find("^MaleBody")) then
+            protectedCall(visual, "setSkinTextureName", female and "FemaleBody01" or "MaleBody01")
             protectedCall(visual, "setSkinTextureIndex", 0)
         end
+        protectedCall(visual, "removeBlood")
+        protectedCall(visual, "removeDirt")
 
         -- The preview-style path explicitly flips gender and seeds a baseline body visual.
         -- World actors need the same nudge when the
@@ -2746,6 +2758,45 @@ local function setBaselineHumanVisual(record, actor, desc)
     protectedCall(actor, "resetModel")
     protectedCall(actor, "resetModelNextFrame")
     refreshModelManager(actor, "baseline_visual")
+end
+
+local function projectFallbackClothingVisuals(actor, source)
+    local itemVisuals = safeActorItemVisuals(actor)
+    if not (actor and itemVisuals and ItemVisual and ItemVisual.new) then
+        return {
+            mode = "unavailable",
+            itemVisuals = safeSize(itemVisuals),
+            added = 0,
+        }
+    end
+
+    protectedCall(itemVisuals, "clear")
+
+    local added = 0
+    for _, fullType in ipairs(fallbackClothing) do
+        local ok, itemVisual = pcall(function()
+            return ItemVisual.new()
+        end)
+        if ok and itemVisual then
+            protectedCall(itemVisual, "setItemType", fullType)
+            protectedCall(itemVisual, "setClothingItemName", fullType)
+            protectedCall(itemVisual, "removeBlood")
+            protectedCall(itemVisual, "removeDirt")
+            protectedCall(itemVisuals, "add", itemVisual)
+            added = added + 1
+        end
+    end
+
+    protectedCall(actor, "onWornItemsChanged")
+    protectedCall(actor, "resetModel")
+    protectedCall(actor, "resetModelNextFrame")
+    refreshModelManager(actor, source or "fallback_item_visuals")
+
+    return {
+        mode = added > 0 and "direct_item_visuals" or "no_visuals_added",
+        itemVisuals = safeSize(itemVisuals),
+        added = added,
+    }
 end
 
 local function materializeDescriptorVisual(record, actor, descriptor, phase, options)
@@ -2804,39 +2855,6 @@ local function materializeDescriptorVisual(record, actor, descriptor, phase, opt
     return desc, detail
 end
 
-local function resolveWearLocation(item)
-    if not item then return nil end
-
-    local bodyLocation = protectedCall(item, "getBodyLocation")
-    if bodyLocation and bodyLocation ~= "" then
-        if ItemBodyLocation and ItemBodyLocation.get and ResourceLocation and ResourceLocation.of and type(bodyLocation) == "string" then
-            local ok, resolved = pcall(function()
-                return ItemBodyLocation.get(ResourceLocation.of(bodyLocation))
-            end)
-            if ok and resolved then
-                return resolved
-            end
-        end
-        return bodyLocation
-    end
-
-    return protectedCall(item, "canBeEquipped")
-end
-
-local function addAndWearItem(actor, fullType)
-    local inv = protectedCall(actor, "getInventory")
-    if not inv then return nil end
-
-    local item = inv:AddItem(fullType)
-    if not item then return nil end
-
-    local wearLocation = resolveWearLocation(item)
-    if wearLocation and wearLocation ~= "" then
-        protectedCall(actor, "setWornItem", wearLocation, item)
-    end
-    return item
-end
-
 local function ensureVisibleClothing(actor)
     local wornItems = safeActorWornItems(actor)
     if protectedCall(actor, "getClothingItem_Torso")
@@ -2846,25 +2864,14 @@ local function ensureVisibleClothing(actor)
         return
     end
 
-    protectedCall(actor, "dressInRandomOutfit")
-
-    wornItems = safeActorWornItems(actor)
-    if protectedCall(actor, "getClothingItem_Torso")
-        and protectedCall(actor, "getClothingItem_Legs")
-        and safeSize(wornItems) > 0
-    then
-        protectedCall(actor, "onWornItemsChanged")
-        refreshModelManager(actor, "random_outfit")
-        return
+    local projected = projectFallbackClothingVisuals(actor, "fallback_item_visuals")
+    local modData = protectedCall(actor, "getModData")
+    if modData then
+        modData.LWN_FallbackClothingMode = projected.mode
+        modData.LWN_FallbackClothingVisuals = projected.itemVisuals
+        modData.LWN_FallbackClothingAdded = projected.added
+        modData.LWN_FallbackClothingInventoryCreated = false
     end
-
-    for _, fullType in ipairs(fallbackClothing) do
-        addAndWearItem(actor, fullType)
-    end
-    protectedCall(actor, "onWornItemsChanged")
-    protectedCall(actor, "resetModel")
-    protectedCall(actor, "resetModelNextFrame")
-    refreshModelManager(actor, "fallback_clothing")
 end
 
 local function bridgeWornItemsToItemVisuals(actor)
@@ -3480,6 +3487,7 @@ function Factory.refreshEmbodiedPresentation(record, actor, descriptor)
         dressup = false,
         initSpriteParts = true,
     })
+    ensureVisibleClothing(actor)
     stageTrace("ActorFactory", "refreshEmbodiedPresentation.materialized", record, actor, finalizedDescriptor, {
         source = "refreshEmbodiedPresentation",
         detail = string.format(
@@ -3596,6 +3604,7 @@ function Factory.applySafeAppearanceShaping(record, actor, options)
         dressup = false,
         initSpriteParts = true,
     })
+    ensureVisibleClothing(actor)
     local bridge = bridgeWornItemsToItemVisuals(actor)
     refreshActorPresentation(actor)
     local afterAppearance = appearanceSnapshot(actor)

@@ -2215,6 +2215,9 @@ function Adapter.onTick()
     if LWN.UIDialogueWindow and LWN.UIDialogueWindow.refresh then
         LWN.UIDialogueWindow:refresh()
     end
+    if LWN.NPCInventoryUI and LWN.NPCInventoryUI.tick then
+        LWN.NPCInventoryUI.tick()
+    end
 end
 
 function Adapter.bind()
@@ -2232,6 +2235,12 @@ function Adapter.bind()
     Events.OnFillWorldObjectContextMenu.Add(LWN.UIContextMenu.onFillWorldObjectContextMenu)
     if Events.OnFillInventoryObjectContextMenu and LWN.UIContextMenu.onFillInventoryObjectContextMenu then
         Events.OnFillInventoryObjectContextMenu.Add(LWN.UIContextMenu.onFillInventoryObjectContextMenu)
+    end
+    if Events.OnRefreshInventoryWindowContainers and LWN.NPCInventoryUI and LWN.NPCInventoryUI.onRefreshInventoryWindowContainers then
+        Events.OnRefreshInventoryWindowContainers.Add(LWN.NPCInventoryUI.onRefreshInventoryWindowContainers)
+    end
+    if Events.OnPostUIDraw and LWN.NPCOverheadOverlay and LWN.NPCOverheadOverlay.onPostUIDraw then
+        Events.OnPostUIDraw.Add(LWN.NPCOverheadOverlay.onPostUIDraw)
     end
     Events.OnCustomUIKeyPressed.Add(LWN.UIRadialMenu.onCustomUIKeyPressed)
     if LWN.DebugTools and LWN.DebugTools.onKeyPressed then

@@ -105,6 +105,33 @@ local function recordItemCounts(inv)
     return counts
 end
 
+local function sortedKeys(map)
+    local keys = {}
+    for key in pairs(map or {}) do
+        keys[#keys + 1] = tostring(key)
+    end
+    table.sort(keys)
+    return keys
+end
+
+local function actorInventorySignature(counts, equipment, total)
+    local parts = { "total=" .. tostring(total or 0) }
+    local keys = sortedKeys(counts)
+    for i = 1, #keys do
+        local key = keys[i]
+        parts[#parts + 1] = key .. "=" .. tostring(counts[key])
+    end
+    parts[#parts + 1] = "primary=" .. tostring(equipment and equipment.primaryWeapon or "nil")
+    parts[#parts + 1] = "secondary=" .. tostring(equipment and equipment.secondaryWeapon or "nil")
+    parts[#parts + 1] = "bag=" .. tostring(equipment and equipment.bag or "nil")
+    local clothingKeys = sortedKeys(equipment and equipment.clothing or {})
+    for i = 1, #clothingKeys do
+        local key = clothingKeys[i]
+        parts[#parts + 1] = "wear:" .. key .. "=" .. tostring(equipment.clothing[key])
+    end
+    return table.concat(parts, ";")
+end
+
 local function setChanged(inv, reason)
     inv.lastChangeReason = reason or "inventory_changed"
     inv.lastChangedAt = nowHour()
@@ -210,6 +237,133 @@ end
 
 function Inventory.itemFullType(item)
     return itemFullType(item)
+end
+
+function Inventory.reconcileActorInventory(record, actor, reason)
+    if not record or not actor then
+        return { ok = false, changed = false, detail = "record_or_actor_missing" }
+    end
+
+    local actorInventory = protectedCall(actor, "getInventory")
+    local items = protectedCall(actorInventory, "getItems")
+    if not actorInventory or not items then
+        return { ok = false, changed = false, detail = "actor_inventory_missing" }
+    end
+
+    local inv = ensure(record)
+    local counts = {}
+    local names = {}
+    local size = tonumber(protectedCall(items, "size")) or 0
+    for i = 0, size - 1 do
+        local item = protectedCall(items, "get", i)
+        local fullType = itemFullType(item)
+        if fullType then
+            counts[fullType] = (counts[fullType] or 0) + 1
+            names[fullType] = names[fullType]
+                or protectedCall(item, "getDisplayName")
+                or protectedCall(item, "getName")
+                or fullType
+        end
+    end
+
+    local primaryItem = protectedCall(actor, "getPrimaryHandItem")
+    local secondaryItem = protectedCall(actor, "getSecondaryHandItem")
+    local clearedStaleEquipment = false
+    if primaryItem and actorHasExactItem(actor, primaryItem) ~= true then
+        protectedCall(actor, "setPrimaryHandItem", nil)
+        primaryItem = nil
+        clearedStaleEquipment = true
+    end
+    if secondaryItem and actorHasExactItem(actor, secondaryItem) ~= true then
+        protectedCall(actor, "setSecondaryHandItem", nil)
+        secondaryItem = nil
+        clearedStaleEquipment = true
+    end
+
+    local equipment = {
+        primaryWeapon = itemFullType(primaryItem),
+        secondaryWeapon = itemFullType(secondaryItem),
+        bag = nil,
+        clothing = {},
+    }
+
+    local wornItems = protectedCall(actor, "getWornItems")
+    local wornSize = tonumber(protectedCall(wornItems, "size")) or 0
+    for i = 0, wornSize - 1 do
+        local worn = protectedCall(wornItems, "get", i)
+        local location = protectedCall(worn, "getLocation")
+        local item = protectedCall(worn, "getItem")
+        local fullType = itemFullType(item)
+        if location and item and actorHasExactItem(actor, item) ~= true then
+            protectedCall(actor, "setWornItem", location, nil)
+            clearedStaleEquipment = true
+        elseif location and fullType then
+            equipment.clothing[tostring(location)] = fullType
+            local canEquip = protectedCall(item, "canBeEquipped")
+            if tostring(location) == "Back" or tostring(canEquip or "") == "Back" then
+                equipment.bag = fullType
+            end
+        end
+    end
+    if clearedStaleEquipment then
+        refreshActorVisuals(actor, reason or "actor_inventory_reconcile")
+    end
+
+    local signature = actorInventorySignature(counts, equipment, size)
+    if inv.actorInventorySignature == signature then
+        return {
+            ok = true,
+            changed = false,
+            detail = "unchanged",
+            signature = signature,
+            count = size,
+        }
+    end
+
+    local entries = {}
+    local keys = sortedKeys(counts)
+    for i = 1, #keys do
+        local fullType = keys[i]
+        entries[#entries + 1] = {
+            fullType = fullType,
+            count = counts[fullType],
+            itemName = names[fullType] or fullType,
+            source = "actor_inventory",
+            reason = reason or "actor_inventory_reconcile",
+            acquiredAt = nowHour(),
+        }
+    end
+
+    inv.items = entries
+    inv.equipment = inv.equipment or {}
+    inv.equipment.primaryWeapon = equipment.primaryWeapon
+    inv.equipment.secondaryWeapon = equipment.secondaryWeapon
+    inv.equipment.bag = equipment.bag
+    inv.equipment.clothing = equipment.clothing
+    inv.actorInventorySignature = signature
+    setChanged(inv, reason or "actor_inventory_reconcile")
+
+    if LWN.Log and LWN.Log.state then
+        LWN.Log.state("Inventory", "actor_inventory:" .. tostring(record.id), signature, {
+            npcId = record.id,
+            count = size,
+            source = "actor_inventory",
+            reason = reason or "actor_inventory_reconcile",
+            detail = signature,
+            item = equipment.primaryWeapon or equipment.secondaryWeapon or "none",
+            slotName = equipment.primaryWeapon and "primaryWeapon" or equipment.secondaryWeapon and "secondaryWeapon" or nil,
+            ok = true,
+        })
+    end
+
+    return {
+        ok = true,
+        changed = true,
+        detail = "record_reconciled_from_actor",
+        signature = signature,
+        count = size,
+        equipment = equipment,
+    }
 end
 
 function Inventory.grant(record, itemId, count, reason)

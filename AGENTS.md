@@ -19,8 +19,15 @@
 - Embodied actor state is a cache, not the source of truth.
 - Current companions use LWN's own managed `IsoZombie` carrier. External NPC
   runtimes are reference material only, not required execution layers.
+- Managed `IsoZombie` locomotion depends on LWN-owned AnimSet nodes under
+  `42/media/AnimSets/zombie/pathfind` and `42/media/AnimSets/zombie/walktoward`.
+  Do not reintroduce external walktype names such as `Walk`, `Run`, or
+  `SneakWalk` unless matching LWN-owned AnimSets are provided.
 - User commands and autonomous choices should flow through LWN intents before a
   carrier executes them.
+- NPC visual defaults must not create real inventory items. Use visual
+  projection for baseline presentation, and reserve actual inventory mutation
+  for real player/world item transfer or explicit debug-only grants.
 
 ## Domain ownership
 - Use `docs/DOMAIN_WORKSTREAMS_AND_CONTRACTS_2026-06-16.md` as the current
@@ -36,6 +43,9 @@
 ## When editing code
 - Preserve file-by-file module boundaries.
 - Avoid speculative engine hooks. If an event or API is uncertain, add a TODO note and keep the hook isolated.
+- When a Project Zomboid Java API or animation contract is uncertain, verify it
+  against the local game install with `javap` or local media files before
+  coding. Record important findings in `docs/`.
 - Keep debug tooling available in development builds.
 - After touching Lua runtime code, run the local validation scripts if available.
 - Treat each meaningful coding turn as a snapshot boundary: after code changes, run validation, review `git status`, and prefer a small descriptive commit before moving to the next hypothesis.

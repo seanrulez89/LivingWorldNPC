@@ -118,6 +118,16 @@ Interaction.register("status", {
     end,
 })
 
+Interaction.register("inventory", {
+    order = 15,
+    defaultLabel = "Open Inventory",
+    run = function(target)
+        if not (LWN.NPCInventoryUI and LWN.NPCInventoryUI.open) then return false end
+        local playerNum = target.context and tonumber(target.context.playerNum) or 0
+        return LWN.NPCInventoryUI.open(target.actor, playerNum) == true
+    end,
+})
+
 Interaction.register("talk", {
     order = 20,
     labelKey = "LWN_UI_Context_Talk",
